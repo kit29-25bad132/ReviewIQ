@@ -10,6 +10,30 @@ from models.review import ReviewAnalysis
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+# Primary Gemini model used when GEMINI_MODEL is not set.
+# gemini-3.8-flash is a stable model on Google's official model list
+# (verified 2026-09-23 at https://ai.google.dev/gemini-api/docs/models).
+# A pinned stable model keeps AI evaluation reproducible.
+DEFAULT_MODEL_NAME = "gemini-3.8-flash"
+
+# Fallback models, restricted to names verified on the official model list
+# on 2026-09-23. Do not add preview, restricted (2.5-family), or unverified
+# names here. See docs/19_DECISIONS.md (ADR-002).
+FALLBACK_MODEL_NAMES = [
+    "gemini-flash-latest",
+    "gemini-3.5-flash",
+]
+
+
+def _build_model_list(primary: Optional[str]) -> list:
+    """Bounded model list: configured/primary model first, then verified fallbacks (max 3 attempts)."""
+    primary_model = primary or DEFAULT_MODEL_NAME
+    models = [primary_model]
+    for name in FALLBACK_MODEL_NAMES:
+        if name != primary_model:
+            models.append(name)
+    return models
+
 SYSTEM_INSTRUCTION = """You are a Product Review Analysis AI.
 Analyze the provided customer review and extract ONLY information supported by the review text.
 
@@ -58,16 +82,15 @@ class AIAnalyzerService:
                 "Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env"
             )
 
-        # Attempt to use google-genai SDK first, then google-generativeai fallback
+        # Modern google-genai SDK only (legacy google-generativeai support was
+        # removed; see docs/19_DECISIONS.md ADR-003).
         try:
             return self._call_google_genai(review_text)
         except ImportError:
-            try:
-                return self._call_google_generativeai(review_text)
-            except ImportError:
-                raise RuntimeError(
-                    "Neither 'google-genai' nor 'google-generativeai' is installed."
-                )
+            raise RuntimeError(
+                "The 'google-genai' SDK is not installed. "
+                "Install backend dependencies with: pip install -r backend/requirements.txt"
+            )
 
     def _call_google_genai(self, review_text: str) -> ReviewAnalysis:
         """Call using modern google-genai SDK with structured output schema and model fallbacks."""
@@ -77,17 +100,8 @@ class AIAnalyzerService:
         client = genai.Client(api_key=self.api_key)
         prompt = f"Analyze this customer product review:\n\n\"\"\"\n{review_text}\n\"\"\""
 
-        models_to_try = [
-            "gemini-3.5-flash",
-            "gemini-3.7-flash",
-            "gemini-3.8-flash",
-            "gemini-flash-latest",
-            "gemini-3.5-flash-lite",
-            "gemini-3-flash-preview",
-        ]
-        custom_model = os.getenv("GEMINI_MODEL")
-        if custom_model:
-            models_to_try.insert(0, custom_model)
+        # One configurable primary model (GEMINI_MODEL) plus verified fallbacks only.
+        models_to_try = _build_model_list(os.getenv("GEMINI_MODEL"))
 
         last_error = None
         for model_name in models_to_try:
@@ -103,47 +117,10 @@ class AIAnalyzerService:
                     ),
                 )
                 if response.text and response.text.strip():
+                    logger.info(f"Review analysis succeeded using model: {model_name}")
                     return self._parse_and_validate(response.text.strip())
             except Exception as e:
                 logger.warning(f"Failed with model {model_name}: {e}")
-                last_error = e
-                continue
-
-        if last_error:
-            raise last_error
-        raise RuntimeError("Empty response received from Gemini API.")
-
-    def _call_google_generativeai(self, review_text: str) -> ReviewAnalysis:
-        """Fallback call using legacy google-generativeai SDK."""
-        import google.generativeai as genai
-
-        genai.configure(api_key=self.api_key)
-
-        models_to_try = [
-            "gemini-2.5-flash",
-            "gemini-flash-latest",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-pro",
-        ]
-        custom_model = os.getenv("GEMINI_MODEL")
-        if custom_model:
-            models_to_try.insert(0, custom_model)
-
-        prompt = f"Analyze this customer product review:\n\n\"\"\"\n{review_text}\n\"\"\""
-        last_error = None
-
-        for model_name in models_to_try:
-            try:
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    generation_config={"response_mime_type": "application/json", "temperature": 0.2}
-                )
-                response = model.generate_content(prompt)
-                if response.text and response.text.strip():
-                    return self._parse_and_validate(response.text.strip())
-            except Exception as e:
-                logger.warning(f"Failed with fallback model {model_name}: {e}")
                 last_error = e
                 continue
 
