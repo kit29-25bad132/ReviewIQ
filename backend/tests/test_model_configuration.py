@@ -3,7 +3,7 @@
 Covers:
 - Default primary model is the pinned stable model (gemini-3.8-flash).
 - Model ordering: GEMINI_MODEL override moves the primary first, verified fallbacks follow.
-- Model list is bounded (max 3 attempts) and contains no preview / 2.5-family names.
+- Model list is bounded (max 5 attempts) and contains no preview / 2.5-family names.
 - Duplicate prevention when GEMINI_MODEL equals a fallback.
 - The successful model name is logged.
 - Configuration error when GEMINI_API_KEY is missing.
@@ -35,19 +35,35 @@ def test_default_primary_is_pinned_stable_model():
 
 def test_build_model_list_default():
     models = _build_model_list(None)
-    assert models == ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.5-flash"]
+    assert models == [
+        "gemini-3.8-flash",
+        "gemini-flash-latest",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+    ]
 
 
 def test_build_model_list_env_override_moves_primary_first():
-    # An explicit GEMINI_MODEL replaces the primary; the two verified
-    # fallbacks are kept in order (see docs/19_DECISIONS.md ADR-002).
+    # An explicit GEMINI_MODEL replaces the primary; verified fallbacks are
+    # kept in order with primary deduplicated (see docs/19_DECISIONS.md).
     models = _build_model_list("gemini-3.5-flash-lite")
-    assert models == ["gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.5-flash"]
+    assert models == [
+        "gemini-3.5-flash-lite",
+        "gemini-flash-latest",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+    ]
 
 
 def test_build_model_list_env_override_equal_to_fallback_has_no_duplicate():
     models = _build_model_list("gemini-flash-latest")
-    assert models == ["gemini-flash-latest", "gemini-3.5-flash"]
+    assert models == [
+        "gemini-flash-latest",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+    ]
     assert len(models) == len(set(models))
 
 
@@ -55,12 +71,15 @@ def test_fallback_models_are_verified_names():
     for name in FALLBACK_MODEL_NAMES:
         assert "preview" not in name
         assert not name.startswith("gemini-2.5")
-    assert len(FALLBACK_MODEL_NAMES) <= 2
+        assert "-pro" not in name
+    assert len(FALLBACK_MODEL_NAMES) <= 4
 
 
-def test_model_list_is_bounded_to_three_attempts():
-    assert len(_build_model_list(None)) <= 3
-    assert len(_build_model_list("custom-model")) <= 3
+def test_model_list_is_bounded_to_five_attempts():
+    assert len(_build_model_list(None)) <= 5
+    assert len(_build_model_list("custom-model")) <= 5
+    models = _build_model_list(None)
+    assert len(models) == len(set(models))
 
 
 class _FakeResponse:
@@ -132,14 +151,15 @@ def test_gemini_model_documented_in_env_example():
     assert "gemini-3.8-flash" in content
 
 
-def test_max_three_attempts_when_all_models_fail(monkeypatch):
+def test_max_five_attempts_when_all_models_fail(monkeypatch):
     attempts = []
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     with pytest.raises(RuntimeError, match="unavailable"):
         _run_genai_call(monkeypatch, attempts, fail_first=99)
 
     assert attempts == [DEFAULT_MODEL_NAME, *FALLBACK_MODEL_NAMES]
-    assert len(attempts) <= 3
+    assert len(attempts) <= 5
+    assert len(attempts) == 5
 
 
 def test_fallback_used_in_order_after_primary_failure(monkeypatch, caplog):

@@ -6,34 +6,36 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from models.review import ReviewAnalysis
+from services.analysis_graph import EmptyResponseError, run_analysis_graph
 from services.grounding_service import ground_analysis
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Primary Gemini model used when GEMINI_MODEL is not set.
-# gemini-3.8-flash is a stable model on Google's official model list
-# (verified 2026-09-23 at https://ai.google.dev/gemini-api/docs/models).
-# A pinned stable model keeps AI evaluation reproducible.
+# Verified against the configured API key (models.list + generateContent
+# smoke tests, 2026-09-24). A pinned stable model keeps evaluation reproducible.
 DEFAULT_MODEL_NAME = "gemini-3.8-flash"
 
-# Fallback models, restricted to names verified on the official model list
-# on 2026-09-23. Do not add preview, restricted (2.5-family), or unverified
-# names here. See docs/19_DECISIONS.md (ADR-002).
+# Gemini-only verified fallback pool (deterministic order, max 5 total
+# attempts with the primary). No preview / Pro / 2.5-family / specialized
+# models. No runtime discovery in V1.
 FALLBACK_MODEL_NAMES = [
     "gemini-flash-latest",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
 ]
 
 
 def _build_model_list(primary: Optional[str]) -> list:
-    """Bounded model list: configured/primary model first, then verified fallbacks (max 3 attempts)."""
+    """Bounded model list: configured/primary first, then verified fallbacks (max 5 attempts)."""
     primary_model = primary or DEFAULT_MODEL_NAME
     models = [primary_model]
     for name in FALLBACK_MODEL_NAMES:
         if name != primary_model:
             models.append(name)
-    return models
+    return models[:5]
 
 SYSTEM_INSTRUCTION = """You are a Product Review Analysis AI.
 Analyze the provided customer review and extract ONLY information supported by the review text.
@@ -103,18 +105,17 @@ class AIAnalyzerService:
             )
 
     def _call_google_genai(self, review_text: str) -> ReviewAnalysis:
-        """Call using modern google-genai SDK with structured output schema and model fallbacks."""
+        """Gemini generation with LangGraph-orchestrated multi-model fallback."""
         from google import genai
         from google.genai import types
 
         client = genai.Client(api_key=self.api_key)
-        prompt = f"Analyze this customer product review:\n\n\"\"\"\n{review_text}\n\"\"\""
 
         # One configurable primary model (GEMINI_MODEL) plus verified fallbacks only.
         models_to_try = _build_model_list(os.getenv("GEMINI_MODEL"))
 
-        last_error = None
-        for model_name in models_to_try:
+        def attempt_fn(text: str, model_name: str) -> ReviewAnalysis:
+            prompt = f"Analyze this customer product review:\n\n\"\"\"\n{text}\n\"\"\""
             try:
                 response = client.models.generate_content(
                     model=model_name,
@@ -126,18 +127,28 @@ class AIAnalyzerService:
                         temperature=0.2,
                     ),
                 )
-                if response.text and response.text.strip():
-                    logger.info(f"Review analysis succeeded using model: {model_name}")
-                    analysis = self._parse_and_validate(response.text.strip())
-                    # Phase 2: deterministic evidence grounding against the
-                    # original review text. Unsupported evidence-backed items
-                    # are filtered out before the analysis is returned.
-                    return ground_analysis(review_text, analysis)
+                if not (response.text and response.text.strip()):
+                    raise EmptyResponseError(
+                        f"Empty response received from model {model_name}."
+                    )
+                logger.info(f"Review analysis succeeded using model: {model_name}")
+                analysis = self._parse_and_validate(response.text.strip())
+                # Phase 2: deterministic evidence grounding against the
+                # original review text. Unsupported evidence-backed items
+                # are filtered out before the analysis is returned.
+                # Grounding never raises: a filtered-but-valid analysis is success.
+                return ground_analysis(text, analysis)
+            except EmptyResponseError:
+                raise
             except Exception as e:
                 logger.warning(f"Failed with model {model_name}: {e}")
-                last_error = e
-                continue
+                raise
 
+        final_state = run_analysis_graph(review_text, models_to_try, attempt_fn)
+        analysis = final_state.get("analysis")
+        if analysis is not None:
+            return analysis
+        last_error = final_state.get("last_error")
         if last_error:
             raise last_error
         raise RuntimeError("Empty response received from Gemini API.")
