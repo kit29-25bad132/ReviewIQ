@@ -72,7 +72,7 @@ class ReviewAnalysis(BaseModel):
     )
     aspects: List[AspectSentiment] = Field(
         default_factory=list,
-        description="Aspect-level sentiments (schema only in Phase 1; ABSA generation is Phase 3)"
+        description="Aspect-based sentiment analysis: each discussed aspect with its own sentiment and supporting evidence from the review"
     )
     pros: List[PointEvidence] = Field(
         default_factory=list,

@@ -41,6 +41,8 @@ Analyze the provided customer review and extract ONLY information supported by t
 Return strictly structured JSON with these fields:
 
 1. sentiment: Must be strictly one of "positive", "negative", "neutral", or "mixed".
+   - If the review contains meaningful positive AND negative feedback, classify the overall sentiment as "mixed". Do not force "positive" or "negative" when both are materially present.
+   - Use "neutral" for purely factual reviews with no clear positive or negative stance.
 2. rating: An integer from 1 to 5, or null.
    - If the review explicitly mentions a rating (e.g. "5/5", "4 stars", "rating: 2"), use that exact integer and set rating_source to "explicit".
    - If no explicit rating is present but the overall sentiment clearly supports one, you may infer an integer 1-5 and set rating_source to "inferred".
@@ -49,12 +51,13 @@ Return strictly structured JSON with these fields:
 3. rating_source: Must be strictly one of "explicit", "inferred", or "not_found".
    - rating null requires rating_source "not_found".
    - rating 1-5 requires rating_source "explicit" or "inferred".
-4. summary: Provide a concise, clear 1-2 sentence summary of the customer's feedback.
-5. aspects: List of objects with fields "aspect" (product attribute, e.g. "battery", "price"), "sentiment" (one of "positive", "negative", "neutral", "mixed"), and "evidence" (text from the review supporting that aspect sentiment). Include only aspects actually discussed in the review. If none, return [].
+4. summary: Provide a concise, clear 1-2 sentence summary of the main points actually present in the review. Do not introduce information absent from the review, and do not contradict the review content.
+5. aspects: Identify the distinct aspects actually discussed in the review (e.g. "battery", "camera", "display"). Assign each aspect its own sentiment independently — different aspects in the same review may have different sentiments. Example: for "The battery lasts all day, but the camera is disappointing." produce battery -> positive, camera -> negative, and overall sentiment -> mixed. Each aspect object has fields "aspect", "sentiment" (one of "positive", "negative", "neutral", "mixed"), and "evidence" (text from the review supporting that aspect sentiment). Include only aspects actually discussed in the review. If none, return [].
 6. pros: List of objects with fields "point" (concise positive claim) and "evidence" (text from the review supporting the claim). List ONLY positive aspects actually supported by the review. If no clear pros exist, return [].
 7. cons: List of objects with fields "point" (concise negative claim) and "evidence" (text from the review supporting the claim). List ONLY negative aspects actually supported by the review. If no clear cons exist, return [].
 8. ANTI-HALLUCINATION RULE:
    - Do NOT invent or assume product features, accessories, or experiences not explicitly mentioned in the review.
+   - Every "evidence" string must be text actually present in the review (minor case/whitespace/punctuation differences are acceptable).
 9. Return strictly structured JSON matching the requested schema. Do NOT include markdown code fences, headers, or any text outside the JSON object.
 """
 
