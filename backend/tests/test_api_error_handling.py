@@ -127,3 +127,68 @@ def test_timeout_categorization_preserved():
         resp.json()["detail"]
         == "Connection to AI service timed out or unavailable. Please verify your network connection."
     )
+
+
+def test_fallback_exhaustion_http_is_safe_generic_500():
+    # Graph re-raises the last provider error after all 5 models fail.
+    secret = "generateContent failed model=gemini-3.5-flash-lite internals=/var/log/aizaSECRET"
+    with patch.object(analyzer_service, "analyze_review", side_effect=RuntimeError(secret)):
+        resp = _post()
+    assert resp.status_code == 500
+    detail = resp.json()["detail"]
+    assert secret not in resp.text
+    assert "aizaSECRET" not in detail
+    assert detail == "AI analysis failed. Please try again."
+
+
+def test_fallback_exhaustion_parse_failure_http_is_safe_400():
+    # All models returned unparseable output; last_error is a ValueError with raw text.
+    with patch.object(
+        analyzer_service,
+        "analyze_review",
+        side_effect=ValueError(
+            'Failed to parse AI output as JSON:Expecting value. Raw output: {"oops": true, "token": "sk-leak"}'
+        ),
+    ):
+        resp = _post()
+    assert resp.status_code == 400
+    assert "sk-leak" not in resp.text
+    assert resp.json()["detail"] == "Review analysis failed validation. Please try again."
+
+
+def test_grounding_filters_fabricated_evidence_via_http(monkeypatch):
+    """Successful HTTP analysis path runs grounding before the response is returned."""
+    import json
+
+    from services.grounding_service import is_evidence_supported
+    from tests.test_model_configuration import _FakeResponse, _install_fake_sdk
+
+    review = "The battery lasts all day and the display is bright."
+    payload = {
+        "sentiment": "positive",
+        "rating": 5,
+        "rating_source": "inferred",
+        "summary": "Praises battery and display.",
+        "aspects": [],
+        "pros": [
+            {"point": "All-day battery", "evidence": "The battery lasts all day"},
+            {"point": "Waterproof body", "evidence": "completely waterproof military grade"},
+        ],
+        "cons": [],
+    }
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-a-real-secret")
+    monkeypatch.setattr(_FakeResponse, "text", json.dumps(payload))
+    attempts: list = []
+    _install_fake_sdk(monkeypatch, attempts)
+
+    resp = _post(review)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    points = [p["point"] for p in body["data"]["pros"]]
+    assert "All-day battery" in points
+    assert "Waterproof body" not in points
+    for pro in body["data"]["pros"]:
+        assert is_evidence_supported(review, pro["evidence"])
+    assert attempts

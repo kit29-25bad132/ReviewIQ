@@ -1,8 +1,11 @@
 from collections import defaultdict
+import logging
 from fastapi import APIRouter, HTTPException, Query
 from models.dataset import OverviewAnalytics, ProductAnalytics
 from services.dataset_service import DatasetUnavailableError, dataset_service
 from services.evaluation_service import evaluation_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
@@ -28,7 +31,17 @@ def overview():
             rating_distribution=rating_dist,
         )
     except DatasetUnavailableError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        logger.warning("Analytics overview unavailable: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Analytics service is currently unavailable. Please try again later.",
+        )
+    except Exception as exc:
+        logger.error("Unexpected analytics overview error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Analytics service is currently unavailable. Please try again later.",
+        )
 
 
 @router.get("/products", response_model=list[ProductAnalytics])
@@ -43,4 +56,14 @@ def products(limit: int = Query(100, ge=1, le=500)):
             result.append(ProductAnalytics(asin=asin, product_name=None, review_count=len(rows), average_actual_rating=round(sum(r.actual_rating for r in rows)/len(rows), 2), average_ai_rating=round(sum(predictions)/len(predictions), 2) if predictions else None, positive_reviews=sum(r.actual_sentiment == "positive" for r in rows), neutral_reviews=sum(r.actual_sentiment == "neutral" for r in rows), negative_reviews=sum(r.actual_sentiment == "negative" for r in rows), helpful_votes=sum(r.helpful_yes or 0 for r in rows)))
         return sorted(result, key=lambda item: item.review_count, reverse=True)[:limit]
     except DatasetUnavailableError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        logger.warning("Product analytics unavailable: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Analytics service is currently unavailable. Please try again later.",
+        )
+    except Exception as exc:
+        logger.error("Unexpected product analytics error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Analytics service is currently unavailable. Please try again later.",
+        )

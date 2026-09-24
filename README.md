@@ -185,6 +185,8 @@ create policy "Allow public delete access" on public.reviews for delete to anon,
 
 ## 🔌 API Endpoints
 
+Full endpoint list, request/response schemas, and error envelopes: [`docs/08_API_CONTRACT.md`](docs/08_API_CONTRACT.md). Key endpoints below.
+
 ### 1. Health Check
 - **Endpoint**: `GET /health`
 - **Description**: Returns service health and AI configuration status without leaking keys.
