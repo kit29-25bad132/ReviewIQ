@@ -27,52 +27,41 @@
 | **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, Axios, Lucide React, Supabase JS |
 | **Backend** | Python 3.10+, FastAPI, Uvicorn, Pydantic v2, Python-Dotenv |
 | **AI Provider** | Google Gemini API (`gemini-3.8-flash` primary + verified Gemini fallback pool via LangGraph structured outputs) |
-| **Database** | Supabase (PostgreSQL) with automatic fallback & local caching |
+| **Database** | Supabase (PostgreSQL) with local `localStorage` fallback (demo RLS: anon read/insert/delete) |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-product-review-analyzer/
+ReviewIQ/
 ├── frontend/
 │   ├── src/
-│   │   ├── components/
-│   │   │   ├── ReviewInput.tsx       # Textarea, char counter, sample review button, validation
-│   │   │   ├── AnalysisResult.tsx    # Sentiment badge, stars, pros/cons cards, AI summary
-│   │   │   ├── StatCard.tsx          # Metric statistics card
-│   │   │   ├── ReviewHistory.tsx     # Local history log, search, filter, view modal, delete
-│   │   │   └── LoadingState.tsx      # Pulsing radar AI analysis indicator
-│   │   ├── pages/
-│   │   │   └── Dashboard.tsx         # Main dashboard assembling layout & stats
+│   │   ├── components/          # Analysis, history, dataset, product, evaluation UI
+│   │   ├── pages/Dashboard.tsx  # Main dashboard (analysis + product intelligence)
 │   │   ├── services/
-│   │   │   └── api.ts                # Axios client for backend API communication
-│   │   ├── types/
-│   │   │   └── review.ts             # TypeScript interfaces for request, analysis, history
-│   │   ├── App.tsx                   # Root React component
-│   │   ├── main.tsx                  # React DOM entrypoint
-│   │   └── index.css                 # Tailwind CSS & glassmorphism theme
+│   │   │   ├── api.ts           # Axios client for backend API
+│   │   │   ├── historyStorage.ts# Supabase persistence + localStorage fallback
+│   │   │   └── supabase.ts      # Supabase client (URL + anon/publishable key)
+│   │   ├── types/               # review.ts, ecommerce.ts
+│   │   ├── App.tsx
+│   │   └── main.tsx
 │   ├── package.json
-│   ├── vite.config.ts
-│   ├── tailwind.config.js
-│   ├── postcss.config.js
-│   ├── tsconfig.json
-│   └── .env                          # Frontend environment variables
+│   └── vite.config.ts           # Vitest config included
 │
 ├── backend/
-│   ├── main.py                       # FastAPI application & CORS configuration
-│   ├── requirements.txt              # Minimal backend dependencies
-│   ├── .env                          # Backend environment variables (API keys)
-│   ├── .env.example                  # Template for backend environment variables
-│   ├── models/
-│   │   └── review.py                 # Pydantic schemas (ReviewRequest, ReviewAnalysis)
-│   ├── routes/
-│   │   └── review.py                 # API endpoints (POST /api/analyze-review)
-│   └── services/
-│       └── ai_analyzer.py            # Gemini AI service with anti-hallucination prompts
+│   ├── main.py                  # FastAPI app, CORS, global exception handler
+│   ├── requirements.txt
+│   ├── .env.example
+│   ├── models/                  # review.py, dataset.py, ecommerce.py (Pydantic)
+│   ├── routes/                  # review, products, reviews, dataset, analytics, evaluation
+│   ├── services/                # ai_analyzer, analysis_graph, grounding, dataset, etc.
+│   ├── scripts/ingest_dataset.py # Optional local CSV → SQLite ingestion
+│   └── tests/                   # pytest suite (offline, mocked)
 │
-├── README.md                         # Project documentation
-└── .gitignore                        # Git ignore rules
+├── supabase_schema.sql          # Canonical reviews table + RLS policies
+├── README.md
+└── .gitignore
 ```
 
 ---
@@ -86,8 +75,8 @@ product-review-analyzer/
 # Get a free key at: https://aistudio.google.com/
 GEMINI_API_KEY=your_gemini_api_key_here
 
-# Server Settings
-HOST=0.0.0.0
+# Server Settings (defaults match backend/.env.example)
+HOST=127.0.0.1
 PORT=8000
 ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
@@ -118,7 +107,7 @@ Vite embeds `VITE_*` values at build time. After changing `frontend/.env`, resta
 
 ```bash
 # Navigate to backend directory
-cd product-review-analyzer/backend
+cd backend
 
 # Create virtual environment
 python -m venv .venv
@@ -151,7 +140,7 @@ Open a new terminal:
 
 ```bash
 # Navigate to frontend directory
-cd product-review-analyzer/frontend
+cd frontend
 
 # Install dependencies
 npm install
@@ -170,8 +159,10 @@ create table if not exists public.reviews (
     review_text text not null,
     sentiment text not null check (sentiment in ('positive', 'negative', 'neutral', 'mixed')),
     rating integer check (rating is null or (rating >= 1 and rating <= 5)),
+    rating_source text check (rating_source is null or rating_source in ('explicit', 'inferred', 'not_found')),
     pros jsonb not null default '[]'::jsonb,
     cons jsonb not null default '[]'::jsonb,
+    aspects jsonb not null default '[]'::jsonb,
     summary text not null,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -182,6 +173,24 @@ create policy "Allow public read access" on public.reviews for select to anon, a
 create policy "Allow public insert access" on public.reviews for insert to anon, authenticated with check (true);
 create policy "Allow public delete access" on public.reviews for delete to anon, authenticated using (true);
 ```
+
+> Demo posture: RLS allows any anon/publishable key holder to read, insert, and delete rows. Acceptable for V1 demos only — not for multi-tenant production data.
+
+---
+
+## 🧪 Testing
+
+```bash
+# Backend (from repo root, with backend .venv active)
+.venv\Scripts\python.exe -m pytest backend\tests
+
+# Frontend
+cd frontend
+npm test          # vitest
+npm run build     # tsc + vite production build
+```
+
+Tests are offline: Gemini and Supabase are mocked/faked; no network required.
 
 ## 🔌 API Endpoints
 

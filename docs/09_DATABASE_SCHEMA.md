@@ -1,28 +1,34 @@
 # ReviewIQ — Database Schema
 
+Canonical source: [`supabase_schema.sql`](../supabase_schema.sql).
+
 ## Table: `reviews`
+
 | Column | Type | Nullable | Purpose |
 |---|---|---|---|
-| id | UUID | No | Primary key |
-| product_name | TEXT | No | Product identifier/display name |
+| id | UUID | No | Primary key (`gen_random_uuid()`) |
 | review_text | TEXT | No | Original review for traceability |
-| rating | INTEGER | Yes | Validated rating from 1–5 |
-| rating_source | TEXT | No | explicit/inferred/not_found |
+| sentiment | TEXT | No | `positive` / `negative` / `neutral` / `mixed` (CHECK) |
+| rating | INTEGER | Yes | Validated rating 1–5, or null |
+| rating_source | TEXT | Yes* | `explicit` / `inferred` / `not_found` (nullable for legacy rows) |
+| pros | JSONB | No | `[{ "point", "evidence" }]` (default `[]`) |
+| cons | JSONB | No | `[{ "point", "evidence" }]` (default `[]`) |
+| aspects | JSONB | No | `[{ "aspect", "sentiment", "evidence" }]` (default `[]`) |
 | summary | TEXT | No | Validated summary |
-| created_at | TIMESTAMP | No | Creation timestamp |
+| created_at | TIMESTAMP | No | Creation time (UTC) |
 
-## Table: `review_points`
-| Column | Type | Nullable | Purpose |
-|---|---|---|---|
-| id | UUID | No | Primary key |
-| review_id | UUID | No | Foreign key to reviews.id |
-| type | TEXT | No | PRO or CON |
-| point | TEXT | No | Extracted insight |
-| evidence | TEXT | No | Supporting review evidence |
+\* New rows always write `rating_source`; the column stays nullable so pre-migration rows remain valid.
 
-## Constraints
-- Foreign key from `review_points.review_id` to `reviews.id`.
+## Constraints & indexes
+
 - `rating` is null or between 1 and 5.
-- `rating_source` uses the approved enum.
-- Only validated AI output is persisted.
-- Add indexes based on measured query needs, especially product name and created timestamp.
+- `sentiment` and `rating_source` use CHECK enums above.
+- Index on `created_at desc` for history ordering.
+
+## RLS
+
+Row Level Security is enabled with public anon/authenticated policies for **select**, **insert**, and **delete** (demo posture — anyone holding the frontend publishable/anon key can read and modify rows). See `supabase_schema.sql`.
+
+## Persistence path
+
+Frontend only (`frontend/src/services/historyStorage.ts` → Supabase). The backend does not talk to Supabase and exposes no history API.

@@ -6,7 +6,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 
 from models.ecommerce import AISummaryResponse
-from services.ai_analyzer import analyzer_service
+from services.ai_analyzer import _build_model_list, analyzer_service
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -79,16 +79,8 @@ Synthesize these dataset reviews according to your system instructions into stru
         api_key = analyzer_service.api_key
         client = genai.Client(api_key=api_key)
 
-        models_to_try = [
-            "gemini-3-flash-preview",
-            "gemini-2.5-flash",
-            "gemini-3.6-flash",
-            "gemini-3.5-flash-lite",
-            "gemini-flash-lite-latest",
-        ]
-        custom_model = os.getenv("GEMINI_MODEL")
-        if custom_model:
-            models_to_try.insert(0, custom_model)
+        # Same verified Gemini-only pool as the analyzer (max 5, GEMINI_MODEL first).
+        models_to_try = _build_model_list(os.getenv("GEMINI_MODEL"))
 
         last_error = None
         for model_name in models_to_try:

@@ -2,6 +2,8 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from main import app
@@ -281,3 +283,41 @@ def test_product_analysis_unexpected_exception_returns_safe_500():
     assert "sk-live-abc123" not in resp.text
     assert "PostgresError" not in resp.text
     assert "Traceback" not in resp.text
+
+
+def test_ai_summary_uses_canonical_verified_model_pool(monkeypatch):
+    """AI summary attempts models via _build_model_list (analyzer-verified pool)."""
+    import sys
+    from unittest import mock
+
+    from services.ai_analyzer import _build_model_list
+
+    attempted: list = []
+
+    class _Resp:
+        text = ""
+
+    class _Models:
+        def generate_content(self, model, contents, config):
+            attempted.append(model)
+            return _Resp()
+
+    class _Client:
+        models = _Models()
+
+    fake_genai = mock.MagicMock()
+    fake_genai.Client = lambda api_key: _Client()
+    fake_types = mock.MagicMock()
+    monkeypatch.setitem(sys.modules, "google", mock.MagicMock(genai=fake_genai))
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+
+    with pytest.raises(RuntimeError):
+        gemini_summary_service._generate_summary("prompt")
+
+    assert attempted == _build_model_list(None)
+    assert attempted[0] == "gemini-3.8-flash"
+    assert "gemini-3-flash-preview" not in attempted
+    assert "gemini-2.5-flash" not in attempted
+    assert len(attempted) <= 5
