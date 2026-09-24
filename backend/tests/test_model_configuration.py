@@ -64,7 +64,10 @@ def test_model_list_is_bounded_to_three_attempts():
 
 
 class _FakeResponse:
-    text = '{"sentiment": "positive", "rating": 4, "pros": [], "cons": [], "summary": "ok"}'
+    text = (
+        '{"sentiment": "positive", "rating": 4, "rating_source": "inferred", '
+        '"summary": "ok", "aspects": [], "pros": [], "cons": []}'
+    )
 
 
 class _FakeModels:

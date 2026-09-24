@@ -1,5 +1,5 @@
 from typing import Any, List, Literal, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ReviewRequest(BaseModel):
@@ -20,29 +20,67 @@ class ReviewRequest(BaseModel):
         return trimmed
 
 
-class ReviewAnalysis(BaseModel):
-    """Strict structured review analysis output."""
-    sentiment: Literal["positive", "negative", "neutral"] = Field(
+class PointEvidence(BaseModel):
+    """A single pros/cons claim paired with its supporting evidence text."""
+    point: str = Field(
         ...,
-        description="Sentiment classification: 'positive', 'negative', or 'neutral'"
+        description="Concise positive (pro) or negative (con) point"
     )
-    rating: int = Field(
+    evidence: str = Field(
+        ...,
+        description="Supporting text for the point (Phase 2 will verify it against the review)"
+    )
+
+
+class AspectSentiment(BaseModel):
+    """A single aspect-level sentiment with supporting evidence text."""
+    aspect: str = Field(
+        ...,
+        description="Product aspect/attribute discussed in the review (e.g. 'battery')"
+    )
+    sentiment: Literal["positive", "negative", "neutral", "mixed"] = Field(
+        ...,
+        description="Sentiment expressed about this aspect"
+    )
+    evidence: str = Field(
+        ...,
+        description="Supporting text for the aspect sentiment"
+    )
+
+
+class ReviewAnalysis(BaseModel):
+    """Canonical V1 structured review analysis output (Phase 1 contract)."""
+    sentiment: Literal["positive", "negative", "neutral", "mixed"] = Field(
+        ...,
+        description="Overall sentiment: 'positive', 'negative', 'neutral', or 'mixed'"
+    )
+    rating: Optional[int] = Field(
         ...,
         ge=1,
         le=5,
-        description="Numerical rating from 1 to 5 based on explicit mention or inferred from sentiment"
+        description="Star rating from 1 to 5, or null when no reliable rating is available. "
+                    "Invalid values are rejected (never clamped or rounded)."
     )
-    pros: List[str] = Field(
-        default_factory=list,
-        description="Positive aspects directly supported by the review text"
-    )
-    cons: List[str] = Field(
-        default_factory=list,
-        description="Negative aspects directly supported by the review text"
+    rating_source: Literal["explicit", "inferred", "not_found"] = Field(
+        ...,
+        description="Where the rating came from: 'explicit' (stated in review), "
+                    "'inferred' (derived from sentiment), or 'not_found'"
     )
     summary: str = Field(
         ...,
         description="Concise summary highlighting the main points of the customer review"
+    )
+    aspects: List[AspectSentiment] = Field(
+        default_factory=list,
+        description="Aspect-level sentiments (schema only in Phase 1; ABSA generation is Phase 3)"
+    )
+    pros: List[PointEvidence] = Field(
+        default_factory=list,
+        description="Positive points with supporting evidence"
+    )
+    cons: List[PointEvidence] = Field(
+        default_factory=list,
+        description="Negative points with supporting evidence"
     )
 
     @field_validator("sentiment", mode="before")
@@ -50,29 +88,21 @@ class ReviewAnalysis(BaseModel):
     def normalize_sentiment(cls, v: Any) -> str:
         if isinstance(v, str):
             val = v.strip().lower()
-            if val in ["positive", "negative", "neutral"]:
+            if val in ["positive", "negative", "neutral", "mixed"]:
                 return val
         return v
 
-    @field_validator("rating", mode="before")
-    @classmethod
-    def normalize_rating(cls, v: Any) -> int:
-        if isinstance(v, (int, float, str)):
-            try:
-                num = int(round(float(v)))
-                return max(1, min(5, num))
-            except (ValueError, TypeError):
-                pass
-        return v
-
-    @field_validator("pros", "cons", mode="before")
-    @classmethod
-    def normalize_string_list(cls, v: Any) -> List[str]:
-        if isinstance(v, str):
-            return [v.strip()] if v.strip() else []
-        if isinstance(v, list):
-            return [str(item).strip() for item in v if str(item).strip()]
-        return []
+    @model_validator(mode="after")
+    def validate_rating_source_consistency(self) -> "ReviewAnalysis":
+        if self.rating is None and self.rating_source != "not_found":
+            raise ValueError(
+                "rating_source must be 'not_found' when rating is null"
+            )
+        if self.rating is not None and self.rating_source == "not_found":
+            raise ValueError(
+                "rating_source 'not_found' requires rating to be null"
+            )
+        return self
 
 
 class AnalyzeReviewResponse(BaseModel):

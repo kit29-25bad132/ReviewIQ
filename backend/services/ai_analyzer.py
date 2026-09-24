@@ -6,6 +6,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from models.review import ReviewAnalysis
+from services.grounding_service import ground_analysis
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -37,18 +38,24 @@ def _build_model_list(primary: Optional[str]) -> list:
 SYSTEM_INSTRUCTION = """You are a Product Review Analysis AI.
 Analyze the provided customer review and extract ONLY information supported by the review text.
 
-Strict Rules:
-1. sentiment: Must be strictly one of "positive", "negative", or "neutral".
-2. rating: Must be an integer from 1 to 5.
-   - If the review explicitly mentions a rating (e.g. "5/5", "4 stars", "rating: 2"), use that exact integer.
-   - If no explicit rating is provided, infer a reasonable rating ONLY from the overall sentiment and factual evidence in the review (e.g., completely satisfied/enthusiastic = 5, mostly good with minor critique = 4, mixed/mediocre = 3, mostly negative = 2, completely unsatisfied/broken = 1).
-   - Rating must NEVER be less than 1 or greater than 5.
-3. ANTI-HALLUCINATION RULE:
-   - Do NOT invent or assume product features, accessories, or experiences not explicitly mentioned in the review.
-   - Pros: List ONLY positive aspects actually supported by the review. If no clear pros exist, return an empty array [].
-   - Cons: List ONLY negative aspects actually supported by the review. If no clear cons exist, return an empty array [].
+Return strictly structured JSON with these fields:
+
+1. sentiment: Must be strictly one of "positive", "negative", "neutral", or "mixed".
+2. rating: An integer from 1 to 5, or null.
+   - If the review explicitly mentions a rating (e.g. "5/5", "4 stars", "rating: 2"), use that exact integer and set rating_source to "explicit".
+   - If no explicit rating is present but the overall sentiment clearly supports one, you may infer an integer 1-5 and set rating_source to "inferred".
+   - If no reliable rating can be determined from the review, set rating to null and rating_source to "not_found". Do NOT invent a rating just to fill the field.
+   - rating must NEVER be less than 1 or greater than 5 when non-null. Do not output fractional ratings (e.g. 4.5).
+3. rating_source: Must be strictly one of "explicit", "inferred", or "not_found".
+   - rating null requires rating_source "not_found".
+   - rating 1-5 requires rating_source "explicit" or "inferred".
 4. summary: Provide a concise, clear 1-2 sentence summary of the customer's feedback.
-5. Return strictly structured JSON matching the requested schema. Do NOT include markdown code fences, headers, or any text outside the JSON object.
+5. aspects: List of objects with fields "aspect" (product attribute, e.g. "battery", "price"), "sentiment" (one of "positive", "negative", "neutral", "mixed"), and "evidence" (text from the review supporting that aspect sentiment). Include only aspects actually discussed in the review. If none, return [].
+6. pros: List of objects with fields "point" (concise positive claim) and "evidence" (text from the review supporting the claim). List ONLY positive aspects actually supported by the review. If no clear pros exist, return [].
+7. cons: List of objects with fields "point" (concise negative claim) and "evidence" (text from the review supporting the claim). List ONLY negative aspects actually supported by the review. If no clear cons exist, return [].
+8. ANTI-HALLUCINATION RULE:
+   - Do NOT invent or assume product features, accessories, or experiences not explicitly mentioned in the review.
+9. Return strictly structured JSON matching the requested schema. Do NOT include markdown code fences, headers, or any text outside the JSON object.
 """
 
 
@@ -118,7 +125,11 @@ class AIAnalyzerService:
                 )
                 if response.text and response.text.strip():
                     logger.info(f"Review analysis succeeded using model: {model_name}")
-                    return self._parse_and_validate(response.text.strip())
+                    analysis = self._parse_and_validate(response.text.strip())
+                    # Phase 2: deterministic evidence grounding against the
+                    # original review text. Unsupported evidence-backed items
+                    # are filtered out before the analysis is returned.
+                    return ground_analysis(review_text, analysis)
             except Exception as e:
                 logger.warning(f"Failed with model {model_name}: {e}")
                 last_error = e
