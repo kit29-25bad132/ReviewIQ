@@ -10,6 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from routes.review import router as review_router
+from routes.dataset import router as dataset_router
+from routes.analytics import router as analytics_router
+from routes.evaluation import router as evaluation_router
+from routes.products import router as products_router
+from routes.reviews import router as reviews_router
 from services.ai_analyzer import analyzer_service
 
 # Setup logging
@@ -20,9 +25,9 @@ logging.basicConfig(
 logger = logging.getLogger("product_review_analyzer")
 
 app = FastAPI(
-    title="Product Review Analyzer API",
-    description="Production-ready AI backend for structured customer review analysis",
-    version="1.0.0",
+    title="ReviewIQ - Product Review Intelligence API",
+    description="Production-ready AI backend for dataset-based product search, review analytics, and ground-truth intelligence",
+    version="2.0.0",
 )
 
 # CORS Configuration
@@ -40,7 +45,12 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(products_router)
+app.include_router(reviews_router)
 app.include_router(review_router)
+app.include_router(dataset_router)
+app.include_router(analytics_router)
+app.include_router(evaluation_router)
 
 
 @app.get("/health", tags=["Health"])

@@ -97,10 +97,18 @@ ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```ini
 # Backend API Base URL
 VITE_API_BASE_URL=http://localhost:8000
+
+# Supabase project URL and frontend anon/publishable key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+# Set one key:
+# VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+# VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your-key
 ```
 
 > [!WARNING]
-> Never place `GEMINI_API_KEY` in the frontend `.env` file or commit `.env` files to git.
+> Never place `GEMINI_API_KEY` or a Supabase service-role key in the frontend `.env` file. The frontend uses only the project URL and anon/publishable key.
+
+Vite embeds `VITE_*` values at build time. After changing `frontend/.env`, restart the dev server or rebuild the production bundle.
 
 ---
 

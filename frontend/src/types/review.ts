@@ -28,3 +28,53 @@ export interface DashboardStats {
   neutralReviews: number;
   averageRating: number;
 }
+
+export interface DatasetReview {
+  id: string;
+  asin?: string | null;
+  product_name?: string | null;
+  review_text: string;
+  actual_rating: number;
+  summary?: string | null;
+  review_date?: string | null;
+  helpful_yes?: number | null;
+  total_vote?: number | null;
+  actual_sentiment: SentimentType;
+}
+
+export interface DatasetReviewsResponse {
+  items: DatasetReview[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface OverviewAnalytics {
+  total_reviews: number;
+  average_rating: number;
+  positive_reviews: number;
+  neutral_reviews: number;
+  negative_reviews: number;
+  rating_distribution?: Record<number, number>;
+}
+
+export interface ProductAnalytics {
+  asin?: string | null;
+  product_name?: string | null;
+  review_count: number;
+  average_actual_rating: number;
+  average_ai_rating?: number | null;
+  positive_reviews: number;
+  neutral_reviews: number;
+  negative_reviews: number;
+  helpful_votes: number;
+}
+
+export interface EvaluationMetrics {
+  evaluated_reviews: number;
+  rating_accuracy: number;
+  rating_mae: number;
+  sentiment_accuracy: number;
+  confusion_matrix: number[][];
+  methodology: string;
+}

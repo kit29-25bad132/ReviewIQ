@@ -1,23 +1,25 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   MessageSquare,
-  ThumbsUp,
-  ThumbsDown,
-  MinusCircle,
-  Star,
+  Search,
   Activity,
-  Layers,
   Sparkles,
-  BarChart3,
-  CheckCircle,
   AlertCircle,
-  ShieldCheck,
   Database,
-  RefreshCw,
+  Target,
+  BrainCircuit,
+  Package,
 } from 'lucide-react';
 
-import { ReviewAnalysis, ReviewHistoryItem, DashboardStats } from '../types/review';
-import { analyzeReview, checkBackendHealth, HealthStatus, API_BASE_URL } from '../services/api';
+import { ReviewAnalysis, ReviewHistoryItem } from '../types/review';
+import { ProductSummary, ProductAnalysisResponse } from '../types/ecommerce';
+import {
+  analyzeReview,
+  checkBackendHealth,
+  HealthStatus,
+  API_BASE_URL,
+  getProductAnalysis,
+} from '../services/api';
 import {
   fetchAllReviews,
   saveReviewAnalysis,
@@ -25,27 +27,41 @@ import {
   clearAllReviews,
   getLocalReviews,
 } from '../services/historyStorage';
-import { isSupabaseConfigured } from '../services/supabase';
-import { StatCard } from '../components/StatCard';
+import { isSupabaseConfigured, supabaseConfigurationError } from '../services/supabase';
+import { ProductSearch } from '../components/ProductSearch';
+import { ProductOverview } from '../components/ProductOverview';
+import { ProsConsAnalysis } from '../components/ProsConsAnalysis';
+import { PersonalizedRecommendation } from '../components/PersonalizedRecommendation';
+import { AISummaryCard } from '../components/AISummaryCard';
+import { ReviewList } from '../components/ReviewList';
 import { ReviewInput } from '../components/ReviewInput';
 import { AnalysisResult } from '../components/AnalysisResult';
 import { ReviewHistory } from '../components/ReviewHistory';
 import { LoadingState } from '../components/LoadingState';
+import { DatasetExplorer } from '../components/DatasetExplorer';
+import { EvaluationDashboard } from '../components/EvaluationDashboard';
+
+type TabType = 'product_search' | 'live_analyzer' | 'dataset' | 'evaluation' | 'history';
 
 export const Dashboard: React.FC = () => {
-  // Navigation tabs: 'dashboard' | 'analyze' | 'history' | 'analytics'
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'analyze' | 'history' | 'analytics'>('dashboard');
+  // Navigation tabs
+  const [activeTab, setActiveTab] = useState<TabType>('product_search');
 
-  // Review states
+  // Ecommerce Product Search State
+  const [selectedProduct, setSelectedProduct] = useState<ProductSummary | null>(null);
+  const [productAnalysis, setProductAnalysis] = useState<ProductAnalysisResponse | null>(null);
+  const [loadingProduct, setLoadingProduct] = useState<boolean>(false);
+  const [productError, setProductError] = useState<string | null>(null);
+
+  // Custom live review analysis states
   const [currentAnalysis, setCurrentAnalysis] = useState<ReviewAnalysis | null>(null);
   const [activeReviewText, setActiveReviewText] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLoadingLive, setIsLoadingLive] = useState<boolean>(false);
+  const [liveErrorMessage, setLiveErrorMessage] = useState<string | null>(null);
 
   // History state & storage source
   const [history, setHistory] = useState<ReviewHistoryItem[]>(() => getLocalReviews());
   const [storageSource, setStorageSource] = useState<'supabase' | 'local'>('local');
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Backend Health check status
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
@@ -54,11 +70,9 @@ export const Dashboard: React.FC = () => {
 
   // Load reviews from Supabase or LocalStorage on mount
   const refreshHistory = async () => {
-    setIsSyncing(true);
     const { reviews, source } = await fetchAllReviews();
     setHistory(reviews);
     setStorageSource(source);
-    setIsSyncing(false);
   };
 
   useEffect(() => {
@@ -76,46 +90,40 @@ export const Dashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Compute live real statistics from history (no fake data)
-  const stats: DashboardStats = useMemo(() => {
-    if (history.length === 0) {
-      return {
-        totalReviews: 0,
-        positiveReviews: 0,
-        negativeReviews: 0,
-        neutralReviews: 0,
-        averageRating: 0,
-      };
-    }
-
-    let positiveCount = 0;
-    let negativeCount = 0;
-    let neutralCount = 0;
-    let totalRatingSum = 0;
-
-    history.forEach((item) => {
-      if (item.analysis.sentiment === 'positive') positiveCount++;
-      else if (item.analysis.sentiment === 'negative') negativeCount++;
-      else neutralCount++;
-
-      totalRatingSum += item.analysis.rating;
+  // Load default initial product ("Electric Toothbrush") on first load
+  useEffect(() => {
+    handleSelectProduct({
+      product_id: '9640962',
+      product_title: 'Electric Toothbrush',
+      category: 'Health & Personal Care',
+      review_count: 125192,
+      average_rating: 3.64,
     });
+  }, []);
 
-    const averageRating = Number((totalRatingSum / history.length).toFixed(1));
+  // Handle Product Selection
+  const handleSelectProduct = async (product: ProductSummary) => {
+    setSelectedProduct(product);
+    setLoadingProduct(true);
+    setProductError(null);
 
-    return {
-      totalReviews: history.length,
-      positiveReviews: positiveCount,
-      negativeReviews: negativeCount,
-      neutralReviews: neutralCount,
-      averageRating,
-    };
-  }, [history]);
+    try {
+      const res = await getProductAnalysis(product.product_id);
+      setProductAnalysis(res);
+    } catch (err: any) {
+      setProductError(
+        err.response?.data?.detail || 'Product not found in the available review dataset.'
+      );
+      setProductAnalysis(null);
+    } finally {
+      setLoadingProduct(false);
+    }
+  };
 
-  // Handle Review Analysis Submission
-  const handleAnalyze = async (reviewText: string) => {
-    setIsLoading(true);
-    setErrorMessage(null);
+  // Handle Live Custom Review Analysis Submission
+  const handleAnalyzeLive = async (reviewText: string) => {
+    setIsLoadingLive(true);
+    setLiveErrorMessage(null);
     setActiveReviewText(reviewText);
 
     try {
@@ -125,15 +133,17 @@ export const Dashboard: React.FC = () => {
       // Save to Supabase & localStorage via unified service
       const newItem = await saveReviewAnalysis(reviewText, analysis);
       setHistory((prev) => [newItem, ...prev.filter((i) => i.id !== newItem.id)]);
+      if (isSupabaseConfigured) {
+        setStorageSource('supabase');
+      }
 
-      // Smooth scroll to analysis result
       setTimeout(() => {
         analysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
     } catch (err: any) {
-      setErrorMessage(err.message || 'An error occurred while analyzing the review.');
+      setLiveErrorMessage(err.message || 'An error occurred while analyzing the review.');
     } finally {
-      setIsLoading(false);
+      setIsLoadingLive(false);
     }
   };
 
@@ -151,7 +161,7 @@ export const Dashboard: React.FC = () => {
   const handleSelectHistoryItem = (item: ReviewHistoryItem) => {
     setCurrentAnalysis(item.analysis);
     setActiveReviewText(item.reviewText);
-    setActiveTab('dashboard');
+    setActiveTab('live_analyzer');
     setTimeout(() => {
       analysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
@@ -166,21 +176,21 @@ export const Dashboard: React.FC = () => {
 
       {/* Top Futuristic Header */}
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[#080B11]/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
           {/* Brand Logo & Title */}
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-500 to-cyan-400 p-0.5 shadow-glow-purple">
               <div className="flex h-full w-full items-center justify-center rounded-[10px] bg-[#0B0F17]">
-                <Sparkles className="h-5 w-5 text-purple-400" />
+                <BrainCircuit className="h-5 w-5 text-purple-400" />
               </div>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-extrabold tracking-wider text-white uppercase font-mono">
-                  PRODUCT REVIEW ANALYZER
+                <h1 className="text-base sm:text-lg font-extrabold tracking-wider text-white font-mono">
+                  REVIEWIQ
                 </h1>
-                <span className="rounded bg-purple-500/20 border border-purple-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-purple-300">
-                  AI v1.1
+                <span className="rounded bg-gradient-to-r from-purple-500/20 to-cyan-500/20 border border-purple-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-purple-300 font-mono">
+                  4M Dataset Engine
                 </span>
                 {isSupabaseConfigured && (
                   <span
@@ -201,38 +211,60 @@ export const Dashboard: React.FC = () => {
                 )}
               </div>
               <p className="text-[11px] sm:text-xs text-slate-400 hidden sm:block">
-                Turn customer feedback into actionable insights with AI.
+                Product Review Intelligence & Ground-Truth Dataset Analyzer
               </p>
             </div>
           </div>
 
           {/* Navigation Tabs */}
-          <nav className="flex items-center gap-1 rounded-xl border border-slate-800 bg-[#111827]/80 p-1">
+          <nav className="flex items-center gap-1 rounded-xl border border-slate-800 bg-[#111827]/80 p-1 overflow-x-auto max-w-full">
             <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                activeTab === 'dashboard'
+              onClick={() => setActiveTab('product_search')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
+                activeTab === 'product_search'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Layers className="h-3.5 w-3.5" />
-              <span>Dashboard</span>
+              <Search className="h-3.5 w-3.5" />
+              <span>Product Intelligence</span>
             </button>
             <button
-              onClick={() => setActiveTab('analyze')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                activeTab === 'analyze'
+              onClick={() => setActiveTab('dataset')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
+                activeTab === 'dataset'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Database className="h-3.5 w-3.5" />
+              <span>Dataset Explorer</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('live_analyzer')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
+                activeTab === 'live_analyzer'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <MessageSquare className="h-3.5 w-3.5" />
-              <span>Analyze Review</span>
+              <span>Live Review Analyzer</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('evaluation')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
+                activeTab === 'evaluation'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Target className="h-3.5 w-3.5" />
+              <span>AI Evaluation</span>
             </button>
             <button
               onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
                 activeTab === 'history'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -241,221 +273,143 @@ export const Dashboard: React.FC = () => {
               <Activity className="h-3.5 w-3.5" />
               <span>History ({history.length})</span>
             </button>
-            <button
-              onClick={() => setActiveTab('analytics')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                activeTab === 'analytics'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <BarChart3 className="h-3.5 w-3.5" />
-              <span>Analytics</span>
-            </button>
           </nav>
         </div>
       </header>
 
       {/* Main Container */}
       <main className="mx-auto max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 space-y-8">
-        {/* Backend Status Banner */}
+        {/* Backend Status Banners */}
         {healthStatus && healthStatus.status === 'offline' && (
           <div className="flex items-center gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-rose-300 text-xs">
             <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
             <div className="flex-1">
-              <strong>Backend Offline:</strong> Cannot connect to FastAPI backend at <code className="font-mono bg-rose-950/60 px-1 py-0.5 rounded">{API_BASE_URL}</code>. Please ensure the server is running.
-            </div>
-          </div>
-        )}
-        {healthStatus && healthStatus.status === 'ok' && !healthStatus.ai_configured && (
-          <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-amber-300 text-xs">
-            <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
-            <div className="flex-1">
-              <strong>Missing API Key:</strong> Gemini API key is not configured in <code className="font-mono bg-amber-950/60 px-1 py-0.5 rounded">backend/.env</code>. Analysis will fail until set.
+              <strong>Backend Offline:</strong> Cannot connect to FastAPI backend at{' '}
+              <code className="font-mono bg-rose-950/60 px-1 py-0.5 rounded">{API_BASE_URL}</code>.
+              Please ensure the backend server is running.
             </div>
           </div>
         )}
 
-        {/* Dashboard Section 1: Dynamic Live Statistics */}
-        {(activeTab === 'dashboard' || activeTab === 'analytics') && (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 font-mono flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-purple-400" />
-                Live Review Analytics
-              </h2>
-              <div className="flex items-center gap-3">
-                {history.length > 0 && (
-                  <span className="text-xs text-slate-400 font-medium">
-                    Based on {history.length} verified analysis record{history.length === 1 ? '' : 's'}
-                  </span>
-                )}
-                <button
-                  onClick={refreshHistory}
-                  disabled={isSyncing}
-                  className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-purple-400 transition"
-                  title="Sync reviews from Supabase"
-                >
-                  <RefreshCw className={`h-3 w-3 ${isSyncing ? 'animate-spin text-purple-400' : ''}`} />
-                  <span>Sync DB</span>
-                </button>
-              </div>
-            </div>
-
-            {history.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-800 bg-[#111827]/40 p-6 text-center">
-                <p className="text-sm font-semibold text-slate-300">No reviews analyzed yet.</p>
-                <p className="mt-1 text-xs text-slate-400">
-                  Analyze your first customer review below to generate live sentiment and rating statistics.
+        {/* TAB 1: PRODUCT INTELLIGENCE (Main Feature) */}
+        {activeTab === 'product_search' && (
+          <div className="space-y-8">
+            {/* Search Header Section */}
+            <section className="space-y-3">
+              <div className="text-center max-w-2xl mx-auto space-y-2 mb-6">
+                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                  Search & Analyze Product Reviews
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-400">
+                  Search any product title to retrieve its verified reviews, rating distributions, and AI synthesis from the 4M dataset.
                 </p>
+              </div>
+
+              <div className="max-w-3xl mx-auto">
+                <ProductSearch
+                  onSelectProduct={handleSelectProduct}
+                  selectedProductId={selectedProduct?.product_id}
+                />
+              </div>
+            </section>
+
+            {/* Product Overview & Review Analytics Display */}
+            {loadingProduct ? (
+              <div className="rounded-2xl border border-white/10 bg-[#111827]/80 p-16 text-center space-y-3">
+                <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
+                <p className="text-xs text-slate-400 font-mono">Retrieving actual dataset reviews & analytics...</p>
+              </div>
+            ) : productError ? (
+              <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-8 text-center space-y-2">
+                <AlertCircle className="h-8 w-8 text-rose-400 mx-auto" />
+                <h3 className="text-sm font-bold text-rose-200">Product Not Found</h3>
+                <p className="text-xs text-rose-300 max-w-md mx-auto">{productError}</p>
+              </div>
+            ) : productAnalysis ? (
+              <div className="space-y-8 animate-fadeIn">
+                {/* 1. Product Overview (Hero + Distributions) */}
+                <ProductOverview analysis={productAnalysis} />
+
+                {/* 2. Pros & Cons Analysis (Quantified & Traceable with Evidence Reviews) */}
+                <ProsConsAnalysis
+                  productId={productAnalysis.product.product_id}
+                  productTitle={productAnalysis.product.product_title}
+                />
+
+                {/* 3. Personalized Recommendation, Suitability & Similar Product Comparison */}
+                <PersonalizedRecommendation
+                  productId={productAnalysis.product.product_id}
+                  productTitle={productAnalysis.product.product_title}
+                  onSelectAlternativeProduct={handleSelectProduct}
+                />
+
+                {/* 4. AI Executive Summary (Strictly constrained to retrieved reviews) */}
+                <AISummaryCard productId={productAnalysis.product.product_id} />
+
+                {/* 5. Actual Dataset Customer Reviews (Filterable & Paginated) */}
+                <ReviewList
+                  productId={productAnalysis.product.product_id}
+                  productTitle={productAnalysis.product.product_title}
+                />
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-                <StatCard
-                  title="Total Reviews"
-                  value={stats.totalReviews}
-                  icon={Layers}
-                  color="purple"
-                  subtitle="Processed"
-                />
-                <StatCard
-                  title="Positive"
-                  value={stats.positiveReviews}
-                  icon={ThumbsUp}
-                  color="emerald"
-                  subtitle={`${((stats.positiveReviews / stats.totalReviews) * 100).toFixed(0)}%`}
-                />
-                <StatCard
-                  title="Negative"
-                  value={stats.negativeReviews}
-                  icon={ThumbsDown}
-                  color="rose"
-                  subtitle={`${((stats.negativeReviews / stats.totalReviews) * 100).toFixed(0)}%`}
-                />
-                <StatCard
-                  title="Neutral"
-                  value={stats.neutralReviews}
-                  icon={MinusCircle}
-                  color="amber"
-                  subtitle={`${((stats.neutralReviews / stats.totalReviews) * 100).toFixed(0)}%`}
-                />
-                <StatCard
-                  title="Avg Rating"
-                  value={`${stats.averageRating} ⭐`}
-                  icon={Star}
-                  color="cyan"
-                  subtitle="Out of 5.0"
-                />
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Analytics Deep Dive View (When Analytics Tab is selected) */}
-        {activeTab === 'analytics' && history.length > 0 && (
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Sentiment breakdown card */}
-            <div className="rounded-2xl border border-white/10 bg-[#111827]/80 p-5 backdrop-blur-xl">
-              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-purple-400" />
-                Sentiment Distribution
-              </h3>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-xs font-medium mb-1 text-emerald-400">
-                    <span>Positive</span>
-                    <span>{stats.positiveReviews} ({((stats.positiveReviews / stats.totalReviews) * 100).toFixed(0)}%)</span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                      style={{ width: `${(stats.positiveReviews / stats.totalReviews) * 100}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-medium mb-1 text-amber-400">
-                    <span>Neutral</span>
-                    <span>{stats.neutralReviews} ({((stats.neutralReviews / stats.totalReviews) * 100).toFixed(0)}%)</span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                    <div
-                      className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                      style={{ width: `${(stats.neutralReviews / stats.totalReviews) * 100}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-medium mb-1 text-rose-400">
-                    <span>Negative</span>
-                    <span>{stats.negativeReviews} ({((stats.negativeReviews / stats.totalReviews) * 100).toFixed(0)}%)</span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                    <div
-                      className="h-full bg-rose-500 rounded-full transition-all duration-500"
-                      style={{ width: `${(stats.negativeReviews / stats.totalReviews) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Quality & Anti-Hallucination Guarantees */}
-            <div className="rounded-2xl border border-white/10 bg-[#111827]/80 p-5 backdrop-blur-xl flex flex-col justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-cyan-400" />
-                  Structured AI Extraction Engine
-                </h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Every review analysis executes with strict Pydantic model schemas over Google Gemini API, ensuring zero hallucinated features and 100% compliant JSON responses.
+              <div className="rounded-2xl border border-dashed border-slate-800 p-12 text-center space-y-2">
+                <Package className="h-8 w-8 text-slate-600 mx-auto" />
+                <p className="text-sm font-semibold text-slate-300">Enter a product name above to analyze its reviews.</p>
+                <p className="text-xs text-slate-500">
+                  Select from popular products like "Electric Toothbrush" or "Stainless Steel Blender".
                 </p>
               </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3 pt-3 border-t border-slate-800 text-xs">
-                <div className="flex items-center gap-2 text-slate-300">
-                  <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Strict Rating (1-5)</span>
-                </div>
-                <div className="flex items-center gap-2 text-slate-300">
-                  <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Anti-Hallucination Guard</span>
-                </div>
-                <div className="flex items-center gap-2 text-slate-300">
-                  <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Evidence-only Pros/Cons</span>
-                </div>
-                <div className="flex items-center gap-2 text-slate-300">
-                  <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Supabase Cloud Sync</span>
-                </div>
-              </div>
-            </div>
-          </section>
+            )}
+          </div>
         )}
 
-        {/* Dashboard Section 2: Review Input */}
-        {(activeTab === 'dashboard' || activeTab === 'analyze') && (
-          <section className="space-y-6">
+        {/* TAB 2: DATASET EXPLORER */}
+        {activeTab === 'dataset' && (
+          <div className="space-y-6">
+            <DatasetExplorer />
+          </div>
+        )}
+
+        {/* TAB 3: LIVE CUSTOM REVIEW ANALYZER */}
+        {activeTab === 'live_analyzer' && (
+          <div className="space-y-6">
+            <div className="space-y-1">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-400" />
+                Live Custom Review Analyzer
+              </h2>
+              <p className="text-xs text-slate-400">
+                Paste any unstructured customer feedback to extract structured sentiment, 1-5 star ratings, pros, cons, and summary using Gemini AI.
+              </p>
+            </div>
+
+            {!isSupabaseConfigured && (
+              <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-amber-200 text-xs" role="status">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+                <div>
+                  <strong>Supabase persistence is not configured.</strong>{' '}
+                  {supabaseConfigurationError || 'Set the frontend Supabase environment variables to save analyses to the reviews table.'}{' '}
+                  Until then, new analyses are stored only in this browser&apos;s local history.
+                </div>
+              </div>
+            )}
+
             <ReviewInput
-              onAnalyze={handleAnalyze}
-              isLoading={isLoading}
-              errorMessage={errorMessage}
-              onClearError={() => setErrorMessage(null)}
+              onAnalyze={handleAnalyzeLive}
+              isLoading={isLoadingLive}
+              errorMessage={liveErrorMessage}
+              onClearError={() => setLiveErrorMessage(null)}
             />
 
-            {/* Loading Indicator */}
-            {isLoading && <LoadingState message="Analyzing review with Gemini AI..." />}
+            {isLoadingLive && <LoadingState message="Analyzing review with Gemini AI..." />}
 
-            {/* Current Analysis Result */}
-            {currentAnalysis && !isLoading && (
+            {currentAnalysis && !isLoadingLive && (
               <div ref={analysisRef} className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-purple-400 font-mono flex items-center gap-1.5">
                     <Sparkles className="h-3.5 w-3.5" />
-                    Latest Analysis Result
+                    Analysis Assessment
                   </h3>
                 </div>
                 <AnalysisResult
@@ -464,28 +418,37 @@ export const Dashboard: React.FC = () => {
                 />
               </div>
             )}
-          </section>
+          </div>
         )}
 
-        {/* Dashboard Section 3: History */}
-        {(activeTab === 'dashboard' || activeTab === 'history') && (
-          <section>
+        {/* TAB 4: AI EVALUATION & BENCHMARKING */}
+        {activeTab === 'evaluation' && (
+          <div className="space-y-6">
+            <EvaluationDashboard />
+          </div>
+        )}
+
+        {/* TAB 5: USER REVIEW HISTORY */}
+        {activeTab === 'history' && (
+          <div className="space-y-6">
             <ReviewHistory
               history={history}
               onSelectReview={handleSelectHistoryItem}
               onDeleteReview={handleDeleteReview}
               onClearHistory={handleClearHistory}
             />
-          </section>
+          </div>
         )}
       </main>
 
       {/* Footer */}
       <footer className="mt-16 border-t border-slate-800/80 pt-8 text-center text-xs text-slate-400">
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <span>Product Review Analyzer • AI-Powered Feedback Intelligence</span>
+          <span className="font-mono font-bold text-slate-300">REVIEWIQ</span>
           <span className="hidden sm:inline text-slate-700">•</span>
-          <span>FastAPI + Pydantic + Google Gemini + Supabase + React</span>
+          <span>4,000,000 Real Review Dataset Engine</span>
+          <span className="hidden sm:inline text-slate-700">•</span>
+          <span>Source: ReviewIQ Product Review Dataset</span>
         </div>
       </footer>
     </div>
