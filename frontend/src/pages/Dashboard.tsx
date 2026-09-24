@@ -149,13 +149,21 @@ export const Dashboard: React.FC = () => {
 
   // History handlers
   const handleDeleteReview = async (id: string) => {
-    await deleteReviewById(id);
-    setHistory((prev) => prev.filter((item) => item.id !== id));
+    try {
+      await deleteReviewById(id);
+      setHistory((prev) => prev.filter((item) => item.id !== id));
+    } catch (err) {
+      console.error('Failed to delete review:', err);
+    }
   };
 
   const handleClearHistory = async () => {
-    await clearAllReviews();
-    setHistory([]);
+    try {
+      await clearAllReviews();
+      setHistory([]);
+    } catch (err) {
+      console.error('Failed to clear history:', err);
+    }
   };
 
   const handleSelectHistoryItem = (item: ReviewHistoryItem) => {

@@ -1,4 +1,11 @@
-import { PointEvidence, RatingSource, ReviewAnalysis, ReviewHistoryItem } from '../types/review';
+import {
+  AspectSentiment,
+  PointEvidence,
+  RatingSource,
+  ReviewAnalysis,
+  ReviewHistoryItem,
+  SentimentType,
+} from '../types/review';
 import {
   supabase,
   isSupabaseConfigured,
@@ -21,6 +28,7 @@ type ReviewsTableRow = {
   rating: number | null;
   pros: unknown;
   cons: unknown;
+  aspects?: unknown;
   summary: string;
   created_at: string;
   rating_source?: string | null;
@@ -160,6 +168,36 @@ const parsePointEvidenceList = (value: unknown): PointEvidence[] => {
   });
 };
 
+const isSentiment = (value: unknown): value is SentimentType =>
+  value === 'positive' || value === 'negative' || value === 'neutral' || value === 'mixed';
+
+const isAspectSentiment = (item: unknown): item is AspectSentiment =>
+  typeof item === 'object' &&
+  item !== null &&
+  typeof (item as AspectSentiment).aspect === 'string' &&
+  isSentiment((item as AspectSentiment).sentiment) &&
+  typeof (item as AspectSentiment).evidence === 'string';
+
+/**
+ * Deserialize AspectSentiment[] from JSONB / JSON string / legacy rows.
+ * Returns [] only when the value is missing or not a valid aspect list.
+ */
+const parseAspects = (value: unknown): AspectSentiment[] => {
+  let parsedValue: unknown = value;
+
+  if (typeof value === 'string') {
+    try {
+      parsedValue = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(parsedValue)) return [];
+
+  return parsedValue.filter(isAspectSentiment);
+};
+
 const deriveRatingSource = (
   row: Pick<ReviewsTableRow, 'rating' | 'rating_source'>
 ): RatingSource => {
@@ -198,16 +236,7 @@ const normalizeStoredAnalysis = (value: unknown): ReviewAnalysis => {
           ? 'not_found'
           : 'inferred',
     summary: typeof raw.summary === 'string' ? raw.summary : '',
-    aspects: Array.isArray(raw.aspects)
-      ? raw.aspects.filter(
-          (aspect): aspect is ReviewAnalysis['aspects'][number] =>
-            typeof aspect === 'object' &&
-            aspect !== null &&
-            typeof (aspect as { aspect?: unknown }).aspect === 'string' &&
-            typeof (aspect as { evidence?: unknown }).evidence === 'string' &&
-            'sentiment' in aspect
-        )
-      : [],
+    aspects: parseAspects(raw.aspects),
     pros: parsePointEvidenceList(raw.pros),
     cons: parsePointEvidenceList(raw.cons),
   };
@@ -257,7 +286,7 @@ const formatReviewRow = (row: ReviewsTableRow): ReviewHistoryItem => ({
     rating: row.rating ?? null,
     rating_source: deriveRatingSource(row),
     summary: row.summary,
-    aspects: [],
+    aspects: parseAspects(row.aspects),
     pros: parsePointEvidenceList(row.pros),
     cons: parsePointEvidenceList(row.cons),
   },
@@ -325,15 +354,19 @@ export async function saveReviewAnalysis(
       review_text: reviewText,
       sentiment: analysis.sentiment,
       rating: analysis.rating,
+      rating_source: analysis.rating_source,
       pros: analysis.pros,
       cons: analysis.cons,
+      aspects: analysis.aspects,
       summary: analysis.summary,
     };
 
     const { data, error } = await client
       .from('reviews')
       .insert(insertPayload)
-      .select('id, review_text, sentiment, rating, pros, cons, summary, created_at')
+      .select(
+        'id, review_text, sentiment, rating, rating_source, pros, cons, aspects, summary, created_at'
+      )
       .single();
 
     if (error) {
@@ -349,18 +382,24 @@ export async function saveReviewAnalysis(
       });
     }
 
+    const returnedRating =
+      data.rating !== undefined ? data.rating : analysis.rating;
+    const returnedRatingSource = (data as { rating_source?: string | null })
+      .rating_source;
+    const returnedAspects = (data as { aspects?: unknown }).aspects;
+
     const savedReview: ReviewHistoryItem = {
       id: data.id,
       reviewText: data.review_text ?? reviewText,
       analysis: {
         sentiment: data.sentiment ?? analysis.sentiment,
-        rating: data.rating !== undefined ? data.rating : analysis.rating,
-        rating_source: deriveRatingSource({
-          rating: data.rating !== undefined ? data.rating : analysis.rating,
-          rating_source:
-            (data as { rating_source?: string | null }).rating_source ??
-            analysis.rating_source,
-        }),
+        rating: returnedRating,
+        rating_source:
+          returnedRatingSource === 'explicit' ||
+          returnedRatingSource === 'inferred' ||
+          returnedRatingSource === 'not_found'
+            ? returnedRatingSource
+            : analysis.rating_source,
         pros:
           data.pros === undefined
             ? analysis.pros
@@ -369,8 +408,11 @@ export async function saveReviewAnalysis(
           data.cons === undefined
             ? analysis.cons
             : parsePointEvidenceList(data.cons),
+        aspects:
+          returnedAspects === undefined
+            ? analysis.aspects
+            : parseAspects(returnedAspects),
         summary: data.summary ?? analysis.summary,
-        aspects: analysis.aspects,
       },
       createdAt: data.created_at ?? new Date().toISOString(),
     };
@@ -388,13 +430,21 @@ export async function saveReviewAnalysis(
 
 /**
  * Delete a review from Supabase & localStorage.
+ * Supabase failures are inspected and thrown (not treated as success);
+ * localStorage is only updated when the cloud delete succeeds or Supabase is unconfigured.
  */
 export async function deleteReviewById(id: string): Promise<void> {
   if (isSupabaseConfigured && supabase) {
     try {
-      await supabase.from('reviews').delete().eq('id', id);
+      const { error } = await supabase.from('reviews').delete().eq('id', id);
+      if (error) {
+        throw createSupabasePersistenceError('delete', error);
+      }
     } catch (err) {
-      console.warn('Supabase delete exception:', err);
+      if (err instanceof SupabasePersistenceError) {
+        throw err;
+      }
+      throw createSupabasePersistenceError('delete exception', err);
     }
   }
 
@@ -405,13 +455,24 @@ export async function deleteReviewById(id: string): Promise<void> {
 
 /**
  * Clear all history from Supabase & localStorage.
+ * Supabase failures are inspected and thrown (not treated as success);
+ * localStorage is only cleared when the cloud delete succeeds or Supabase is unconfigured.
  */
 export async function clearAllReviews(): Promise<void> {
   if (isSupabaseConfigured && supabase) {
     try {
-      await supabase.from('reviews').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      const { error } = await supabase
+        .from('reviews')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      if (error) {
+        throw createSupabasePersistenceError('clear', error);
+      }
     } catch (err) {
-      console.warn('Supabase clear exception:', err);
+      if (err instanceof SupabasePersistenceError) {
+        throw err;
+      }
+      throw createSupabasePersistenceError('clear exception', err);
     }
   }
 
