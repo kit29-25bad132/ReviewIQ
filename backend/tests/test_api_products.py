@@ -258,3 +258,26 @@ def test_product_reviews_not_ready_503():
         resp = client.get("/api/products/9640962/reviews")
     assert resp.status_code == 503
     assert "detail" in resp.json()
+
+
+def test_product_analysis_unexpected_exception_returns_safe_500():
+    """Unexpected product-service failure reaches the global handler safely."""
+    secret = "PostgresError: password authentication failed for user=reviewiq_db SECRET=sk-live-abc123"
+    with patch.object(ecommerce_db_service, "is_ready", return_value=True), patch.object(
+        ecommerce_db_service,
+        "get_product_analysis",
+        side_effect=RuntimeError(secret),
+    ):
+        resp = client.get("/api/products/9640962/analysis")
+
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body == {
+        "success": False,
+        "data": None,
+        "error": "An unexpected internal server error occurred.",
+    }
+    assert secret not in resp.text
+    assert "sk-live-abc123" not in resp.text
+    assert "PostgresError" not in resp.text
+    assert "Traceback" not in resp.text

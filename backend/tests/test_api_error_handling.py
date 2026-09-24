@@ -192,3 +192,121 @@ def test_grounding_filters_fabricated_evidence_via_http(monkeypatch):
     for pro in body["data"]["pros"]:
         assert is_evidence_supported(review, pro["evidence"])
     assert attempts
+
+
+def test_global_exception_handler_returns_safe_envelope():
+    """Unhandled exception outside route try/except hits main.global_exception_handler."""
+    secret = "INTERNAL_db_password=Hunter2xyz stack=Frame"
+    with patch.object(
+        analyzer_service,
+        "is_configured",
+        side_effect=RuntimeError(secret),
+    ):
+        resp = client.get("/health")
+
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body == {
+        "success": False,
+        "data": None,
+        "error": "An unexpected internal server error occurred.",
+    }
+    assert secret not in resp.text
+    assert "Traceback" not in resp.text
+    assert "Hunter2" not in resp.text
+    assert "stack=" not in resp.text
+
+
+def _install_scripted_empty_then_valid_sdk(monkeypatch, attempts, script):
+    """Fake SDK: each generate_content call pops the next script entry (str or '')."""
+    import sys
+    from unittest import mock
+
+    class _Resp:
+        def __init__(self, text: str):
+            self.text = text
+
+    class _ScriptedModels:
+        def __init__(self):
+            self._script = list(script)
+
+        def generate_content(self, model, contents, config):
+            attempts.append(model)
+            idx = len(attempts) - 1
+            step = self._script[idx] if idx < len(self._script) else self._script[-1]
+            return _Resp(step)
+
+    class _ScriptedClient:
+        models = _ScriptedModels()
+
+    fake_genai = mock.MagicMock()
+    fake_genai.Client = lambda api_key: _ScriptedClient()
+    fake_types = mock.MagicMock()
+    monkeypatch.setitem(sys.modules, "google", mock.MagicMock(genai=fake_genai))
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+
+
+def test_empty_gemini_response_all_models_safe_http_error(monkeypatch):
+    """All models return empty text → no success payload, safe 500, no raw internals."""
+    import json
+
+    from services.ai_analyzer import DEFAULT_MODEL_NAME, FALLBACK_MODEL_NAMES
+    from tests.test_model_configuration import _FakeResponse, _install_fake_sdk
+
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-a-real-secret")
+    monkeypatch.setattr(_FakeResponse, "text", "")
+    attempts: list = []
+    _install_fake_sdk(monkeypatch, attempts)
+
+    resp = _post("The battery lasts all day.")
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body["detail"] == "AI analysis failed. Please try again."
+    # Empty output counts as a failed attempt for every configured model.
+    assert attempts == [DEFAULT_MODEL_NAME, *FALLBACK_MODEL_NAMES]
+    assert "success" not in body or body.get("success") is not True
+    assert "Empty response" not in resp.text
+    assert "stack" not in resp.text.lower()
+    # Never a false success envelope with analysis data
+    assert "sentiment" not in body
+
+
+def test_empty_then_valid_gemini_response_falls_back_via_http(monkeypatch):
+    """First model empty → fallback model succeeds; HTTP returns 200 analysis."""
+    import json
+
+    from services.ai_analyzer import DEFAULT_MODEL_NAME, FALLBACK_MODEL_NAMES
+
+    valid = json.dumps(
+        {
+            "sentiment": "positive",
+            "rating": 5,
+            "rating_source": "inferred",
+            "summary": "Strong battery life.",
+            "aspects": [
+                {
+                    "aspect": "battery",
+                    "sentiment": "positive",
+                    "evidence": "The battery lasts all day",
+                }
+            ],
+            "pros": [
+                {"point": "All-day battery", "evidence": "The battery lasts all day"}
+            ],
+            "cons": [],
+        }
+    )
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-a-real-secret")
+    attempts: list = []
+    _install_scripted_empty_then_valid_sdk(monkeypatch, attempts, ["", valid])
+
+    resp = _post("The battery lasts all day.")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assert body["data"]["sentiment"] == "positive"
+    assert body["data"]["rating"] == 5
+    assert attempts == [DEFAULT_MODEL_NAME, FALLBACK_MODEL_NAMES[0]]
