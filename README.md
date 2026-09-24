@@ -13,7 +13,7 @@
 - ⭐ **Accurate 1–5 Star Rating**: Explicitly extracted or intelligently inferred from sentiment and evidence.
 - 🎨 **Dark Futuristic UI**: Built with React, Tailwind CSS, Lucide icons, glassmorphism cards, and gradient accents.
 - 📊 **Dynamic Dashboard Analytics**: Real-time calculated metrics (Total Reviews, Positive, Negative, Neutral, Average Rating) based on actual processed data.
-- 📜 **Persistent Review History**: Client-side storage (`localStorage`) with keyword search, sentiment filtering, and detailed review inspector.
+- 📜 **Persistent Review History**: Supabase (when configured) with local `localStorage` fallback, keyword search, sentiment filtering, and detailed review inspector.
 - 🧪 **"Try Sample Review"**: Instant one-click test with representative review text.
 - 🔒 **Secure API Architecture**: Never exposes API keys in frontend code; backend strictly checks payloads and environment variables.
 - 📱 **Fully Responsive**: Optimized for desktop, laptop, tablet, and mobile screens.
@@ -26,7 +26,7 @@
 | :--- | :--- |
 | **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, Axios, Lucide React, Supabase JS |
 | **Backend** | Python 3.10+, FastAPI, Uvicorn, Pydantic v2, Python-Dotenv |
-| **AI Provider** | Google Gemini API (`gemini-2.5-flash` / `gemini-1.5-flash` with structured outputs) |
+| **AI Provider** | Google Gemini API (`gemini-3.8-flash` primary + verified Gemini fallback pool via LangGraph structured outputs) |
 | **Database** | Supabase (PostgreSQL) with automatic fallback & local caching |
 
 ---
@@ -168,8 +168,8 @@ npm run dev
 create table if not exists public.reviews (
     id uuid primary key default gen_random_uuid(),
     review_text text not null,
-    sentiment text not null check (sentiment in ('positive', 'negative', 'neutral')),
-    rating integer not null check (rating >= 1 and rating <= 5),
+    sentiment text not null check (sentiment in ('positive', 'negative', 'neutral', 'mixed')),
+    rating integer check (rating is null or (rating >= 1 and rating <= 5)),
     pros jsonb not null default '[]'::jsonb,
     cons jsonb not null default '[]'::jsonb,
     summary text not null,
@@ -217,21 +217,44 @@ create policy "Allow public delete access" on public.reviews for delete to anon,
 {
   "success": true,
   "data": {
-    "sentiment": "positive",
+    "sentiment": "mixed",
     "rating": 4,
+    "rating_source": "explicit",
+    "summary": "The customer praises the camera, display, and battery life but notes heating while gaming.",
+    "aspects": [
+      {
+        "aspect": "camera",
+        "sentiment": "positive",
+        "evidence": "camera quality is excellent"
+      },
+      {
+        "aspect": "gaming thermals",
+        "sentiment": "negative",
+        "evidence": "the phone becomes hot while gaming"
+      }
+    ],
     "pros": [
-      "Excellent camera quality",
-      "Beautiful display",
-      "Good battery life for normal use"
+      {
+        "point": "Excellent camera quality",
+        "evidence": "camera quality is excellent"
+      },
+      {
+        "point": "Beautiful display",
+        "evidence": "the display is beautiful"
+      }
     ],
     "cons": [
-      "Phone becomes hot while gaming"
-    ],
-    "summary": "The customer is satisfied with the phone's strong camera, display, and battery life, though it experiences heating issues during gaming."
+      {
+        "point": "Heats up while gaming",
+        "evidence": "the phone becomes hot while gaming"
+      }
+    ]
   },
   "error": null
 }
 ```
+
+`sentiment` is one of `positive | negative | neutral | mixed`. `rating` is an integer 1–5 or `null` (with `rating_source = "not_found"`). `rating_source` is `explicit | inferred | not_found`. `pros`/`cons` are arrays of `{ "point", "evidence" }` objects.
 
 ---
 
@@ -251,8 +274,8 @@ Expected result:
 
 ## 🛡️ Security & Quality Best Practices
 
-1. **Strict Model Validation**: AI outputs are parsed directly into Pydantic models with constrained types (`Literal["positive", "negative", "neutral"]` and `Field(ge=1, le=5)`).
-2. **No Secret Leakage**: API keys remain strictly in backend memory and are never sent to the browser or returned in error traces.
+1. **Strict Model Validation**: AI outputs are parsed directly into Pydantic models with constrained types (`Literal["positive", "negative", "neutral", "mixed"]`, `rating_source` Literal, nullable `Field(ge=1, le=5)` rating, and `PointEvidence` objects).
+2. **No Secret Leakage**: API keys remain strictly in backend memory and are never sent to the browser or returned in error traces. API error responses use safe generic messages (provider/parser details stay in server logs).
 3. **No Unsafe Code Execution**: Zero usage of `eval()` or unsanitized `dangerouslySetInnerHTML`.
 4. **CORS Hardening**: CORS origins are restricted to configured client hosts.
 
@@ -261,8 +284,8 @@ Expected result:
 ## 🔮 Roadmap / Future Extensions
 
 - [ ] **V2 - Bulk CSV Review Upload**: Upload `reviews.csv` with multiple columns and process batch reviews with progress tracking.
-- [ ] **V3 - Advanced Analytics**: Word frequency cloud for pros/cons, rating distribution histograms, and multi-product comparisons.
-- [ ] **V4 - Database Persistence**: Supabase / PostgreSQL schema integration with user sessions.
+- [x] **V3 - Advanced Analytics**: Product-level analytics, rating distributions, and pros/cons analysis from the 4M dataset.
+- [x] **V4 - Database Persistence**: Supabase / PostgreSQL schema with local `localStorage` fallback.
 - [ ] **V5 - User Authentication**: Google OAuth and email/password sign-in.
 - [ ] **V6 - Data Export**: Export reports to CSV, Excel, and PDF formats.
 

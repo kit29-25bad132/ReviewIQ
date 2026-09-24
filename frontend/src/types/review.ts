@@ -1,11 +1,26 @@
-export type SentimentType = 'positive' | 'negative' | 'neutral';
+export type SentimentType = 'positive' | 'negative' | 'neutral' | 'mixed';
+
+export type RatingSource = 'explicit' | 'inferred' | 'not_found';
+
+export interface PointEvidence {
+  point: string;
+  evidence: string;
+}
+
+export interface AspectSentiment {
+  aspect: string;
+  sentiment: SentimentType;
+  evidence: string;
+}
 
 export interface ReviewAnalysis {
   sentiment: SentimentType;
-  rating: number; // 1 to 5
-  pros: string[];
-  cons: string[];
+  rating: number | null; // integer 1–5, or null when rating_source is not_found
+  rating_source: RatingSource;
   summary: string;
+  aspects: AspectSentiment[];
+  pros: PointEvidence[];
+  cons: PointEvidence[];
 }
 
 export interface AnalyzeReviewResponse {

@@ -27,10 +27,16 @@ async def analyze_review_endpoint(payload: ReviewRequest):
             error=None
         )
     except ValueError as val_err:
-        logger.warning(f"Validation or configuration error: {val_err}")
+        # Log the full detail server-side; never echo parser/model-output text
+        # (Pydantic ValidationError is a ValueError subclass and may embed raw output).
+        logger.warning(f"Validation or configuration error: {val_err}", exc_info=True)
+        if "gemini api key" in str(val_err).lower():
+            detail = "Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env"
+        else:
+            detail = "Review analysis failed validation. Please try again."
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(val_err)
+            detail=detail
         )
     except Exception as exc:
         logger.error(f"Unexpected error during review analysis: {exc}", exc_info=True)
@@ -43,7 +49,7 @@ async def analyze_review_endpoint(payload: ReviewRequest):
         elif "timeout" in exc_str or "connection" in exc_str or "unavailable" in exc_str:
             error_msg = "Connection to AI service timed out or unavailable. Please verify your network connection."
         else:
-            error_msg = f"AI analysis error: {str(exc)}"
+            error_msg = "AI analysis failed. Please try again."
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

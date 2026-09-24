@@ -1,4 +1,4 @@
-import { ReviewAnalysis, ReviewHistoryItem } from '../types/review';
+import { PointEvidence, RatingSource, ReviewAnalysis, ReviewHistoryItem } from '../types/review';
 import {
   supabase,
   isSupabaseConfigured,
@@ -18,11 +18,12 @@ type ReviewsTableRow = {
   id: string;
   review_text: string;
   sentiment: ReviewAnalysis['sentiment'];
-  rating: number;
+  rating: number | null;
   pros: unknown;
   cons: unknown;
   summary: string;
   created_at: string;
+  rating_source?: string | null;
 };
 
 const normalizeSupabaseError = (error: unknown): SupabaseErrorFields => {
@@ -92,11 +93,16 @@ const createSupabasePersistenceError = (
   error: unknown
 ): SupabasePersistenceError => new SupabasePersistenceError(operation, logSupabaseError(operation, error));
 
-// Read from LocalStorage cache
+// Read from LocalStorage cache (normalizes legacy rows to the current contract)
 export const getLocalReviews = (): ReviewHistoryItem[] => {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(normalizeHistoryItem)
+      .filter((item): item is ReviewHistoryItem => item !== null);
   } catch {
     return [];
   }
@@ -111,7 +117,18 @@ export const setLocalReviews = (items: ReviewHistoryItem[]): void => {
   }
 };
 
-const parseReviewList = (value: unknown): string[] => {
+const isPointEvidence = (item: unknown): item is PointEvidence =>
+  typeof item === 'object' &&
+  item !== null &&
+  typeof (item as PointEvidence).point === 'string' &&
+  typeof (item as PointEvidence).evidence === 'string';
+
+/**
+ * Deserialize pros/cons while preserving PointEvidence {point, evidence}.
+ * Legacy plain-string rows are converted to {point, evidence: ''} rather than
+ * dropped; evidence stays a string (never re-flattened into a single string).
+ */
+const parsePointEvidenceList = (value: unknown): PointEvidence[] => {
   let parsedValue: unknown = value;
 
   if (typeof value === 'string') {
@@ -124,7 +141,89 @@ const parseReviewList = (value: unknown): string[] => {
 
   if (!Array.isArray(parsedValue)) return [];
 
-  return parsedValue.filter((item): item is string => typeof item === 'string');
+  return parsedValue.flatMap((item): PointEvidence[] => {
+    if (typeof item === 'string') {
+      return item.trim() ? [{ point: item, evidence: '' }] : [];
+    }
+    if (isPointEvidence(item)) {
+      return [{ point: item.point, evidence: item.evidence }];
+    }
+    if (
+      typeof item === 'object' &&
+      item !== null &&
+      typeof (item as PointEvidence).point === 'string'
+    ) {
+      const partial = item as Partial<PointEvidence>;
+      return [{ point: partial.point as string, evidence: '' }];
+    }
+    return [];
+  });
+};
+
+const deriveRatingSource = (
+  row: Pick<ReviewsTableRow, 'rating' | 'rating_source'>
+): RatingSource => {
+  if (typeof row.rating_source === 'string') {
+    const source = row.rating_source as RatingSource;
+    if (source === 'explicit' || source === 'inferred' || source === 'not_found') {
+      return source;
+    }
+  }
+  return row.rating === null ? 'not_found' : 'inferred';
+};
+
+const normalizeSentiment = (value: unknown): ReviewAnalysis['sentiment'] =>
+  value === 'positive' || value === 'negative' || value === 'neutral' || value === 'mixed'
+    ? value
+    : 'neutral';
+
+const normalizeRating = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5
+    ? value
+    : null;
+
+/** Coerce older localStorage rows (string pros/cons, missing new fields) to the current contract. */
+const normalizeStoredAnalysis = (value: unknown): ReviewAnalysis => {
+  const raw = (typeof value === 'object' && value !== null ? value : {}) as Partial<ReviewAnalysis>;
+  const rating = normalizeRating(raw.rating);
+  return {
+    sentiment: normalizeSentiment(raw.sentiment),
+    rating,
+    rating_source:
+      raw.rating_source === 'explicit' ||
+      raw.rating_source === 'inferred' ||
+      raw.rating_source === 'not_found'
+        ? raw.rating_source
+        : rating === null
+          ? 'not_found'
+          : 'inferred',
+    summary: typeof raw.summary === 'string' ? raw.summary : '',
+    aspects: Array.isArray(raw.aspects)
+      ? raw.aspects.filter(
+          (aspect): aspect is ReviewAnalysis['aspects'][number] =>
+            typeof aspect === 'object' &&
+            aspect !== null &&
+            typeof (aspect as { aspect?: unknown }).aspect === 'string' &&
+            typeof (aspect as { evidence?: unknown }).evidence === 'string' &&
+            'sentiment' in aspect
+        )
+      : [],
+    pros: parsePointEvidenceList(raw.pros),
+    cons: parsePointEvidenceList(raw.cons),
+  };
+};
+
+const normalizeHistoryItem = (value: unknown): ReviewHistoryItem | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as Partial<ReviewHistoryItem>;
+  if (typeof raw.id !== 'string' || typeof raw.reviewText !== 'string') return null;
+  return {
+    id: raw.id,
+    reviewText: raw.reviewText,
+    analysis: normalizeStoredAnalysis(raw.analysis),
+    createdAt:
+      typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+  };
 };
 
 const createLocalReview = (
@@ -155,10 +254,12 @@ const formatReviewRow = (row: ReviewsTableRow): ReviewHistoryItem => ({
   reviewText: row.review_text,
   analysis: {
     sentiment: row.sentiment,
-    rating: row.rating,
-    pros: parseReviewList(row.pros),
-    cons: parseReviewList(row.cons),
+    rating: row.rating ?? null,
+    rating_source: deriveRatingSource(row),
     summary: row.summary,
+    aspects: [],
+    pros: parsePointEvidenceList(row.pros),
+    cons: parsePointEvidenceList(row.cons),
   },
   createdAt: row.created_at,
 });
@@ -253,10 +354,23 @@ export async function saveReviewAnalysis(
       reviewText: data.review_text ?? reviewText,
       analysis: {
         sentiment: data.sentiment ?? analysis.sentiment,
-        rating: data.rating ?? analysis.rating,
-        pros: data.pros === undefined ? analysis.pros : parseReviewList(data.pros),
-        cons: data.cons === undefined ? analysis.cons : parseReviewList(data.cons),
+        rating: data.rating !== undefined ? data.rating : analysis.rating,
+        rating_source: deriveRatingSource({
+          rating: data.rating !== undefined ? data.rating : analysis.rating,
+          rating_source:
+            (data as { rating_source?: string | null }).rating_source ??
+            analysis.rating_source,
+        }),
+        pros:
+          data.pros === undefined
+            ? analysis.pros
+            : parsePointEvidenceList(data.pros),
+        cons:
+          data.cons === undefined
+            ? analysis.cons
+            : parsePointEvidenceList(data.cons),
         summary: data.summary ?? analysis.summary,
+        aspects: analysis.aspects,
       },
       createdAt: data.created_at ?? new Date().toISOString(),
     };

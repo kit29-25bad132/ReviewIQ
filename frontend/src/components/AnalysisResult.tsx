@@ -10,13 +10,53 @@ import {
   ThumbsUp,
   ThumbsDown,
   MinusCircle,
+  Scale,
 } from 'lucide-react';
-import { ReviewAnalysis } from '../types/review';
+import { PointEvidence, ReviewAnalysis } from '../types/review';
 
 interface AnalysisResultProps {
   analysis: ReviewAnalysis;
   originalText?: string;
 }
+
+const renderPointEvidenceList = (
+  items: PointEvidence[],
+  tone: 'emerald' | 'rose'
+) => {
+  const isPros = tone === 'emerald';
+  return (
+    <ul className="space-y-2.5 flex-1">
+      {items.map((item, index) => (
+        <li
+          key={index}
+          className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-xs sm:text-sm text-slate-200 transition-all ${
+            isPros
+              ? 'border-emerald-500/15 bg-emerald-900/20 hover:border-emerald-500/30'
+              : 'border-rose-500/15 bg-rose-900/20 hover:border-rose-500/30'
+          }`}
+        >
+          <span
+            className={`font-bold shrink-0 ${isPros ? 'text-emerald-400' : 'text-rose-400'}`}
+          >
+            {isPros ? '✓' : '✗'}
+          </span>
+          <span className="flex flex-col gap-1 min-w-0">
+            <span>{item.point}</span>
+            {item.evidence && (
+              <span
+                className={`text-[11px] leading-snug italic ${
+                  isPros ? 'text-emerald-200/60' : 'text-rose-200/60'
+                }`}
+              >
+                Evidence: “{item.evidence}”
+              </span>
+            )}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+};
 
 export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   analysis,
@@ -54,6 +94,14 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
             <span className="capitalize">Negative Sentiment</span>
           </div>
         );
+      case 'mixed':
+        return (
+          <div className="inline-flex items-center gap-2 rounded-full border border-violet-500/30 bg-violet-500/10 px-3.5 py-1.5 text-sm font-semibold text-violet-300 shadow-[0_0_15px_rgba(139,92,246,0.2)]">
+            <span className="text-base leading-none">🟣</span>
+            <Scale className="h-4 w-4" />
+            <span className="capitalize">Mixed Sentiment</span>
+          </div>
+        );
       case 'neutral':
       default:
         return (
@@ -88,18 +136,46 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
     );
   };
 
+  const ratingSourceLabel = (source: ReviewAnalysis['rating_source']) => {
+    switch (source) {
+      case 'explicit':
+        return 'Explicit rating';
+      case 'inferred':
+        return 'Inferred rating';
+      case 'not_found':
+        return 'Rating not found';
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="relative overflow-hidden rounded-2xl border border-purple-500/30 bg-[#111827]/90 p-6 sm:p-7 backdrop-blur-xl shadow-glass transition-all duration-300">
       {/* Top action header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div className="flex flex-wrap items-center gap-3">
           {renderSentimentBadge()}
-          <div className="flex items-center gap-2.5 rounded-full border border-slate-700 bg-slate-800/80 px-3.5 py-1.5 text-sm">
-            {renderStars(analysis.rating)}
-            <span className="font-mono font-bold text-white">
-              {analysis.rating} / 5
-            </span>
-          </div>
+          {analysis.rating !== null ? (
+            <div className="flex items-center gap-2.5 rounded-full border border-slate-700 bg-slate-800/80 px-3.5 py-1.5 text-sm">
+              {renderStars(analysis.rating)}
+              <span className="font-mono font-bold text-white">
+                {analysis.rating} / 5
+              </span>
+              {ratingSourceLabel(analysis.rating_source) && (
+                <span className="text-[10px] uppercase tracking-wide text-slate-400 border-l border-slate-700 pl-2">
+                  {ratingSourceLabel(analysis.rating_source)}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/80 px-3.5 py-1.5 text-sm text-slate-400">
+              <Star className="h-4 w-4 text-slate-600" />
+              <span className="font-mono font-semibold">No rating</span>
+              <span className="text-[10px] uppercase tracking-wide border-l border-slate-700 pl-2">
+                {ratingSourceLabel(analysis.rating_source) ?? 'Rating not found'}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -153,17 +229,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           </div>
 
           {analysis.pros.length > 0 ? (
-            <ul className="space-y-2.5 flex-1">
-              {analysis.pros.map((pro, index) => (
-                <li
-                  key={index}
-                  className="flex items-start gap-2.5 rounded-lg border border-emerald-500/15 bg-emerald-900/20 p-2.5 text-xs sm:text-sm text-slate-200 transition-all hover:border-emerald-500/30"
-                >
-                  <span className="text-emerald-400 font-bold shrink-0">✓</span>
-                  <span>{pro}</span>
-                </li>
-              ))}
-            </ul>
+            renderPointEvidenceList(analysis.pros, 'emerald')
           ) : (
             <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-emerald-900/40 p-4 text-xs text-slate-400 italic">
               No clear pros mentioned in review
@@ -182,17 +248,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           </div>
 
           {analysis.cons.length > 0 ? (
-            <ul className="space-y-2.5 flex-1">
-              {analysis.cons.map((con, index) => (
-                <li
-                  key={index}
-                  className="flex items-start gap-2.5 rounded-lg border border-rose-500/15 bg-rose-900/20 p-2.5 text-xs sm:text-sm text-slate-200 transition-all hover:border-rose-500/30"
-                >
-                  <span className="text-rose-400 font-bold shrink-0">✗</span>
-                  <span>{con}</span>
-                </li>
-              ))}
-            </ul>
+            renderPointEvidenceList(analysis.cons, 'rose')
           ) : (
             <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-rose-900/40 p-4 text-xs text-slate-400 italic">
               No clear cons mentioned in review
@@ -200,6 +256,51 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
           )}
         </div>
       </div>
+
+      {/* Aspect sentiments (contract field; shown when present) */}
+      {analysis.aspects.length > 0 && (
+        <div className="mt-5 rounded-xl border border-cyan-500/20 bg-cyan-950/20 p-4 sm:p-5 backdrop-blur-sm">
+          <div className="flex items-center gap-2 text-cyan-300 font-semibold text-sm mb-2">
+            <FileText className="h-4 w-4 text-cyan-400" />
+            <span>Aspect Sentiments</span>
+            <span className="ml-auto rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs font-mono text-cyan-200">
+              {analysis.aspects.length}
+            </span>
+          </div>
+          <ul className="space-y-2">
+            {analysis.aspects.map((aspect, index) => (
+              <li
+                key={index}
+                className="rounded-lg border border-cyan-500/15 bg-cyan-900/20 p-2.5 text-xs sm:text-sm text-slate-200"
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-cyan-200 capitalize">
+                    {aspect.aspect}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                      aspect.sentiment === 'positive'
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : aspect.sentiment === 'negative'
+                          ? 'bg-rose-500/15 text-rose-300'
+                          : aspect.sentiment === 'mixed'
+                            ? 'bg-violet-500/15 text-violet-300'
+                            : 'bg-amber-500/15 text-amber-300'
+                    }`}
+                  >
+                    {aspect.sentiment}
+                  </span>
+                </div>
+                {aspect.evidence && (
+                  <p className="mt-1 text-[11px] italic text-slate-400">
+                    Evidence: “{aspect.evidence}”
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* AI Summary Section */}
       <div className="mt-5 rounded-xl border border-purple-500/20 bg-purple-950/20 p-4 sm:p-5 backdrop-blur-sm">

@@ -10,8 +10,8 @@ Covers:
 - Clear RuntimeError when the google-genai SDK is not installed.
 - GEMINI_MODEL is documented in backend/.env.example.
 
-Note: the legacy google-generativeai path was removed (ADR-003), so there is no
-legacy ordering to test.
+Note: the legacy google-generativeai path was removed (ADR-003 in
+docs/19_DECISIONS.md), so there is no legacy ordering to test.
 """
 
 import logging

@@ -26,17 +26,26 @@ export const ReviewHistory: React.FC<ReviewHistoryProps> = ({
   onClearHistory,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sentimentFilter, setSentimentFilter] = useState<'all' | 'positive' | 'negative' | 'neutral'>('all');
+  const [sentimentFilter, setSentimentFilter] = useState<
+    'all' | 'positive' | 'negative' | 'neutral' | 'mixed'
+  >('all');
   const [selectedModalItem, setSelectedModalItem] = useState<ReviewHistoryItem | null>(null);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
 
   // Filter history items
   const filteredHistory = history.filter((item) => {
+    const pointText = (entries: { point: string; evidence: string }[]) =>
+      entries.some(
+        (entry) =>
+          entry.point.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          entry.evidence.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+
     const matchesSearch =
       item.reviewText.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.analysis.summary.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.analysis.pros.some((p) => p.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      item.analysis.cons.some((c) => c.toLowerCase().includes(searchTerm.toLowerCase()));
+      pointText(item.analysis.pros) ||
+      pointText(item.analysis.cons);
 
     const matchesSentiment =
       sentimentFilter === 'all' || item.analysis.sentiment === sentimentFilter;
@@ -65,6 +74,8 @@ export const ReviewHistory: React.FC<ReviewHistoryProps> = ({
         return <span title="Positive">🟢</span>;
       case 'negative':
         return <span title="Negative">🔴</span>;
+      case 'mixed':
+        return <span title="Mixed">🟣</span>;
       case 'neutral':
       default:
         return <span title="Neutral">🟡</span>;
@@ -111,6 +122,7 @@ export const ReviewHistory: React.FC<ReviewHistoryProps> = ({
                 <option value="positive" className="bg-[#111827]">Positive</option>
                 <option value="neutral" className="bg-[#111827]">Neutral</option>
                 <option value="negative" className="bg-[#111827]">Negative</option>
+                <option value="mixed" className="bg-[#111827]">Mixed</option>
               </select>
             </div>
 
@@ -185,7 +197,9 @@ export const ReviewHistory: React.FC<ReviewHistoryProps> = ({
                   </span>
                   <span className="text-slate-600">•</span>
                   <span className="text-xs font-mono font-bold text-amber-400">
-                    {'★'.repeat(item.analysis.rating)}{'☆'.repeat(5 - item.analysis.rating)} ({item.analysis.rating}/5)
+                    {item.analysis.rating !== null
+                      ? `${'★'.repeat(item.analysis.rating)}${'☆'.repeat(5 - item.analysis.rating)} (${item.analysis.rating}/5)`
+                      : 'No rating'}
                   </span>
                   <span className="text-slate-600">•</span>
                   <span className="flex items-center gap-1 text-[11px] text-slate-400">

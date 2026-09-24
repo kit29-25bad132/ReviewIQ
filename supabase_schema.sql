@@ -8,8 +8,8 @@
 create table if not exists public.reviews (
     id uuid primary key default gen_random_uuid(),
     review_text text not null,
-    sentiment text not null check (sentiment in ('positive', 'negative', 'neutral')),
-    rating integer not null check (rating >= 1 and rating <= 5),
+    sentiment text not null check (sentiment in ('positive', 'negative', 'neutral', 'mixed')),
+    rating integer check (rating is null or (rating >= 1 and rating <= 5)),
     pros jsonb not null default '[]'::jsonb,
     cons jsonb not null default '[]'::jsonb,
     summary text not null,
