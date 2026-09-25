@@ -36,3 +36,14 @@ Future decisions must be added rather than silently changing the locked directio
 - **Reason:** One SDK reduces dependency drift, matches the pinned model/fallback verification work, and aligns with the locked “Gemini as the single V1 LLM provider” direction.
 - **Consequences:** `backend/requirements.txt` lists `google-genai` only; analyzer code imports `google.genai`; tests note that no legacy ordering remains to cover.
 - **Follow-up:** None. Revisit only if the provider SDK is retired upstream.
+
+## ADR-004 — Provider-neutral AI gateway and model registry
+- **Date:** 2026-09-25 (V2 foundation milestone)
+- **Status:** Accepted
+- **Decision makers:** Project team (V2 locked scope)
+- **Context:** V1 called the Gemini SDK directly from `services/ai_analyzer.py` and duplicated that SDK usage in `services/gemini_summary_service.py`. V2 must add multi-provider fallback and cost-aware routing without scattering provider details through the analysis pipeline.
+- **Decision:** Introduce a provider-neutral AI foundation under `services/ai/`: typed request/response contracts, an `AIProvider` interface, a `GeminiProvider` adapter, a model registry (`ModelSpec`/`ModelRegistry`), and an `AIGateway`. The analysis pipeline depends only on these abstractions. Model fallback order remains orchestrated by the existing LangGraph node, which now iterates a registry-owned model chain and generates through the gateway.
+- **Alternatives considered:** Keep direct SDK calls and add providers later; move model fallback inside the gateway/provider.
+- **Reason:** Keeps provider-specific logic in one place, preserves the existing LangGraph fallback and output/grounding contracts, and gives the next milestone (routing, RAG) stable seams without introducing fake providers or new dependencies.
+- **Consequences:** Provider SDK access lives only in `services/ai/providers/`; provider errors are normalized into `AIErrorType` categories and mapped to fixed user-safe API messages; the registry holds capability/quality/ordering metadata with cost and context-window left unset until verified values exist. No routing algorithm is implemented yet.
+- **Follow-up:** Cost-aware model routing and cross-provider fallback in later V2 milestones; populate verified cost/context metadata when available.

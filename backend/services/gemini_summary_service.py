@@ -6,6 +6,9 @@ from typing import List, Optional
 from dotenv import load_dotenv
 
 from models.ecommerce import AISummaryResponse
+from services.ai.contracts import AIGenerationRequest
+from services.ai.errors import AIProviderError
+from services.ai.registry import GEMINI_PROVIDER, TASK_DATASET_SUMMARY
 from services.ai_analyzer import _build_model_list, analyzer_service
 
 load_dotenv()
@@ -73,34 +76,43 @@ Synthesize these dataset reviews according to your system instructions into stru
             )
 
     def _generate_summary(self, prompt: str) -> AISummaryResponse:
-        from google import genai
-        from google.genai import types
-
-        api_key = analyzer_service.api_key
-        client = genai.Client(api_key=api_key)
-
-        # Same verified Gemini-only pool as the analyzer (max 5, GEMINI_MODEL first).
+        # Same verified Gemini-only model pool as the analyzer (max 5,
+        # GEMINI_MODEL first); generation goes through the AI Gateway so no
+        # Gemini SDK detail is duplicated here.
         models_to_try = _build_model_list(os.getenv("GEMINI_MODEL"))
 
         last_error = None
-        for model_name in models_to_try:
+        for index, model_name in enumerate(models_to_try):
+            request = AIGenerationRequest(
+                prompt=prompt,
+                provider=GEMINI_PROVIDER,
+                model=model_name,
+                system_instruction=SUMMARY_SYSTEM_INSTRUCTION,
+                temperature=0.2,
+                response_schema=AISummaryResponse,
+                metadata={"task": TASK_DATASET_SUMMARY, "fallback": index > 0},
+            )
             try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SUMMARY_SYSTEM_INSTRUCTION,
-                        response_mime_type="application/json",
-                        response_schema=AISummaryResponse,
-                        temperature=0.2,
-                    ),
-                )
-                if response.text and response.text.strip():
-                    return self._parse_json(response.text.strip())
+                response = analyzer_service.gateway.generate(request)
+            except ImportError:
+                raise
             except Exception as e:
                 logger.warning(f"Summary failed with model {model_name}: {e}")
                 last_error = e
                 continue
+
+            if not response.success:
+                last_error = AIProviderError(
+                    response.error_message or f"Model {model_name} failed.",
+                    response.error_type,
+                    provider=response.provider,
+                    model=response.model,
+                )
+                continue
+
+            text = (response.content or "").strip()
+            if text:
+                return self._parse_json(text)
 
         if last_error:
             raise last_error

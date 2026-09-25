@@ -1,11 +1,28 @@
 import logging
 from fastapi import APIRouter, HTTPException, status
 from models.review import ReviewRequest, AnalyzeReviewResponse
+from services.ai.errors import AIErrorType, AIProviderError
 from services.ai_analyzer import analyzer_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Review Analysis"])
+
+# Normalized provider error categories -> fixed, user-safe messages. Raw
+# provider/SDK text is never echoed to API consumers.
+_PROVIDER_ERROR_MESSAGES = {
+    AIErrorType.RATE_LIMIT: "API rate limit reached. Please try again in a few moments.",
+    AIErrorType.AUTHENTICATION: "Invalid or unauthenticated Gemini API key. Please check backend/.env",
+    AIErrorType.CONFIGURATION: "AI analysis is unavailable. Please check the server configuration.",
+    AIErrorType.TIMEOUT: "Connection to AI service timed out or unavailable. Please verify your network connection.",
+    AIErrorType.TRANSIENT: "Connection to AI service timed out or unavailable. Please verify your network connection.",
+    AIErrorType.MODEL_UNAVAILABLE: "No AI model is currently available to analyze this review. Please try again later.",
+}
+_DEFAULT_PROVIDER_ERROR_MESSAGE = "AI analysis failed. Please try again."
+
+
+def _provider_error_message(error_type) -> str:
+    return _PROVIDER_ERROR_MESSAGES.get(error_type, _DEFAULT_PROVIDER_ERROR_MESSAGE)
 
 
 @router.post(
@@ -25,6 +42,17 @@ async def analyze_review_endpoint(payload: ReviewRequest):
             success=True,
             data=analysis,
             error=None
+        )
+    except AIProviderError as provider_err:
+        # Already classified by the AI Gateway: map the category to a fixed
+        # message so no raw provider text reaches the client.
+        logger.warning(
+            f"AI provider error ({provider_err.error_type}): {provider_err}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_provider_error_message(provider_err.error_type),
         )
     except ValueError as val_err:
         # Log the full detail server-side; never echo parser/model-output text

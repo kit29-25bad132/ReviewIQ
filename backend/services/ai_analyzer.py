@@ -6,36 +6,42 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from models.review import ReviewAnalysis
+from services.ai.contracts import AIGenerationRequest
+from services.ai.errors import AIProviderError
+from services.ai.gateway import AIGateway
+from services.ai.providers.gemini import GeminiProvider
+from services.ai.registry import (
+    DEFAULT_MODEL_NAME,
+    FALLBACK_MODEL_NAMES,
+    GEMINI_PROVIDER,
+    TASK_REVIEW_ANALYSIS,
+    model_registry,
+)
 from services.analysis_graph import EmptyResponseError, run_analysis_graph
 from services.grounding_service import ground_analysis
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Primary Gemini model used when GEMINI_MODEL is not set.
-# Verified against the configured API key (models.list + generateContent
-# smoke tests, 2026-09-24). A pinned stable model keeps evaluation reproducible.
-DEFAULT_MODEL_NAME = "gemini-3.8-flash"
-
-# Gemini-only verified fallback pool (deterministic order, max 5 total
-# attempts with the primary). No preview / Pro / 2.5-family / specialized
-# models. No runtime discovery in V1.
-FALLBACK_MODEL_NAMES = [
-    "gemini-flash-latest",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
-]
+# Model names live in the model registry (services/ai/registry.py) and are
+# imported here (re-exported) for backwards compatibility with existing
+# callers/tests: DEFAULT_MODEL_NAME, FALLBACK_MODEL_NAMES.
 
 
 def _build_model_list(primary: Optional[str]) -> list:
-    """Bounded model list: configured/primary first, then verified fallbacks (max 5 attempts)."""
-    primary_model = primary or DEFAULT_MODEL_NAME
-    models = [primary_model]
-    for name in FALLBACK_MODEL_NAMES:
-        if name != primary_model:
-            models.append(name)
-    return models[:5]
+    """Bounded, provider-neutral model chain (configured/primary first, then
+    the registry fallback pool, max 5 attempts, deduplicated).
+
+    Model ordering is owned by the registry so it is never hardcoded across
+    the codebase, and future providers can be added without touching callers.
+    """
+    return model_registry.chain(
+        GEMINI_PROVIDER,
+        primary or None,
+        capability=TASK_REVIEW_ANALYSIS,
+        limit=5,
+    )
+
 
 SYSTEM_INSTRUCTION = """You are a Product Review Analysis AI.
 Analyze the provided customer review and extract ONLY information supported by the review text.
@@ -65,10 +71,20 @@ Return strictly structured JSON with these fields:
 
 
 class AIAnalyzerService:
-    """Service handling AI product review analysis with structured outputs."""
+    """Service handling AI product review analysis with structured outputs.
 
-    def __init__(self, api_key: Optional[str] = None):
+    Gemini SDK access is delegated to the AI Gateway/provider adapter; this
+    service owns configuration, prompt construction, output parsing/validation,
+    and evidence grounding — the provider-neutral parts of the pipeline.
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        gateway: Optional[AIGateway] = None,
+    ):
         self._api_key = api_key
+        self._gateway = gateway
 
     @property
     def api_key(self) -> str:
@@ -83,6 +99,22 @@ class AIAnalyzerService:
         """Check if a non-placeholder Gemini API key is configured."""
         key = self.api_key
         return bool(key and key != "YOUR_GEMINI_API_KEY_HERE" and key != "your_gemini_api_key_here")
+
+    @property
+    def gateway(self) -> AIGateway:
+        """The shared AI Gateway (Gemini adapter wired to this service's key).
+
+        Built lazily and cached; the adapter resolves the API key on every call
+        so environment changes are respected without rebuilding the gateway.
+        """
+        if self._gateway is None:
+            provider = GeminiProvider(api_key_provider=lambda: self.api_key)
+            self._gateway = AIGateway(
+                providers={provider.name: provider},
+                registry=model_registry,
+                default_provider=GEMINI_PROVIDER,
+            )
+        return self._gateway
 
     def analyze_review(self, review_text: str) -> ReviewAnalysis:
         """
@@ -105,44 +137,52 @@ class AIAnalyzerService:
             )
 
     def _call_google_genai(self, review_text: str) -> ReviewAnalysis:
-        """Gemini generation with LangGraph-orchestrated multi-model fallback."""
-        from google import genai
-        from google.genai import types
+        """Run the analysis pipeline with LangGraph-orchestrated model fallback.
 
-        client = genai.Client(api_key=self.api_key)
-
-        # One configurable primary model (GEMINI_MODEL) plus verified fallbacks only.
+        Retained name for backwards compatibility. Gemini SDK access now happens
+        behind the AI Gateway; this method owns the provider-neutral workflow:
+        generation -> parsing -> Pydantic validation -> evidence grounding.
+        """
         models_to_try = _build_model_list(os.getenv("GEMINI_MODEL"))
+        primary_model = models_to_try[0] if models_to_try else None
 
         def attempt_fn(text: str, model_name: str) -> ReviewAnalysis:
-            prompt = f"Analyze this customer product review:\n\n\"\"\"\n{text}\n\"\"\""
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_INSTRUCTION,
-                        response_mime_type="application/json",
-                        response_schema=ReviewAnalysis,
-                        temperature=0.2,
-                    ),
+            request = AIGenerationRequest(
+                prompt=f"Analyze this customer product review:\n\n\"\"\"\n{text}\n\"\"\"",
+                provider=GEMINI_PROVIDER,
+                model=model_name,
+                system_instruction=SYSTEM_INSTRUCTION,
+                temperature=0.2,
+                response_schema=ReviewAnalysis,
+                metadata={
+                    "task": TASK_REVIEW_ANALYSIS,
+                    "fallback": model_name != primary_model,
+                },
+            )
+            # Provider-neutral error surface: the gateway/adapters return a
+            # normalized failure instead of leaking SDK exceptions.
+            response = self.gateway.generate(request)
+            if not response.success:
+                raise AIProviderError(
+                    response.error_message or f"Model {model_name} failed.",
+                    response.error_type,
+                    provider=response.provider,
+                    model=response.model,
                 )
-                if not (response.text and response.text.strip()):
-                    raise EmptyResponseError(
-                        f"Empty response received from model {model_name}."
-                    )
-                logger.info(f"Review analysis succeeded using model: {model_name}")
-                analysis = self._parse_and_validate(response.text.strip())
-                # Phase 2: deterministic evidence grounding against the
-                # original review text. Unsupported evidence-backed items
-                # are filtered out before the analysis is returned.
-                # Grounding never raises: a filtered-but-valid analysis is success.
-                return ground_analysis(text, analysis)
-            except EmptyResponseError:
-                raise
-            except Exception as e:
-                logger.warning(f"Failed with model {model_name}: {e}")
-                raise
+            content = (response.content or "").strip()
+            if not content:
+                # Empty output is an attempt failure that advances the model
+                # index without replacing a previously recorded real error.
+                raise EmptyResponseError(
+                    f"Empty response received from model {model_name}."
+                )
+            logger.info(f"Review analysis succeeded using model: {model_name}")
+            analysis = self._parse_and_validate(content)
+            # Phase 2: deterministic evidence grounding against the original
+            # review text. Unsupported evidence-backed items are filtered out
+            # before the analysis is returned. Grounding never raises: a
+            # filtered-but-valid analysis is success.
+            return ground_analysis(text, analysis)
 
         final_state = run_analysis_graph(review_text, models_to_try, attempt_fn)
         analysis = final_state.get("analysis")
