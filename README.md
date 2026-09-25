@@ -1,205 +1,447 @@
-# 🚀 Product Review Analyzer
+# ReviewIQ — AI-Powered Product Review Intelligence
 
-> Turn customer feedback into actionable insights with structured AI analysis.
+> **Turn unstructured customer feedback into evidence-backed product intelligence.**
 
-**Product Review Analyzer** is a full-stack web application designed to analyze unstructured customer product reviews using Large Language Models (Google Gemini API). It extracts strictly validated structured information including **sentiment**, **1-5 star ratings**, **evidence-based pros**, **cons**, and **executive summaries**, displayed in a futuristic, glassmorphic dark dashboard.
+**ReviewIQ** is a full-stack AI application that transforms raw product reviews into structured, explainable insights. Instead of returning free-form LLM text, ReviewIQ produces validated sentiment, rating information, aspect-level opinions, pros, cons, summaries, and—most importantly—evidence tied back to the original review.
 
----
-
-## ✨ Features
-
-- 🎯 **Strict Structured JSON Output**: Validated with Pydantic schemas (zero uncontrolled markdown or text chatter).
-- 🛡️ **Anti-Hallucination Engine**: Extracts *only* features and pros/cons explicitly supported by the review text.
-- ⭐ **Accurate 1–5 Star Rating**: Explicitly extracted or intelligently inferred from sentiment and evidence.
-- 🎨 **Dark Futuristic UI**: Built with React, Tailwind CSS, Lucide icons, glassmorphism cards, and gradient accents.
-- 📊 **Dynamic Dashboard Analytics**: Real-time calculated metrics (Total Reviews, Positive, Negative, Neutral, Average Rating) based on actual processed data.
-- 📜 **Persistent Review History**: Supabase (when configured) with local `localStorage` fallback, keyword search, sentiment filtering, and detailed review inspector.
-- 🧪 **"Try Sample Review"**: Instant one-click test with representative review text.
-- 🔒 **Secure API Architecture**: Never exposes API keys in frontend code; backend strictly checks payloads and environment variables.
-- 📱 **Fully Responsive**: Optimized for desktop, laptop, tablet, and mobile screens.
+**V1 is feature-complete, tested, live, and deployment-ready.**
 
 ---
 
-## 🛠️ Technology Stack
+## 1. What ReviewIQ Solves
 
-| Layer | Technologies |
-| :--- | :--- |
-| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, Axios, Lucide React, Supabase JS |
-| **Backend** | Python 3.10+, FastAPI, Uvicorn, Pydantic v2, Python-Dotenv |
-| **AI Provider** | Google Gemini API (`gemini-3.8-flash` primary + verified Gemini fallback pool via LangGraph structured outputs) |
-| **Database** | Supabase (PostgreSQL) with local `localStorage` fallback (demo RLS: anon read/insert/delete) |
+Product reviews contain valuable information, but manually extracting consistent insights from them is slow and difficult to scale.
 
----
+ReviewIQ provides a structured analysis pipeline:
 
-## 📁 Project Structure
-
+```text
+Customer Review
+      │
+      ▼
+Request Validation
+      │
+      ▼
+Gemini AI Analysis
+      │
+      ▼
+Structured Output Validation
+      │
+      ▼
+Evidence Grounding
+      │
+      ▼
+Validated Review Intelligence
+      │
+      ├── Sentiment
+      ├── Rating + rating source
+      ├── Pros + evidence
+      ├── Cons + evidence
+      ├── Aspect sentiment + evidence
+      └── Summary
 ```
+
+The V1 architecture deliberately prioritizes **reliability, explainability, deterministic validation, and practical deployment** over unnecessary AI complexity.
+
+---
+
+# 2. V1 Feature Set
+
+## Core AI Analysis
+
+- **Structured JSON analysis** validated with Pydantic.
+- **Overall sentiment**: `positive | negative | neutral | mixed`.
+- **Rating extraction** on a 1–5 scale.
+- **Rating honesty** with provenance:
+  - `explicit`
+  - `inferred`
+  - `not_found`
+- **Aspect-Based Sentiment Analysis (ABSA)**.
+- **Pros and cons extraction**.
+- **Executive-style review summary**.
+- **Evidence-backed insights** for pros, cons, and aspects.
+- **Evidence grounding validation** against the original review text.
+- Unsupported evidence is automatically rejected instead of being presented as fact.
+
+## AI Reliability
+
+- **Gemini-first model strategy**.
+- Deterministic **Gemini-only fallback pool**.
+- Up to **5 verified Gemini models** in a controlled order.
+- Automatic fallback when a model returns an empty or invalid response.
+- Every fallback attempt goes through the same generation → parsing → Pydantic validation → grounding pipeline.
+- Grounding-filtered but otherwise valid results are accepted without unnecessary fallback.
+
+## Product Intelligence
+
+- Product intelligence dashboard.
+- Review history.
+- Search and sentiment filtering.
+- Detailed review inspection.
+- Dataset analytics.
+- Product analytics.
+- Recommendation/comparison functionality retained in V1.
+- Responsive dashboard experience.
+
+## Persistence
+
+- Supabase PostgreSQL persistence.
+- `localStorage` fallback for demo/development resilience.
+- Persistent rating source, aspects, evidence, sentiment, pros, cons, and summary.
+- Delete and clear-history functionality.
+- V1 demo-oriented Supabase RLS posture documented below.
+
+## Quality & Engineering
+
+- FastAPI API layer.
+- Pydantic contract validation.
+- LangGraph orchestration.
+- Automated backend test suite.
+- Frontend tests with Vitest.
+- Production frontend build verification.
+- Safe API error handling.
+- Environment-based secret management.
+- CORS configuration.
+- No backend dependency on Supabase for AI analysis.
+
+---
+
+# 3. The V1 Differentiator: Evidence Grounding
+
+ReviewIQ does not treat an LLM-generated explanation as automatically trustworthy.
+
+For every evidence-backed insight, the system verifies that the normalized evidence actually occurs in the original review.
+
+Example:
+
+```json
+{
+  "pros": [
+    {
+      "point": "Excellent battery life",
+      "evidence": "The battery easily lasts two full days."
+    }
+  ],
+  "cons": [
+    {
+      "point": "Expensive",
+      "evidence": "The only downside is the high price."
+    }
+  ]
+}
+```
+
+The grounding layer normalizes text before comparison, including Unicode normalization, quote/apostrophe normalization, non-breaking-space normalization, case folding, punctuation normalization while preserving word boundaries, and whitespace normalization.
+
+The complete normalized evidence must be supported by the original review.
+
+### Why this matters
+
+This turns ReviewIQ from a simple **"LLM says this"** application into an **evidence-backed analysis system**.
+
+The model may generate an interpretation, but the application decides whether the supporting evidence is actually present in the source review.
+
+---
+
+# 4. Rating Honesty
+
+ReviewIQ distinguishes between what the customer explicitly stated and what the model inferred.
+
+```json
+{
+  "rating": 4,
+  "rating_source": "explicit"
+}
+```
+
+or:
+
+```json
+{
+  "rating": 4,
+  "rating_source": "inferred"
+}
+```
+
+or:
+
+```json
+{
+  "rating": null,
+  "rating_source": "not_found"
+}
+```
+
+The contract enforces the relationship between these fields, preventing a missing rating from silently becoming a fabricated numeric fact.
+
+---
+
+# 5. AI Orchestration
+
+V1 uses a single LangGraph orchestration path:
+
+```text
+Review Input
+     │
+     ▼
+Analyze Request
+     │
+     ▼
+Gemini Primary
+     │
+     ▼
+Structured Validation
+     │
+     ▼
+Evidence Grounding
+     │
+     ▼
+Final Response
+```
+
+If a model attempt fails:
+
+```text
+Gemini Primary
+     │
+     ├── success ───────────────► Validation ─► Grounding ─► Final
+     │
+     └── failure
+            │
+            ▼
+      Next Gemini Model
+            │
+            ▼
+        Validation
+            │
+            ▼
+         Grounding
+            │
+            ▼
+          Final
+```
+
+### V1 deliberately does not include
+
+- Chain-of-Thought prompting
+- RAG
+- multi-provider fallback
+- cost-based model selection
+- model quantization
+- local LLM inference
+- caching
+- multi-agent architecture
+
+These are intentionally outside the V1 scope.
+
+---
+
+# 6. Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React, TypeScript, Vite, Tailwind CSS, Axios, Lucide React |
+| Backend | Python, FastAPI, Uvicorn |
+| Validation | Pydantic v2 |
+| AI | Google Gemini API |
+| Orchestration | LangGraph |
+| Database | Supabase PostgreSQL |
+| Local persistence fallback | Browser `localStorage` |
+| Backend testing | pytest |
+| Frontend testing | Vitest |
+| Source control | Git + GitHub |
+| Backend deployment | Render |
+| Frontend deployment | Vercel |
+| AI service | Google Gemini API |
+
+---
+
+# 7. Project Structure
+
+```text
 ReviewIQ/
+│
 ├── frontend/
 │   ├── src/
-│   │   ├── components/          # Analysis, history, dataset, product, evaluation UI
-│   │   ├── pages/Dashboard.tsx  # Main dashboard (analysis + product intelligence)
+│   │   ├── components/
+│   │   ├── pages/
+│   │   │   └── Dashboard.tsx
 │   │   ├── services/
-│   │   │   ├── api.ts           # Axios client for backend API
-│   │   │   ├── historyStorage.ts# Supabase persistence + localStorage fallback
-│   │   │   └── supabase.ts      # Supabase client (URL + anon/publishable key)
-│   │   ├── types/               # review.ts, ecommerce.ts
+│   │   │   ├── api.ts
+│   │   │   ├── historyStorage.ts
+│   │   │   └── supabase.ts
+│   │   ├── types/
 │   │   ├── App.tsx
 │   │   └── main.tsx
 │   ├── package.json
-│   └── vite.config.ts           # Vitest config included
+│   └── vite.config.ts
 │
 ├── backend/
-│   ├── main.py                  # FastAPI app, CORS, global exception handler
+│   ├── main.py
 │   ├── requirements.txt
 │   ├── .env.example
-│   ├── models/                  # review.py, dataset.py, ecommerce.py (Pydantic)
-│   ├── routes/                  # review, products, reviews, dataset, analytics, evaluation
-│   ├── services/                # ai_analyzer, analysis_graph, grounding, dataset, etc.
-│   ├── scripts/ingest_dataset.py # Optional local CSV → SQLite ingestion
-│   └── tests/                   # pytest suite (offline, mocked)
+│   ├── models/
+│   ├── routes/
+│   ├── services/
+│   │   ├── ai_analyzer.py
+│   │   ├── analysis_graph.py
+│   │   ├── grounding_service.py
+│   │   └── ...
+│   ├── scripts/
+│   └── tests/
 │
-├── supabase_schema.sql          # Canonical reviews table + RLS policies
+├── supabase_schema.sql
 ├── README.md
 └── .gitignore
 ```
 
 ---
 
-## ⚙️ Environment Variables
+# 8. Environment Configuration
 
-### Backend (`backend/.env`)
+## Backend
+
+Create `backend/.env`:
 
 ```ini
-# Google Gemini API Key (Required)
-# Get a free key at: https://aistudio.google.com/
 GEMINI_API_KEY=your_gemini_api_key_here
 
-# Server Settings (defaults match backend/.env.example)
 HOST=127.0.0.1
 PORT=8000
+
 ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
-### Frontend (`frontend/.env`)
+The Gemini API key must remain server-side.
+
+## Frontend
+
+Create `frontend/.env`:
 
 ```ini
-# Backend API Base URL
 VITE_API_BASE_URL=http://localhost:8000
 
-# Supabase project URL and frontend anon/publishable key
 VITE_SUPABASE_URL=https://your-project.supabase.co
-# Set one key:
-# VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-# VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your-key
+
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+# or
+VITE_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
 ```
 
-> [!WARNING]
-> Never place `GEMINI_API_KEY` or a Supabase service-role key in the frontend `.env` file. The frontend uses only the project URL and anon/publishable key.
+> **Security:** Never put `GEMINI_API_KEY` or a Supabase service-role key in the frontend environment.
 
-Vite embeds `VITE_*` values at build time. After changing `frontend/.env`, restart the dev server or rebuild the production bundle.
+Vite embeds `VITE_*` variables into the frontend build, so frontend environment changes require restarting the development server or rebuilding.
 
 ---
 
-## 🚀 Installation & Running
+# 9. Local Development
 
-### 1. Backend Setup
+## Backend
 
 ```bash
-# Navigate to backend directory
 cd backend
-
-# Create virtual environment
 python -m venv .venv
+```
 
-# Activate virtual environment
-# On Windows:
+### Windows
+
+```bash
 .venv\Scripts\activate
-# On macOS/Linux:
-# source .venv/bin/activate
+```
 
-# Install dependencies
+### macOS / Linux
+
+```bash
+source .venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
 pip install -r requirements.txt
+```
 
-# Create .env and set your Gemini API key
+Create the environment file:
+
+```bash
 copy .env.example .env
-# Edit .env and enter your valid GEMINI_API_KEY
+```
 
-# Start backend server
+On macOS/Linux:
+
+```bash
+cp .env.example .env
+```
+
+Add the Gemini API key, then start FastAPI:
+
+```bash
 uvicorn main:app --reload --port 8000
 ```
 
-Backend will be running at: `http://localhost:8000`  
-Interactive API Docs (Swagger): `http://localhost:8000/docs`
+Backend: `http://localhost:8000`
 
----
+Swagger: `http://localhost:8000/docs`
 
-### 2. Frontend Setup
+Health check: `http://localhost:8000/health`
 
-Open a new terminal:
+## Frontend
+
+In a second terminal:
 
 ```bash
-# Navigate to frontend directory
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start Vite development server
 npm run dev
 ```
 
-### 3. Supabase Database Setup
-1. Open your [Supabase SQL Editor](https://supabase.com/dashboard/project/_/sql).
-2. Copy and run the contents of [`supabase_schema.sql`](./supabase_schema.sql):
+---
 
-```sql
-create table if not exists public.reviews (
-    id uuid primary key default gen_random_uuid(),
-    review_text text not null,
-    sentiment text not null check (sentiment in ('positive', 'negative', 'neutral', 'mixed')),
-    rating integer check (rating is null or (rating >= 1 and rating <= 5)),
-    rating_source text check (rating_source is null or rating_source in ('explicit', 'inferred', 'not_found')),
-    pros jsonb not null default '[]'::jsonb,
-    cons jsonb not null default '[]'::jsonb,
-    aspects jsonb not null default '[]'::jsonb,
-    summary text not null,
-    created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
+# 10. Supabase Setup
 
-alter table public.reviews enable row level security;
+The canonical schema is available in:
 
-create policy "Allow public read access" on public.reviews for select to anon, authenticated using (true);
-create policy "Allow public insert access" on public.reviews for insert to anon, authenticated with check (true);
-create policy "Allow public delete access" on public.reviews for delete to anon, authenticated using (true);
+```text
+supabase_schema.sql
 ```
 
-> Demo posture: RLS allows any anon/publishable key holder to read, insert, and delete rows. Acceptable for V1 demos only — not for multi-tenant production data.
+The V1 `reviews` table stores:
+
+- review text
+- sentiment
+- nullable rating
+- rating source
+- pros
+- cons
+- aspect analysis
+- summary
+- creation timestamp
+
+The schema also contains the required rating and sentiment constraints.
+
+### V1 demo RLS posture
+
+The current V1 demo configuration permits anonymous/authenticated:
+
+- `SELECT`
+- `INSERT`
+- `DELETE`
+
+There is intentionally no `UPDATE` policy.
+
+> **Important:** This posture is suitable for the V1 demonstration environment. It is **not** a multi-tenant production authorization model.
 
 ---
 
-## 🧪 Testing
+# 11. API
 
-```bash
-# Backend (from repo root, with backend .venv active)
-.venv\Scripts\python.exe -m pytest backend\tests
+## Health
 
-# Frontend
-cd frontend
-npm test          # vitest
-npm run build     # tsc + vite production build
+```http
+GET /health
 ```
 
-Tests are offline: Gemini and Supabase are mocked/faked; no network required.
+Example:
 
-## 🔌 API Endpoints
-
-Full endpoint list, request/response schemas, and error envelopes: [`docs/08_API_CONTRACT.md`](docs/08_API_CONTRACT.md). Key endpoints below.
-
-### 1. Health Check
-- **Endpoint**: `GET /health`
-- **Description**: Returns service health and AI configuration status without leaking keys.
-- **Response**:
 ```json
 {
   "status": "ok",
@@ -210,27 +452,29 @@ Full endpoint list, request/response schemas, and error envelopes: [`docs/08_API
 }
 ```
 
----
+## Analyze Review
 
-### 2. Analyze Review
-- **Endpoint**: `POST /api/analyze-review`
-- **Description**: Analyzes customer review text and returns validated structured JSON.
+```http
+POST /api/analyze-review
+```
 
-#### Request Body:
+Request:
+
 ```json
 {
   "review": "The camera quality is excellent and the display is beautiful. Battery life is good for normal use, but the phone becomes hot while gaming. Overall I am happy with the product."
 }
 ```
 
-#### Response Body:
+Response shape:
+
 ```json
 {
   "success": true,
   "data": {
     "sentiment": "mixed",
     "rating": 4,
-    "rating_source": "explicit",
+    "rating_source": "inferred",
     "summary": "The customer praises the camera, display, and battery life but notes heating while gaming.",
     "aspects": [
       {
@@ -265,43 +509,235 @@ Full endpoint list, request/response schemas, and error envelopes: [`docs/08_API
 }
 ```
 
-`sentiment` is one of `positive | negative | neutral | mixed`. `rating` is an integer 1–5 or `null` (with `rating_source = "not_found"`). `rating_source` is `explicit | inferred | not_found`. `pros`/`cons` are arrays of `{ "point", "evidence" }` objects.
+The complete API contract is maintained in:
+
+`docs/08_API_CONTRACT.md`
 
 ---
 
-## 🧪 Acceptance Test Case
+# 12. Testing & V1 Verification
 
-Input review:
-> *"The camera is excellent and the display looks beautiful. Battery life is good during normal use, but the phone gets very hot while gaming. Overall, I am satisfied."*
+### Backend
 
-Expected result:
-- **Sentiment**: `positive`
-- **Rating**: `4` (or `4/5`)
-- **Pros**: Contains camera quality, display, battery life
-- **Cons**: Heating during gaming
-- **Anti-Hallucination**: Does NOT mention unreferenced attributes (e.g. processor brand, headphone jack, waterproof rating, etc.)
+```bash
+python -m pytest backend/tests
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm test
+npm run build
+```
+
+The V1 verification suite covers:
+
+- request validation
+- Pydantic output contracts
+- rating-source rules
+- sentiment behavior
+- ABSA scenarios
+- evidence grounding
+- invalid and empty AI responses
+- Gemini fallback orchestration
+- API error handling
+- API endpoint contracts
+- product endpoints
+- dataset/analytics/evaluation endpoints
+- persistence-related contracts
+- model configuration
+- security-sensitive error behavior
+
+Gemini and Supabase are mocked/faked for automated backend tests, so the backend test suite does not require live external services.
+
+V1 also underwent live end-to-end verification against the deployed application and Supabase persistence, including positive, negative, mixed, explicit-rating, inferred-rating, evidence-grounding, and no-rating scenarios.
 
 ---
 
-## 🛡️ Security & Quality Best Practices
+# 13. Production Deployment
 
-1. **Strict Model Validation**: AI outputs are parsed directly into Pydantic models with constrained types (`Literal["positive", "negative", "neutral", "mixed"]`, `rating_source` Literal, nullable `Field(ge=1, le=5)` rating, and `PointEvidence` objects).
-2. **No Secret Leakage**: API keys remain strictly in backend memory and are never sent to the browser or returned in error traces. API error responses use safe generic messages (provider/parser details stay in server logs).
-3. **No Unsafe Code Execution**: Zero usage of `eval()` or unsanitized `dangerouslySetInnerHTML`.
-4. **CORS Hardening**: CORS origins are restricted to configured client hosts.
+V1 deployment stack:
+
+```text
+                 ┌──────────────────┐
+                 │      Vercel      │
+                 │ React + Vite UI  │
+                 └────────┬─────────┘
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │      Render      │
+                 │ FastAPI Backend  │
+                 └────────┬─────────┘
+                          │
+                 ┌────────┴─────────┐
+                 ▼                  ▼
+        ┌────────────────┐  ┌────────────────┐
+        │ Google Gemini  │  │    Supabase    │
+        │       AI       │  │   PostgreSQL   │
+        └────────────────┘  └────────────────┘
+```
+
+### Render Backend
+
+The V1 backend is deployed on Render with:
+
+```text
+Root Directory: backend
+Build Command: pip install -r requirements.txt
+Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
+Health Check: /health
+```
+
+The deployed service responds successfully to `/health`.
+
+> The backend root URL `/` is not an application page and may return `404 Not Found`. This is expected; `/health` is the service health endpoint and `/docs` exposes the FastAPI API documentation.
+
+### Vercel Frontend
+
+The frontend deployment uses:
+
+```text
+VITE_API_BASE_URL=<deployed Render backend URL>
+VITE_SUPABASE_URL=<Supabase project URL>
+VITE_SUPABASE_ANON_KEY=<Supabase anon key>
+```
 
 ---
 
-## 🔮 Roadmap / Future Extensions
+# 14. V1 Completion Status
 
-- [ ] **V2 - Bulk CSV Review Upload**: Upload `reviews.csv` with multiple columns and process batch reviews with progress tracking.
-- [x] **V3 - Advanced Analytics**: Product-level analytics, rating distributions, and pros/cons analysis from the 4M dataset.
-- [x] **V4 - Database Persistence**: Supabase / PostgreSQL schema with local `localStorage` fallback.
-- [ ] **V5 - User Authentication**: Google OAuth and email/password sign-in.
-- [ ] **V6 - Data Export**: Export reports to CSV, Excel, and PDF formats.
+## V1 — 100% Complete
+
+| Area | Status |
+|---|:---:|
+| Core review analysis | ✅ |
+| Structured AI contract | ✅ |
+| Sentiment | ✅ |
+| Rating extraction | ✅ |
+| Rating provenance | ✅ |
+| ABSA | ✅ |
+| Pros / cons | ✅ |
+| Evidence grounding | ✅ |
+| Summary generation | ✅ |
+| Gemini fallback | ✅ |
+| LangGraph orchestration | ✅ |
+| API validation | ✅ |
+| Error handling | ✅ |
+| Product intelligence | ✅ |
+| Dataset analytics | ✅ |
+| Review history | ✅ |
+| Supabase persistence | ✅ |
+| Local persistence fallback | ✅ |
+| Automated backend tests | ✅ |
+| Frontend tests | ✅ |
+| Production build | ✅ |
+| Render backend deployment | ✅ |
+| V1 scope audit | ✅ |
+| Live end-to-end verification | ✅ |
+
+**V1 completion: 100%**
 
 ---
 
-## 📜 License
+# 15. Intentionally Deferred from V1
 
-MIT License. Designed for learning and production use.
+These are deliberate future-scope decisions, not incomplete V1 requirements:
+
+- RAG
+- Vector database / ChromaDB
+- Chain-of-Thought prompting
+- multi-provider AI fallback
+- cost-aware model routing
+- response caching
+- local model inference
+- model quantization
+- multi-agent architecture
+- authentication
+- multi-tenant authorization
+- bulk review processing
+- advanced report export
+
+V1 intentionally establishes a reliable and explainable foundation before introducing additional architectural complexity.
+
+---
+
+# 16. V2 Direction
+
+V2 can build directly on the validated V1 foundation:
+
+```text
+V1 Foundation
+     │
+     ├── Structured analysis
+     ├── Evidence grounding
+     ├── ABSA
+     ├── Model fallback
+     ├── Persistence
+     └── Tested API
+            │
+            ▼
+        V2 Expansion
+            │
+            ├── Higher-scale review processing
+            ├── Retrieval / RAG
+            ├── Advanced analytics
+            ├── Efficiency improvements
+            ├── Additional model strategies
+            └── Expanded product intelligence
+```
+
+The goal is to extend the proven pipeline rather than replace the V1 architecture.
+
+---
+
+# 17. Engineering Principles
+
+### Evidence before confidence
+
+An insight is more useful when the user can trace it back to the source review.
+
+### Structured output over free-form output
+
+Machine-readable contracts make AI behavior testable and predictable.
+
+### Validation at boundaries
+
+AI output is not trusted simply because it is valid JSON. It must satisfy the application schema and grounding rules.
+
+### Graceful degradation
+
+Model failure should trigger a controlled fallback rather than silently returning an unreliable result.
+
+### Keep the architecture understandable
+
+V1 intentionally avoids RAG, agents, caching, local models, and other advanced components before they are needed.
+
+### Build, test, review, freeze
+
+Features are implemented against explicit contracts and verified before V1 is considered complete.
+
+---
+
+# 18. Team Structure
+
+| Area | Responsibility |
+|---|---|
+| **Rishi** | AI/NLP, analysis pipeline, testing & QA |
+| **Sri** | Backend, data, API & persistence |
+| **Alshifa** | Frontend, dashboard & product experience |
+
+The project follows a collaborative, phase-based implementation and verification workflow.
+
+---
+
+# 19. License
+
+MIT License.
+
+---
+
+## ReviewIQ V1
+
+> **AI can generate the insight. ReviewIQ verifies the evidence.**
