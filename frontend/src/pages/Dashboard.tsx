@@ -308,9 +308,6 @@ export const Dashboard: React.FC = () => {
                 <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
                   Search & Analyze Product Reviews
                 </h2>
-                <p className="text-xs sm:text-sm text-slate-400">
-                  Search any product title to retrieve its verified reviews, rating distributions, and AI synthesis from the 4M dataset.
-                </p>
               </div>
 
               <div className="max-w-3xl mx-auto">
@@ -448,17 +445,6 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
       </main>
-
-      {/* Footer */}
-      <footer className="mt-16 border-t border-slate-800/80 pt-8 text-center text-xs text-slate-400">
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <span className="font-mono font-bold text-slate-300">REVIEWIQ</span>
-          <span className="hidden sm:inline text-slate-700">•</span>
-          <span>4,000,000 Real Review Dataset Engine</span>
-          <span className="hidden sm:inline text-slate-700">•</span>
-          <span>Source: ReviewIQ Product Review Dataset</span>
-        </div>
-      </footer>
     </div>
   );
 };

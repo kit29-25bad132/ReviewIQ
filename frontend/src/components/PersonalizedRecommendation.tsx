@@ -293,18 +293,18 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
           </div>
 
           {/* 3. SIDE-BY-SIDE PRODUCT COMPARISON TABLE */}
-          {data.comparison_products && data.comparison_products.length > 0 && (
-            <div className="rounded-2xl border border-white/10 bg-[#111827]/85 p-6 backdrop-blur-xl shadow-glass space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-purple-400" />
-                  COMPARE WITH SIMILAR PRODUCTS ({data.selected_product.category} Category)
-                </h3>
-                <span className="text-[11px] font-mono text-slate-400">
-                  Real Dataset Metrics Only
-                </span>
-              </div>
+          <div className="rounded-2xl border border-white/10 bg-[#111827]/85 p-6 backdrop-blur-xl shadow-glass space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-purple-400" />
+                COMPARE WITH SIMILAR PRODUCTS ({data.selected_product.category} Category)
+              </h3>
+              <span className="text-[11px] font-mono text-slate-400">
+                Real Dataset Metrics Only
+              </span>
+            </div>
 
+            {data.comparison_products && data.comparison_products.filter((item) => !item.is_selected).length > 0 ? (
               <div className="overflow-x-auto rounded-xl border border-slate-800 bg-[#0B0F17]">
                 <table className="w-full text-left text-xs">
                   <thead className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-mono uppercase text-[10px]">
@@ -470,8 +470,20 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 px-4 text-center rounded-xl border border-slate-800/80 bg-[#0B0F17]/60">
+                <div className="h-10 w-10 rounded-xl bg-purple-950/40 border border-purple-800/30 flex items-center justify-center mb-3 text-purple-400">
+                  <BarChart3 className="h-5 w-5" />
+                </div>
+                <p className="text-sm font-medium text-slate-300">
+                  No closely related products found in the dataset.
+                </p>
+                <p className="text-xs text-slate-500 mt-1 max-w-md">
+                  There are no other products in the dataset with matching product type or sub-category metadata for side-by-side comparison.
+                </p>
+              </div>
+            )}
+          </div>
 
           {/* 4. FINAL DECISION PANEL ("MY RECOMMENDATION") */}
           <div className="relative overflow-hidden rounded-2xl border border-gradient border-purple-500/40 bg-gradient-to-br from-[#111827] via-[#0B0F17] to-[#151226] p-6 sm:p-7 backdrop-blur-xl shadow-2xl space-y-5">
