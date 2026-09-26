@@ -1,450 +1,436 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import {
-  MessageSquare,
+  ArrowRight,
+  BarChart3,
+  CheckCircle2,
+  FileSearch,
   Search,
-  Activity,
   Sparkles,
-  AlertCircle,
-  Database,
-  Target,
-  BrainCircuit,
-  Package,
+  TrendingUp,
 } from 'lucide-react';
+import type { Page } from '../App';
 
-import { ReviewAnalysis, ReviewHistoryItem } from '../types/review';
-import { ProductSummary, ProductAnalysisResponse } from '../types/ecommerce';
-import {
-  analyzeReview,
-  checkBackendHealth,
-  HealthStatus,
-  API_BASE_URL,
-  getProductAnalysis,
-} from '../services/api';
-import {
-  fetchAllReviews,
-  saveReviewAnalysis,
-  deleteReviewById,
-  clearAllReviews,
-  getLocalReviews,
-} from '../services/historyStorage';
-import { isSupabaseConfigured, supabaseConfigurationError } from '../services/supabase';
-import { ProductSearch } from '../components/ProductSearch';
-import { ProductOverview } from '../components/ProductOverview';
-import { ProsConsAnalysis } from '../components/ProsConsAnalysis';
-import { PersonalizedRecommendation } from '../components/PersonalizedRecommendation';
-import { AISummaryCard } from '../components/AISummaryCard';
-import { ReviewList } from '../components/ReviewList';
-import { ReviewInput } from '../components/ReviewInput';
-import { AnalysisResult } from '../components/AnalysisResult';
-import { ReviewHistory } from '../components/ReviewHistory';
-import { LoadingState } from '../components/LoadingState';
-import { DatasetExplorer } from '../components/DatasetExplorer';
-import { EvaluationDashboard } from '../components/EvaluationDashboard';
+interface DashboardProps {
+  onNavigate: (page: Page) => void;
+}
 
-type TabType = 'product_search' | 'live_analyzer' | 'dataset' | 'evaluation' | 'history';
+const features = [
+  {
+    icon: FileSearch,
+    title: 'Review Analysis',
+    description:
+      'Turn customer reviews into structured product intelligence.',
+  },
+  {
+    icon: TrendingUp,
+    title: 'Sentiment & Trends',
+    description:
+      'Identify recurring opinions, patterns, and emerging issues.',
+  },
+  {
+    icon: BarChart3,
+    title: 'Product Insights',
+    description:
+      'Understand the aspects customers care about most.',
+  },
+];
 
-export const Dashboard: React.FC = () => {
-  // Navigation tabs
-  const [activeTab, setActiveTab] = useState<TabType>('product_search');
-
-  // Ecommerce Product Search State
-  const [selectedProduct, setSelectedProduct] = useState<ProductSummary | null>(null);
-  const [productAnalysis, setProductAnalysis] = useState<ProductAnalysisResponse | null>(null);
-  const [loadingProduct, setLoadingProduct] = useState<boolean>(false);
-  const [productError, setProductError] = useState<string | null>(null);
-
-  // Custom live review analysis states
-  const [currentAnalysis, setCurrentAnalysis] = useState<ReviewAnalysis | null>(null);
-  const [activeReviewText, setActiveReviewText] = useState<string>('');
-  const [isLoadingLive, setIsLoadingLive] = useState<boolean>(false);
-  const [liveErrorMessage, setLiveErrorMessage] = useState<string | null>(null);
-
-  // History state & storage source
-  const [history, setHistory] = useState<ReviewHistoryItem[]>(() => getLocalReviews());
-  const [storageSource, setStorageSource] = useState<'supabase' | 'local'>('local');
-
-  // Backend Health check status
-  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
-
-  const analysisRef = useRef<HTMLDivElement>(null);
-
-  // Load reviews from Supabase or LocalStorage on mount
-  const refreshHistory = async () => {
-    const { reviews, source } = await fetchAllReviews();
-    setHistory(reviews);
-    setStorageSource(source);
-  };
-
-  useEffect(() => {
-    refreshHistory();
-  }, []);
-
-  // Periodic health check
-  useEffect(() => {
-    const checkStatus = async () => {
-      const status = await checkBackendHealth();
-      setHealthStatus(status);
-    };
-    checkStatus();
-    const interval = setInterval(checkStatus, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Load default initial product ("Electric Toothbrush") on first load
-  useEffect(() => {
-    handleSelectProduct({
-      product_id: '9640962',
-      product_title: 'Electric Toothbrush',
-      category: 'Health & Personal Care',
-      review_count: 125192,
-      average_rating: 3.64,
-    });
-  }, []);
-
-  // Handle Product Selection
-  const handleSelectProduct = async (product: ProductSummary) => {
-    setSelectedProduct(product);
-    setLoadingProduct(true);
-    setProductError(null);
-
-    try {
-      const res = await getProductAnalysis(product.product_id);
-      setProductAnalysis(res);
-    } catch (err: any) {
-      setProductError(
-        err.response?.data?.detail || 'Product not found in the available review dataset.'
-      );
-      setProductAnalysis(null);
-    } finally {
-      setLoadingProduct(false);
-    }
-  };
-
-  // Handle Live Custom Review Analysis Submission
-  const handleAnalyzeLive = async (reviewText: string) => {
-    setIsLoadingLive(true);
-    setLiveErrorMessage(null);
-    setActiveReviewText(reviewText);
-
-    try {
-      const analysis = await analyzeReview(reviewText);
-      setCurrentAnalysis(analysis);
-
-      // Save to Supabase & localStorage via unified service
-      const newItem = await saveReviewAnalysis(reviewText, analysis);
-      setHistory((prev) => [newItem, ...prev.filter((i) => i.id !== newItem.id)]);
-      if (isSupabaseConfigured) {
-        setStorageSource('supabase');
-      }
-
-      setTimeout(() => {
-        analysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 100);
-    } catch (err: any) {
-      setLiveErrorMessage(err.message || 'An error occurred while analyzing the review.');
-    } finally {
-      setIsLoadingLive(false);
-    }
-  };
-
-  // History handlers
-  const handleDeleteReview = async (id: string) => {
-    try {
-      await deleteReviewById(id);
-      setHistory((prev) => prev.filter((item) => item.id !== id));
-    } catch (err) {
-      console.error('Failed to delete review:', err);
-    }
-  };
-
-  const handleClearHistory = async () => {
-    try {
-      await clearAllReviews();
-      setHistory([]);
-    } catch (err) {
-      console.error('Failed to clear history:', err);
-    }
-  };
-
-  const handleSelectHistoryItem = (item: ReviewHistoryItem) => {
-    setCurrentAnalysis(item.analysis);
-    setActiveReviewText(item.reviewText);
-    setActiveTab('live_analyzer');
-    setTimeout(() => {
-      analysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
-  };
-
+export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   return (
-    <div className="relative min-h-screen pb-16">
-      {/* Background glow ambient effects */}
-      <div className="glow-accent -top-40 -left-40 h-96 w-96 rounded-full bg-purple-600/30" />
-      <div className="glow-accent top-1/3 -right-40 h-96 w-96 rounded-full bg-cyan-600/20" />
-      <div className="glow-accent -bottom-40 left-1/4 h-96 w-96 rounded-full bg-indigo-600/20" />
+    <div className="min-h-screen bg-[#0E0F10] text-[#F5F2EA]">
 
-      {/* Top Futuristic Header */}
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#080B11]/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-          {/* Brand Logo & Title */}
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-500 to-cyan-400 p-0.5 shadow-glow-purple">
-              <div className="flex h-full w-full items-center justify-center rounded-[10px] bg-[#0B0F17]">
-                <BrainCircuit className="h-5 w-5 text-purple-400" />
-              </div>
+      {/* Navigation */}
+      <header className="sticky top-0 z-50 border-b border-[#292A2B]/80 bg-[#0E0F10]/95 backdrop-blur">
+        <div className="mx-auto flex h-[74px] max-w-[1280px] items-center justify-between px-6 sm:px-8 lg:px-10">
+
+          {/* Logo */}
+          <button
+            onClick={() => onNavigate('dashboard')}
+            className="flex items-center gap-3"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#D4AF5A]/40 bg-[#191714]">
+              <Sparkles className="h-4 w-4 text-[#D4AF5A]" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-extrabold tracking-wider text-white font-mono">
-                  REVIEWIQ
-                </h1>
-                <span className="rounded bg-gradient-to-r from-purple-500/20 to-cyan-500/20 border border-purple-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-purple-300 font-mono">
-                  4M Dataset Engine
-                </span>
-                {isSupabaseConfigured && (
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium border ${
-                      storageSource === 'supabase'
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                        : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
-                    }`}
-                    title={
-                      storageSource === 'supabase'
-                        ? 'Connected to Supabase Cloud Database'
-                        : 'Supabase configured (Syncing cache)'
-                    }
-                  >
-                    <Database className="h-2.5 w-2.5" />
-                    <span>Supabase DB</span>
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] sm:text-xs text-slate-400 hidden sm:block">
-                Product Review Intelligence & Ground-Truth Dataset Analyzer
+
+            <div className="text-left">
+              <p className="text-[15px] font-semibold tracking-[0.18em]">
+                REVIEW<span className="text-[#D4AF5A]">IQ</span>
+              </p>
+              <p className="text-[8px] uppercase tracking-[0.2em] text-[#74736E]">
+                Product Intelligence
               </p>
             </div>
-          </div>
+          </button>
 
-          {/* Navigation Tabs */}
-          <nav className="flex items-center gap-1 rounded-xl border border-slate-800 bg-[#111827]/80 p-1 overflow-x-auto max-w-full">
+          {/* Navigation */}
+          <nav className="hidden items-center gap-8 md:flex">
             <button
-              onClick={() => setActiveTab('product_search')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
-                activeTab === 'product_search'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              onClick={() => onNavigate('dashboard')}
+              className="text-xs text-[#F0D58A]"
             >
-              <Search className="h-3.5 w-3.5" />
-              <span>Product Intelligence</span>
+              Home
             </button>
+
             <button
-              onClick={() => setActiveTab('dataset')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
-                activeTab === 'dataset'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              onClick={() => onNavigate('analyze')}
+              className="text-xs text-[#92908A] transition hover:text-[#F5F2EA]"
             >
-              <Database className="h-3.5 w-3.5" />
-              <span>Dataset Explorer</span>
+              Analyze
             </button>
+
             <button
-              onClick={() => setActiveTab('live_analyzer')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
-                activeTab === 'live_analyzer'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              onClick={() => onNavigate('history')}
+              className="text-xs text-[#92908A] transition hover:text-[#F5F2EA]"
             >
-              <MessageSquare className="h-3.5 w-3.5" />
-              <span>Live Review Analyzer</span>
+              History
             </button>
+
             <button
-              onClick={() => setActiveTab('evaluation')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
-                activeTab === 'evaluation'
-                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              onClick={() => onNavigate('insights')}
+              className="text-xs text-[#92908A] transition hover:text-[#F5F2EA]"
             >
-              <Target className="h-3.5 w-3.5" />
-              <span>AI Evaluation</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
-                activeTab === 'history'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Activity className="h-3.5 w-3.5" />
-              <span>History ({history.length})</span>
+              Insights
             </button>
           </nav>
+
+          {/* CTA */}
+          <button
+            onClick={() => onNavigate('analyze')}
+            className="gold-button inline-flex items-center gap-2 px-4 py-2 text-xs"
+          >
+            Get Started
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </div>
       </header>
 
-      {/* Main Container */}
-      <main className="mx-auto max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 space-y-8">
-        {/* Backend Status Banners */}
-        {healthStatus && healthStatus.status === 'offline' && (
-          <div className="flex items-center gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-rose-300 text-xs">
-            <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
-            <div className="flex-1">
-              <strong>Backend Offline:</strong> Cannot connect to FastAPI backend at{' '}
-              <code className="font-mono bg-rose-950/60 px-1 py-0.5 rounded">{API_BASE_URL}</code>.
-              Please ensure the backend server is running.
+      <main>
+
+        {/* Hero */}
+        <section className="relative overflow-hidden">
+          <div className="mx-auto max-w-[1280px] px-6 pb-20 pt-20 sm:px-8 sm:pt-28 lg:px-10 lg:pb-28 lg:pt-32">
+
+            <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_0.95fr]">
+
+              {/* Hero content */}
+              <div>
+
+                <div className="mb-7 flex items-center gap-3">
+                  <span className="h-px w-8 bg-[#D4AF5A]" />
+
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#D4AF5A]">
+                    AI Product Intelligence
+                  </span>
+                </div>
+
+                <h1 className="max-w-3xl text-5xl font-medium leading-[1.05] tracking-[-0.045em] sm:text-6xl lg:text-[70px]">
+                  Turn customer
+                  <br />
+                  reviews into
+                  <br />
+                  <span className="text-[#D4AF5A]">
+                    intelligence.
+                  </span>
+                </h1>
+
+                <p className="mt-7 max-w-xl text-sm leading-7 text-[#8B8982] sm:text-base">
+                  ReviewIQ helps you understand what customers really think
+                  about a product by transforming reviews into clear,
+                  structured insights.
+                </p>
+
+                <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    onClick={() => onNavigate('analyze')}
+                    className="gold-button inline-flex items-center justify-center gap-2 px-6 py-3.5 text-sm"
+                  >
+                    <Search className="h-4 w-4" />
+                    Analyze a Product
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+
+                  <button
+                    onClick={() => onNavigate('insights')}
+                    className="inline-flex items-center justify-center gap-2 rounded-[9px] border border-[#292A2B] bg-[#151617] px-6 py-3.5 text-sm text-[#AAA79F] transition hover:border-[#D4AF5A]/30 hover:text-[#F5F2EA]"
+                  >
+                    Explore Insights
+                  </button>
+                </div>
+
+              </div>
+
+              {/* Intelligence preview */}
+              <div className="relative">
+                <div className="premium-panel relative overflow-hidden p-6 sm:p-8">
+
+                  <div className="absolute right-0 top-0 h-32 w-32 rounded-bl-full border-b border-l border-[#D4AF5A]/10" />
+
+                  <div className="relative">
+
+                    <div className="flex items-center justify-between border-b border-[#292A2B] pb-5">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-[#74736E]">
+                          Product analysis
+                        </p>
+
+                        <p className="mt-2 text-sm font-medium text-[#F5F2EA]">
+                          Customer Intelligence
+                        </p>
+                      </div>
+
+                      <span className="rounded-full border border-[#D4AF5A]/20 bg-[#1B1915] px-2.5 py-1 text-[9px] uppercase tracking-[0.12em] text-[#D4AF5A]">
+                        AI analyzed
+                      </span>
+                    </div>
+
+                    <div className="py-7">
+                      <p className="text-xs text-[#74736E]">
+                        Overall rating
+                      </p>
+
+                      <div className="mt-2 flex items-end gap-3">
+                        <span className="text-4xl font-medium text-[#F5F2EA]">
+                          4.5
+                        </span>
+
+                        <span className="mb-1 text-xs text-[#D4AF5A]">
+                          / 5
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 border-t border-[#292A2B] pt-5">
+
+                      {[
+                        ['Sound Quality', '4.7', 'Positive'],
+                        ['Battery', '3.8', 'Mixed'],
+                        ['Comfort', '4.6', 'Positive'],
+                        ['Build Quality', '4.5', 'Positive'],
+                      ].map(([name, rating, sentiment]) => (
+                        <div
+                          key={name}
+                          className="flex items-center justify-between"
+                        >
+                          <span className="text-xs text-[#AAA79F]">
+                            {name}
+                          </span>
+
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-[#F5F2EA]">
+                              {rating}
+                            </span>
+
+                            <span className="text-[9px] text-[#A9A17D]">
+                              {sentiment}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+
+                    </div>
+
+                  </div>
+                </div>
+
+                <div className="absolute -bottom-5 -left-5 hidden rounded-lg border border-[#292A2B] bg-[#151617] px-4 py-3 shadow-2xl sm:block">
+                  <p className="text-[9px] uppercase tracking-[0.15em] text-[#74736E]">
+                    Reviews analyzed
+                  </p>
+                  <p className="mt-1 text-lg font-medium text-[#F5F2EA]">
+                    156
+                  </p>
+                </div>
+              </div>
+
             </div>
           </div>
-        )}
+        </section>
 
-        {/* TAB 1: PRODUCT INTELLIGENCE (Main Feature) */}
-        {activeTab === 'product_search' && (
-          <div className="space-y-8">
-            {/* Search Header Section */}
-            <section className="space-y-3">
-              <div className="text-center max-w-2xl mx-auto space-y-2 mb-6">
-                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  Search & Analyze Product Reviews
-                </h2>
-              </div>
+        {/* Divider */}
+        <div className="mx-auto max-w-[1280px] px-6 sm:px-8 lg:px-10">
+          <div className="gold-divider" />
+        </div>
 
-              <div className="max-w-3xl mx-auto">
-                <ProductSearch
-                  onSelectProduct={handleSelectProduct}
-                  selectedProductId={selectedProduct?.product_id}
-                />
-              </div>
-            </section>
+        {/* How it works */}
+        <section className="mx-auto max-w-[1280px] px-6 py-20 sm:px-8 lg:px-10 lg:py-24">
 
-            {/* Product Overview & Review Analytics Display */}
-            {loadingProduct ? (
-              <div className="rounded-2xl border border-white/10 bg-[#111827]/80 p-16 text-center space-y-3">
-                <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
-                <p className="text-xs text-slate-400 font-mono">Retrieving actual dataset reviews & analytics...</p>
-              </div>
-            ) : productError ? (
-              <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-8 text-center space-y-2">
-                <AlertCircle className="h-8 w-8 text-rose-400 mx-auto" />
-                <h3 className="text-sm font-bold text-rose-200">Product Not Found</h3>
-                <p className="text-xs text-rose-300 max-w-md mx-auto">{productError}</p>
-              </div>
-            ) : productAnalysis ? (
-              <div className="space-y-8 animate-fadeIn">
-                {/* 1. Product Overview (Hero + Distributions) */}
-                <ProductOverview analysis={productAnalysis} />
+          <div className="max-w-2xl">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#D4AF5A]">
+              How ReviewIQ works
+            </p>
 
-                {/* 2. Pros & Cons Analysis (Quantified & Traceable with Evidence Reviews) */}
-                <ProsConsAnalysis
-                  productId={productAnalysis.product.product_id}
-                  productTitle={productAnalysis.product.product_title}
-                />
+            <h2 className="mt-4 text-3xl font-medium tracking-[-0.03em] sm:text-4xl">
+              From reviews to
+              <span className="text-[#AAA79F]"> useful insight.</span>
+            </h2>
+          </div>
 
-                {/* 3. Personalized Recommendation, Suitability & Similar Product Comparison */}
-                <PersonalizedRecommendation
-                  productId={productAnalysis.product.product_id}
-                  productTitle={productAnalysis.product.product_title}
-                  onSelectAlternativeProduct={handleSelectProduct}
-                />
+          <div className="mt-12 grid gap-0 border-y border-[#292A2B] md:grid-cols-3">
 
-                {/* 4. AI Executive Summary (Strictly constrained to retrieved reviews) */}
-                <AISummaryCard productId={productAnalysis.product.product_id} />
+            {[
+              {
+                number: '01',
+                title: 'Search a product',
+                text: 'Find a product from the available review dataset.',
+              },
+              {
+                number: '02',
+                title: 'Analyze reviews',
+                text: 'ReviewIQ processes customer feedback and identifies meaningful patterns.',
+              },
+              {
+                number: '03',
+                title: 'Discover insights',
+                text: 'Explore ratings, sentiment, aspects, pros, cons, and customer reviews.',
+              },
+            ].map((item, index) => (
+              <div
+                key={item.number}
+                className={`px-6 py-8 sm:px-8 md:py-10 ${
+                  index !== 2
+                    ? 'border-b border-[#292A2B] md:border-b-0 md:border-r'
+                    : ''
+                }`}
+              >
+                <span className="text-[10px] tracking-[0.18em] text-[#D4AF5A]">
+                  {item.number}
+                </span>
 
-                {/* 5. Actual Dataset Customer Reviews (Filterable & Paginated) */}
-                <ReviewList
-                  productId={productAnalysis.product.product_id}
-                  productTitle={productAnalysis.product.product_title}
-                />
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-slate-800 p-12 text-center space-y-2">
-                <Package className="h-8 w-8 text-slate-600 mx-auto" />
-                <p className="text-sm font-semibold text-slate-300">Enter a product name above to analyze its reviews.</p>
-                <p className="text-xs text-slate-500">
-                  Select from popular products like "Electric Toothbrush" or "Stainless Steel Blender".
+                <h3 className="mt-7 text-lg font-medium text-[#F5F2EA]">
+                  {item.title}
+                </h3>
+
+                <p className="mt-3 text-sm leading-6 text-[#74736E]">
+                  {item.text}
                 </p>
               </div>
-            )}
-          </div>
-        )}
+            ))}
 
-        {/* TAB 2: DATASET EXPLORER */}
-        {activeTab === 'dataset' && (
-          <div className="space-y-6">
-            <DatasetExplorer />
           </div>
-        )}
+        </section>
 
-        {/* TAB 3: LIVE CUSTOM REVIEW ANALYZER */}
-        {activeTab === 'live_analyzer' && (
-          <div className="space-y-6">
-            <div className="space-y-1">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-purple-400" />
-                Live Custom Review Analyzer
-              </h2>
-              <p className="text-xs text-slate-400">
-                Paste any unstructured customer feedback to extract structured sentiment, 1-5 star ratings, pros, cons, and summary using Gemini AI.
+        {/* Capabilities */}
+        <section className="border-y border-[#292A2B] bg-[#111213]">
+
+          <div className="mx-auto max-w-[1280px] px-6 py-20 sm:px-8 lg:px-10 lg:py-24">
+
+            <div className="max-w-2xl">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#D4AF5A]">
+                Built for product understanding
               </p>
+
+              <h2 className="mt-4 text-3xl font-medium tracking-[-0.03em] sm:text-4xl">
+                See beyond the
+                <span className="text-[#AAA79F]"> star rating.</span>
+              </h2>
             </div>
 
-            {!isSupabaseConfigured && (
-              <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-amber-200 text-xs" role="status">
-                <AlertCircle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
-                <div>
-                  <strong>Supabase persistence is not configured.</strong>{' '}
-                  {supabaseConfigurationError || 'Set the frontend Supabase environment variables to save analyses to the reviews table.'}{' '}
-                  Until then, new analyses are stored only in this browser&apos;s local history.
-                </div>
-              </div>
-            )}
+            <div className="mt-12 grid gap-4 md:grid-cols-3">
 
-            <ReviewInput
-              onAnalyze={handleAnalyzeLive}
-              isLoading={isLoadingLive}
-              errorMessage={liveErrorMessage}
-              onClearError={() => setLiveErrorMessage(null)}
-            />
+              {features.map((feature) => {
+                const Icon = feature.icon;
 
-            {isLoadingLive && <LoadingState message="Analyzing review with Gemini AI..." />}
+                return (
+                  <div
+                    key={feature.title}
+                    className="premium-panel premium-panel-hover p-7"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#D4AF5A]/20 bg-[#1B1915]">
+                      <Icon className="h-[18px] w-[18px] text-[#D4AF5A]" />
+                    </div>
 
-            {currentAnalysis && !isLoadingLive && (
-              <div ref={analysisRef} className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-purple-400 font-mono flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Analysis Assessment
-                  </h3>
-                </div>
-                <AnalysisResult
-                  analysis={currentAnalysis}
-                  originalText={activeReviewText}
-                />
-              </div>
-            )}
+                    <h3 className="mt-7 text-base font-medium text-[#F5F2EA]">
+                      {feature.title}
+                    </h3>
+
+                    <p className="mt-3 text-sm leading-6 text-[#74736E]">
+                      {feature.description}
+                    </p>
+                  </div>
+                );
+              })}
+
+            </div>
           </div>
-        )}
+        </section>
 
-        {/* TAB 4: AI EVALUATION & BENCHMARKING */}
-        {activeTab === 'evaluation' && (
-          <div className="space-y-6">
-            <EvaluationDashboard />
-          </div>
-        )}
+        {/* CTA */}
+        <section className="mx-auto max-w-[1280px] px-6 py-20 text-center sm:px-8 lg:px-10 lg:py-28">
 
-        {/* TAB 5: USER REVIEW HISTORY */}
-        {activeTab === 'history' && (
-          <div className="space-y-6">
-            <ReviewHistory
-              history={history}
-              onSelectReview={handleSelectHistoryItem}
-              onDeleteReview={handleDeleteReview}
-              onClearHistory={handleClearHistory}
-            />
-          </div>
-        )}
+          <CheckCircle2 className="mx-auto h-7 w-7 text-[#D4AF5A]" />
+
+          <p className="mt-6 text-[10px] font-semibold uppercase tracking-[0.22em] text-[#D4AF5A]">
+            Start exploring
+          </p>
+
+          <h2 className="mx-auto mt-4 max-w-2xl text-3xl font-medium tracking-[-0.035em] sm:text-5xl">
+            Understand the voice
+            <br />
+            <span className="text-[#AAA79F]">
+              behind every review.
+            </span>
+          </h2>
+
+          <p className="mx-auto mt-5 max-w-lg text-sm leading-6 text-[#74736E]">
+            Search for a product and discover what its customers are really
+            saying.
+          </p>
+
+          <button
+            onClick={() => onNavigate('analyze')}
+            className="gold-button mt-8 inline-flex items-center gap-2 px-6 py-3.5 text-sm"
+          >
+            Analyze a Product
+            <ArrowRight className="h-4 w-4" />
+          </button>
+
+        </section>
+
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-[#292A2B]">
+
+        <div className="mx-auto flex max-w-[1280px] flex-col justify-between gap-5 px-6 py-7 sm:px-8 md:flex-row lg:px-10">
+
+          <div>
+            <p className="text-[12px] font-semibold tracking-[0.16em]">
+              REVIEW<span className="text-[#D4AF5A]">IQ</span>
+            </p>
+
+            <p className="mt-1 text-[10px] text-[#555550]">
+              Product Review Intelligence Platform
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-5 text-[10px] uppercase tracking-[0.12em] text-[#555550]">
+            <button
+              onClick={() => onNavigate('analyze')}
+              className="transition hover:text-[#D4AF5A]"
+            >
+              Analyze
+            </button>
+
+            <button
+              onClick={() => onNavigate('history')}
+              className="transition hover:text-[#D4AF5A]"
+            >
+              History
+            </button>
+
+            <button
+              onClick={() => onNavigate('insights')}
+              className="transition hover:text-[#D4AF5A]"
+            >
+              Insights
+            </button>
+          </div>
+
+        </div>
+
+      </footer>
     </div>
   );
 };
+
+export default Dashboard;
