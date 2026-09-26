@@ -3,10 +3,7 @@ import {
   Compass,
   Sparkles,
   CheckCircle2,
-  AlertTriangle,
-  Star,
   ArrowRight,
-  ShieldCheck,
   Award,
   HelpCircle,
   BarChart3,
@@ -72,10 +69,9 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
       .then((res) => {
         setData(res);
       })
-      .catch((err) => {
-        setError(
-          err.response?.data?.detail || 'Failed to generate personalized recommendation.'
-        );
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Failed to generate personalized recommendation.';
+        setError(msg);
       })
       .finally(() => {
         setLoading(false);
@@ -112,50 +108,34 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
     fetchRecommendation(persona, selectedPriorities, customReq);
   };
 
-  const renderStars = (rating: number) => {
-    const clamped = Math.max(1, Math.min(5, Math.round(rating)));
-    return (
-      <div className="flex items-center gap-0.5 text-amber-400">
-        {[1, 2, 3, 4, 5].map((s) => (
-          <Star
-            key={s}
-            className={`h-3.5 w-3.5 ${
-              s <= clamped ? 'fill-amber-400 text-amber-400' : 'text-slate-600'
-            }`}
-          />
-        ))}
-      </div>
-    );
-  };
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Section Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#292A2B] pb-3">
         <div>
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Compass className="h-5 w-5 text-purple-400" />
+          <h2 className="text-lg font-medium text-[#F5F2EA] flex items-center gap-2">
+            <Compass className="h-4 w-4 text-[#D4AF5A]" />
             Personalized Product Recommendation & Decision Engine
           </h2>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-[#74736E]">
             Tailored analysis based strictly on your stated priorities and verified dataset review evidence.
           </p>
         </div>
 
-        <span className="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-3 py-1 text-[11px] font-mono text-indigo-300 flex items-center gap-1.5 self-start sm:self-center">
-          <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-          <span>Multi-Product Category Benchmarking</span>
+        <span className="rounded-full border border-[#D4AF5A]/30 bg-[#1B1915] px-3 py-1 text-[10px] font-mono text-[#D4AF5A] flex items-center gap-1.5 self-start sm:self-center">
+          <Sparkles className="h-3.5 w-3.5 text-[#D4AF5A]" />
+          <span>Category Benchmarking</span>
         </span>
       </div>
 
       {/* 1. User Profile & Requirements Input Form */}
-      <div className="rounded-2xl border border-purple-500/30 bg-[#111827]/90 p-6 backdrop-blur-xl shadow-glass space-y-5">
+      <div className="premium-panel p-6 space-y-5">
         <div>
-          <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-            <Tag className="h-4 w-4 text-cyan-400" />
+          <h3 className="text-sm font-medium text-[#F5F2EA] mb-1 flex items-center gap-2">
+            <Tag className="h-4 w-4 text-[#D4AF5A]" />
             1. Select Your User Profile or Customize Priorities
           </h3>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-[#74736E]">
             Choose a profile below or enter custom requirements to match this product against peer alternatives in {productTitle}'s category.
           </p>
         </div>
@@ -169,20 +149,20 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
               onClick={() => handlePersonaClick(p.id)}
               className={`rounded-xl border p-3 text-left transition ${
                 persona === p.id
-                  ? 'border-purple-500 bg-purple-600/20 text-white shadow-glow-purple'
-                  : 'border-slate-800 bg-[#0B0F17] text-slate-300 hover:border-slate-700 hover:bg-slate-800/40'
+                  ? 'border-[#D4AF5A] bg-[#1B1915] text-[#F5F2EA] shadow-[0_0_20px_rgba(212,175,90,0.2)]'
+                  : 'border-[#292A2B] bg-[#151617] text-[#AAA79F] hover:border-[#D4AF5A]/30 hover:bg-[#1C1D1F]'
               }`}
             >
-              <div className="text-xs font-bold">{p.label}</div>
-              <div className="text-[10px] text-slate-400 mt-1 line-clamp-1">{p.desc}</div>
+              <div className="text-xs font-semibold">{p.label}</div>
+              <div className="text-[10px] text-[#74736E] mt-1 line-clamp-1">{p.desc}</div>
             </button>
           ))}
         </div>
 
         {/* Priority Checkbox Pills & Custom Requirements */}
-        <form onSubmit={handleApplyRequirements} className="space-y-4 pt-2 border-t border-slate-800/80">
+        <form onSubmit={handleApplyRequirements} className="space-y-4 pt-3 border-t border-[#292A2B]">
           <div>
-            <label className="text-xs font-mono uppercase text-slate-400 block mb-2">
+            <label className="text-xs uppercase tracking-wider text-[#74736E] block mb-2 font-medium">
               Features & Priorities of Interest:
             </label>
             <div className="flex flex-wrap gap-2">
@@ -195,8 +175,8 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
                     onClick={() => togglePriority(prio)}
                     className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${
                       active
-                        ? 'border-cyan-500/40 bg-cyan-500/20 text-cyan-200'
-                        : 'border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                        ? 'border-[#D4AF5A] bg-[#1B1915] text-[#F0D58A]'
+                        : 'border-[#292A2B] bg-[#151617] text-[#AAA79F] hover:border-[#D4AF5A]/30 hover:text-[#F5F2EA]'
                     }`}
                   >
                     {active ? '✓ ' : '+ '}
@@ -212,13 +192,13 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
               type="text"
               value={customReq}
               onChange={(e) => setCustomReq(e.target.value)}
-              placeholder="e.g. I need something durable for daily travel with great battery life..."
-              className="flex-1 rounded-xl border border-slate-700 bg-[#0B0F17] px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:border-purple-500 focus:outline-none"
+              placeholder="e.g. I need something durable for daily use with long battery life..."
+              className="flex-1 rounded-xl border border-[#292A2B] bg-[#151617] px-4 py-2.5 text-xs text-[#F5F2EA] placeholder-[#74736E] focus:border-[#D4AF5A]/60 focus:outline-none"
             />
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 px-5 py-2.5 text-xs font-semibold text-white shadow-md hover:brightness-110 disabled:opacity-50 transition"
+              className="gold-button inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs disabled:opacity-50"
             >
               <Sparkles className="h-3.5 w-3.5" />
               <span>Update Recommendation</span>
@@ -228,228 +208,153 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-white/10 bg-[#111827]/80 p-16 text-center space-y-3">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
-          <p className="text-xs text-slate-400 font-mono">
+        <div className="premium-panel p-16 text-center space-y-3">
+          <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-[#D4AF5A] border-t-transparent" />
+          <p className="text-xs text-[#AAA79F]">
             Comparing category alternatives & matching dataset review evidence...
           </p>
         </div>
       ) : error || !data ? (
-        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-center text-xs text-rose-300">
+        <div className="rounded-xl border border-rose-900/40 bg-rose-950/20 p-6 text-center text-xs text-rose-300">
           {error || 'Unable to generate recommendation comparison.'}
         </div>
       ) : (
-        <div className="space-y-8 animate-fadeIn">
-          {/* 2. IS THIS PRODUCT SUITABLE FOR YOU? */}
-          <div className="rounded-2xl border border-white/10 bg-[#111827]/85 p-6 backdrop-blur-xl shadow-glass space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <HelpCircle className="h-4 w-4 text-cyan-400" />
-                IS THIS PRODUCT SUITABLE FOR YOU?
+        <div className="space-y-6">
+          {/* 2. SUITABILITY ASSESSMENT */}
+          <div className="premium-panel p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#292A2B] pb-3">
+              <h3 className="text-sm font-medium text-[#F5F2EA] flex items-center gap-2">
+                <HelpCircle className="h-4 w-4 text-[#D4AF5A]" />
+                Suitability Verdict & Intelligence
               </h3>
-              <span className="text-xs font-mono text-slate-400">
-                Persona: <strong className="text-purple-300">{persona}</strong>
+              <span className="text-xs text-[#74736E]">
+                Persona: {persona}
               </span>
             </div>
 
-            {/* Verdict Box */}
-            <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/25 p-4 text-xs sm:text-sm text-indigo-200 leading-relaxed font-medium">
-              {data.suitability_verdict}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-              {/* Suitable for */}
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 space-y-2">
-                <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>✓ Suitable For:</span>
+            <div className="rounded-xl border border-[#292A2B] bg-[#151617] p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl p-3 border border-[#D4AF5A]/40 bg-[#1B1915] text-[#D4AF5A]">
+                    <CheckCircle2 className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <span className="text-xs uppercase font-semibold tracking-wider text-[#D4AF5A]">
+                      {data.suitability_verdict || 'Analysis Complete'}
+                    </span>
+                    <h4 className="text-base font-medium text-[#F5F2EA] mt-0.5">
+                      {data.recommendation_headline || productTitle}
+                    </h4>
+                  </div>
                 </div>
-                <ul className="space-y-1.5 text-xs text-slate-300">
-                  {data.suitable_for.map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-2">
-                      <span className="text-emerald-400 font-bold">•</span>
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
               </div>
 
-              {/* Consider before buying */}
-              <div className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-4 space-y-2">
-                <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                  <AlertTriangle className="h-4 w-4" />
-                  <span>⚠ Consider Before Buying:</span>
-                </div>
-                <ul className="space-y-1.5 text-xs text-slate-300">
-                  {data.consider_before_buying.map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-2">
-                      <span className="text-amber-400 font-bold">•</span>
-                      <span>{item}</span>
-                    </li>
+              {/* Recommendation Reasons */}
+              {data.recommendation_reasons && data.recommendation_reasons.length > 0 && (
+                <div className="space-y-1.5 border-t border-[#292A2B] pt-3">
+                  {data.recommendation_reasons.map((reason, idx) => (
+                    <p key={idx} className="text-xs text-[#AAA79F] leading-relaxed">
+                      • {reason}
+                    </p>
                   ))}
-                </ul>
-              </div>
+                </div>
+              )}
+
+              {/* Priority Matches Evidence */}
+              {data.priority_matches && data.priority_matches.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <span className="text-[10px] uppercase tracking-wider text-[#74736E] font-medium">
+                    Priority Alignment Breakdown:
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {data.priority_matches.map((pm, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border border-[#292A2B] bg-[#111213] p-3 text-xs space-y-1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-[#F5F2EA]">{pm.priority}</span>
+                          <span className="rounded px-1.5 py-0.5 text-[10px] uppercase font-semibold bg-[#1B1915] text-[#D4AF5A] border border-[#D4AF5A]/30">
+                            {pm.evidence_level}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[#74736E]">{pm.details}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* 3. SIDE-BY-SIDE PRODUCT COMPARISON TABLE */}
+          {/* 3. SIDE-BY-SIDE RELATED COMPARISON TABLE */}
           {data.comparison_products && data.comparison_products.length > 0 && (
-            <div className="rounded-2xl border border-white/10 bg-[#111827]/85 p-6 backdrop-blur-xl shadow-glass space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-purple-400" />
-                  COMPARE WITH SIMILAR PRODUCTS ({data.selected_product.category} Category)
+            <div className="premium-panel p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-[#292A2B] pb-3">
+                <h3 className="text-sm font-medium text-[#F5F2EA] flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-[#D4AF5A]" />
+                  Related Products Side-by-Side Comparison
                 </h3>
-                <span className="text-[11px] font-mono text-slate-400">
-                  Real Dataset Metrics Only
+                <span className="text-xs text-[#74736E]">
+                  Same Category ({data.comparison_products[0]?.category || 'Related'})
                 </span>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-slate-800 bg-[#0B0F17]">
-                <table className="w-full text-left text-xs">
-                  <thead className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-mono uppercase text-[10px]">
-                    <tr>
-                      <th className="p-3.5 w-36">Metric / Feature</th>
-                      {data.comparison_products.map((item) => (
-                        <th
-                          key={item.product_id}
-                          className={`p-3.5 min-w-[200px] ${
-                            item.is_selected
-                              ? 'bg-purple-950/40 text-purple-300 border-x border-purple-500/30'
-                              : 'text-slate-200'
-                          }`}
-                        >
-                          <div className="font-bold text-xs">{item.product_title}</div>
-                          <div className="text-[10px] font-mono opacity-70">
-                            {item.is_selected ? '★ Selected Product' : `ID: ${item.product_id}`}
-                          </div>
-                        </th>
-                      ))}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#292A2B] text-[#74736E]">
+                      <th className="p-3">Product</th>
+                      <th className="p-3">Rating</th>
+                      <th className="p-3">Reviews</th>
+                      <th className="p-3">Sentiment</th>
+                      <th className="p-3">Top Pros</th>
+                      <th className="p-3">Top Cons</th>
+                      <th className="p-3 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/80 font-mono">
-                    {/* Rating */}
-                    <tr>
-                      <td className="p-3 text-slate-400 font-sans font-medium">Average Rating</td>
-                      {data.comparison_products.map((item) => (
-                        <td
-                          key={item.product_id}
-                          className={`p-3 ${item.is_selected ? 'bg-purple-950/20 border-x border-purple-500/20' : ''}`}
-                        >
-                          <div className="flex items-center gap-2">
-                            {renderStars(item.average_rating)}
-                            <span className="font-bold text-amber-400">{item.average_rating} / 5</span>
+                  <tbody className="divide-y divide-[#292A2B]/60">
+                    {data.comparison_products.map((item) => (
+                      <tr
+                        key={item.product_id}
+                        className={`hover:bg-[#1C1D1F] transition ${
+                          item.is_selected ? 'bg-[#1B1915]' : ''
+                        }`}
+                      >
+                        <td className="p-3">
+                          <div className="font-medium text-[#F5F2EA] flex items-center gap-1.5">
+                            <span>{item.product_title}</span>
+                            {item.is_selected && (
+                              <span className="rounded bg-[#D4AF5A]/20 border border-[#D4AF5A]/40 px-1.5 py-0.5 text-[9px] text-[#D4AF5A]">
+                                Current
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-[#74736E]">{item.category}</span>
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-1 font-semibold text-[#D4AF5A]">
+                            ★ {item.average_rating.toFixed(1)}
                           </div>
                         </td>
-                      ))}
-                    </tr>
-
-                    {/* Total Reviews */}
-                    <tr>
-                      <td className="p-3 text-slate-400 font-sans font-medium">Verified Reviews</td>
-                      {data.comparison_products.map((item) => (
-                        <td
-                          key={item.product_id}
-                          className={`p-3 font-semibold text-white ${
-                            item.is_selected ? 'bg-purple-950/20 border-x border-purple-500/20' : ''
-                          }`}
-                        >
-                          {item.review_count.toLocaleString()} reviews
+                        <td className="p-3 font-mono text-[#AAA79F]">
+                          {item.review_count.toLocaleString()}
                         </td>
-                      ))}
-                    </tr>
-
-                    {/* Positive Sentiment */}
-                    <tr>
-                      <td className="p-3 text-slate-400 font-sans font-medium">Positive Sentiment</td>
-                      {data.comparison_products.map((item) => (
-                        <td
-                          key={item.product_id}
-                          className={`p-3 text-emerald-400 font-bold ${
-                            item.is_selected ? 'bg-purple-950/20 border-x border-purple-500/20' : ''
-                          }`}
-                        >
-                          {item.positive_percentage}%
+                        <td className="p-3">
+                          <span className="text-emerald-400 font-medium">
+                            {item.positive_percentage}% Pos
+                          </span>
                         </td>
-                      ))}
-                    </tr>
-
-                    {/* Negative Sentiment */}
-                    <tr>
-                      <td className="p-3 text-slate-400 font-sans font-medium">Negative Sentiment</td>
-                      {data.comparison_products.map((item) => (
-                        <td
-                          key={item.product_id}
-                          className={`p-3 text-rose-400 font-semibold ${
-                            item.is_selected ? 'bg-purple-950/20 border-x border-purple-500/20' : ''
-                          }`}
-                        >
-                          {item.negative_percentage}%
+                        <td className="p-3 text-[#AAA79F]">
+                          {item.common_pros.slice(0, 2).join(', ') || 'N/A'}
                         </td>
-                      ))}
-                    </tr>
-
-                    {/* Common Pros */}
-                    <tr>
-                      <td className="p-3 text-slate-400 font-sans font-medium">Common Pros</td>
-                      {data.comparison_products.map((item) => (
-                        <td
-                          key={item.product_id}
-                          className={`p-3 font-sans text-xs text-slate-300 ${
-                            item.is_selected ? 'bg-purple-950/20 border-x border-purple-500/20' : ''
-                          }`}
-                        >
-                          <div className="space-y-1">
-                            {item.common_pros.map((pro, i) => (
-                              <div key={i} className="text-emerald-300 text-[11px] flex items-center gap-1">
-                                <span>✓</span>
-                                <span>{pro}</span>
-                              </div>
-                            ))}
-                          </div>
+                        <td className="p-3 text-[#AAA79F]">
+                          {item.common_cons.slice(0, 2).join(', ') || 'N/A'}
                         </td>
-                      ))}
-                    </tr>
-
-                    {/* Common Cons */}
-                    <tr>
-                      <td className="p-3 text-slate-400 font-sans font-medium">Common Cons</td>
-                      {data.comparison_products.map((item) => (
-                        <td
-                          key={item.product_id}
-                          className={`p-3 font-sans text-xs text-slate-300 ${
-                            item.is_selected ? 'bg-purple-950/20 border-x border-purple-500/20' : ''
-                          }`}
-                        >
-                          <div className="space-y-1">
-                            {item.common_cons.map((con, i) => (
-                              <div key={i} className="text-rose-300 text-[11px] flex items-center gap-1">
-                                <span>✗</span>
-                                <span>{con}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                      ))}
-                    </tr>
-
-                    {/* Action / Inspect */}
-                    <tr>
-                      <td className="p-3 text-slate-400 font-sans font-medium">Explore</td>
-                      {data.comparison_products.map((item) => (
-                        <td
-                          key={item.product_id}
-                          className={`p-3 ${item.is_selected ? 'bg-purple-950/20 border-x border-purple-500/20' : ''}`}
-                        >
-                          {item.is_selected ? (
-                            <span className="inline-block rounded-lg bg-purple-500/20 border border-purple-500/40 px-2.5 py-1 text-[11px] font-sans font-bold text-purple-300">
-                              Currently Viewing
-                            </span>
-                          ) : (
+                        <td className="p-3 text-right">
+                          {!item.is_selected && onSelectAlternativeProduct && (
                             <button
-                              type="button"
                               onClick={() =>
-                                onSelectAlternativeProduct &&
                                 onSelectAlternativeProduct({
                                   product_id: item.product_id,
                                   product_title: item.product_title,
@@ -458,112 +363,61 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
                                   average_rating: item.average_rating,
                                 })
                               }
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-sans font-medium text-slate-200 hover:bg-purple-600 hover:text-white transition"
+                              className="rounded-lg border border-[#292A2B] bg-[#151617] px-2.5 py-1 text-[11px] font-medium text-[#D4AF5A] hover:border-[#D4AF5A]/40 hover:bg-[#1C1D1F] transition"
                             >
-                              <span>Switch to this</span>
-                              <ArrowRight className="h-3 w-3" />
+                              Analyze
                             </button>
                           )}
                         </td>
-                      ))}
-                    </tr>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* 4. FINAL DECISION PANEL ("MY RECOMMENDATION") */}
-          <div className="relative overflow-hidden rounded-2xl border border-gradient border-purple-500/40 bg-gradient-to-br from-[#111827] via-[#0B0F17] to-[#151226] p-6 sm:p-7 backdrop-blur-xl shadow-2xl space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-purple-600 to-cyan-400 p-0.5 shadow-glow-purple">
-                  <div className="flex h-full w-full items-center justify-center rounded-[10px] bg-[#0B0F17]">
-                    <Award className="h-5 w-5 text-purple-400" />
+          {/* 4. RECOMMENDED ALTERNATIVE */}
+          {data.recommended_product && (
+            <div className="rounded-xl border border-[#D4AF5A]/40 bg-[#171613] p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-[#D4AF5A]/20 pb-3">
+                <h3 className="text-sm font-semibold text-[#F0D58A] flex items-center gap-2">
+                  <Award className="h-5 w-5 text-[#D4AF5A]" />
+                  Recommended Category Match
+                </h3>
+                <span className="text-[10px] uppercase tracking-wider text-[#D4AF5A] font-semibold">
+                  Peer Match
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h4 className="text-base font-semibold text-[#F5F2EA]">
+                    {data.recommended_product.product_title}
+                  </h4>
+                  <div className="flex items-center gap-3 text-xs text-[#AAA79F]">
+                    <span className="text-[#D4AF5A] font-medium">
+                      ★ {data.recommended_product.average_rating.toFixed(1)}/5
+                    </span>
+                    <span>·</span>
+                    <span>{data.recommended_product.review_count.toLocaleString()} reviews</span>
+                    <span>·</span>
+                    <span>{data.recommended_product.category}</span>
                   </div>
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-white uppercase tracking-wider font-mono">
-                    YOUR PRODUCT DECISION
-                  </h3>
-                  <p className="text-[11px] font-mono text-purple-300">
-                    Target Criteria: {data.user_priorities.join(' • ')}
-                  </p>
-                </div>
-              </div>
 
-              <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 text-xs font-mono text-emerald-400 font-semibold self-start sm:self-center">
-                Top Match Verified
-              </span>
-            </div>
-
-            {/* Recommendation Box */}
-            <div className="rounded-xl border border-purple-500/30 bg-[#0B0F17]/90 p-5 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                    RECOMMENDED MATCH
-                  </span>
-                  <h4 className="text-lg font-black text-white flex items-center gap-2">
-                    <span>{data.recommended_product.product_title}</span>
-                    <span className="text-xs font-mono text-amber-400">
-                      ({data.recommended_product.average_rating} ★)
-                    </span>
-                  </h4>
-                </div>
-
-                <div className="text-xs font-mono text-slate-400">
-                  {data.recommended_product.review_count.toLocaleString()} dataset reviews
-                </div>
-              </div>
-
-              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
-                {data.recommendation_headline}
-              </p>
-            </div>
-
-            {/* Why this matches your requirements */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/15 p-4 space-y-2">
-                <span className="font-bold text-emerald-400 block">
-                  Strengths for you:
-                </span>
-                <ul className="space-y-1.5 text-slate-300">
-                  {data.strengths_for_you.map((s, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-emerald-400 font-bold">✓</span>
-                      <span>{s}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="rounded-xl border border-amber-500/20 bg-amber-950/15 p-4 space-y-2">
-                <span className="font-bold text-amber-400 block">
-                  Things to consider:
-                </span>
-                <ul className="space-y-1.5 text-slate-300">
-                  {data.things_to_consider.map((t, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-amber-400 font-bold">⚠</span>
-                      <span>{t}</span>
-                    </li>
-                  ))}
-                </ul>
+                {onSelectAlternativeProduct && (
+                  <button
+                    onClick={() => onSelectAlternativeProduct(data.recommended_product)}
+                    className="gold-button inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold shrink-0"
+                  >
+                    <span>View Full Analysis</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             </div>
-
-            {/* Footer Transparency Disclaimer */}
-            <div className="pt-2 text-[11px] font-mono text-slate-500 flex items-center justify-between border-t border-slate-800/80">
-              <span className="flex items-center gap-1.5">
-                <ShieldCheck className="h-3.5 w-3.5 text-cyan-400" />
-                <span>Source: ReviewIQ Product Review Dataset • Zero fabricated claims</span>
-              </span>
-              <span className="hidden sm:inline">
-                Analyzed for: {data.selected_product.product_title}
-              </span>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>

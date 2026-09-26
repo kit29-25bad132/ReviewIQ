@@ -11,6 +11,7 @@ import {
   ThumbsDown,
   MinusCircle,
   Scale,
+  Sparkles,
 } from 'lucide-react';
 import { PointEvidence, ReviewAnalysis } from '../types/review';
 
@@ -29,10 +30,10 @@ const renderPointEvidenceList = (
       {items.map((item, index) => (
         <li
           key={index}
-          className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-xs sm:text-sm text-slate-200 transition-all ${
+          className={`flex items-start gap-2.5 rounded-lg border p-3 text-xs sm:text-sm text-[#F5F2EA] transition-all ${
             isPros
-              ? 'border-emerald-500/15 bg-emerald-900/20 hover:border-emerald-500/30'
-              : 'border-rose-500/15 bg-rose-900/20 hover:border-rose-500/30'
+              ? 'border-emerald-800/40 bg-emerald-950/20 hover:border-emerald-700/60'
+              : 'border-rose-800/40 bg-rose-950/20 hover:border-rose-700/60'
           }`}
         >
           <span
@@ -41,11 +42,11 @@ const renderPointEvidenceList = (
             {isPros ? '✓' : '✗'}
           </span>
           <span className="flex flex-col gap-1 min-w-0">
-            <span>{item.point}</span>
+            <span className="font-medium">{item.point}</span>
             {item.evidence && (
               <span
                 className={`text-[11px] leading-snug italic ${
-                  isPros ? 'text-emerald-200/60' : 'text-rose-200/60'
+                  isPros ? 'text-emerald-300/70' : 'text-rose-300/70'
                 }`}
               >
                 Evidence: “{item.evidence}”
@@ -60,7 +61,6 @@ const renderPointEvidenceList = (
 
 export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   analysis,
-  originalText,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showJson, setShowJson] = useState(false);
@@ -75,29 +75,25 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
     }
   };
 
-  // Render sentiment configuration
   const renderSentimentBadge = () => {
     switch (analysis.sentiment) {
       case 'positive':
         return (
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-sm font-semibold text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
-            <span className="text-base leading-none">🟢</span>
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-800/50 bg-emerald-950/40 px-3.5 py-1.5 text-xs font-semibold text-emerald-400">
             <ThumbsUp className="h-4 w-4" />
             <span className="capitalize">Positive Sentiment</span>
           </div>
         );
       case 'negative':
         return (
-          <div className="inline-flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3.5 py-1.5 text-sm font-semibold text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.2)]">
-            <span className="text-base leading-none">🔴</span>
+          <div className="inline-flex items-center gap-2 rounded-full border border-rose-800/50 bg-rose-950/40 px-3.5 py-1.5 text-xs font-semibold text-rose-400">
             <ThumbsDown className="h-4 w-4" />
             <span className="capitalize">Negative Sentiment</span>
           </div>
         );
       case 'mixed':
         return (
-          <div className="inline-flex items-center gap-2 rounded-full border border-violet-500/30 bg-violet-500/10 px-3.5 py-1.5 text-sm font-semibold text-violet-300 shadow-[0_0_15px_rgba(139,92,246,0.2)]">
-            <span className="text-base leading-none">🟣</span>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#D4AF5A]/40 bg-[#1B1915] px-3.5 py-1.5 text-xs font-semibold text-[#F0D58A]">
             <Scale className="h-4 w-4" />
             <span className="capitalize">Mixed Sentiment</span>
           </div>
@@ -105,8 +101,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
       case 'neutral':
       default:
         return (
-          <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3.5 py-1.5 text-sm font-semibold text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
-            <span className="text-base leading-none">🟡</span>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#292A2B] bg-[#151617] px-3.5 py-1.5 text-xs font-semibold text-[#AAA79F]">
             <MinusCircle className="h-4 w-4" />
             <span className="capitalize">Neutral Sentiment</span>
           </div>
@@ -114,216 +109,160 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
     }
   };
 
-  // Render 5 stars matching the exact integer rating
-  const renderStars = (rating: number) => {
-    const clampedRating = Math.max(1, Math.min(5, Math.round(rating)));
-    return (
-      <div className="flex items-center gap-1">
-        {[1, 2, 3, 4, 5].map((starIdx) => {
-          const isFilled = starIdx <= clampedRating;
-          return (
-            <Star
-              key={starIdx}
-              className={`h-5 w-5 ${
-                isFilled
-                  ? 'fill-amber-400 text-amber-400 filter drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]'
-                  : 'text-slate-600'
-              }`}
-            />
-          );
-        })}
-      </div>
-    );
-  };
-
-  const ratingSourceLabel = (source: ReviewAnalysis['rating_source']) => {
-    switch (source) {
-      case 'explicit':
-        return 'Explicit rating';
-      case 'inferred':
-        return 'Inferred rating';
-      case 'not_found':
-        return 'Rating not found';
-      default:
-        return null;
-    }
-  };
-
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-purple-500/30 bg-[#111827]/90 p-6 sm:p-7 backdrop-blur-xl shadow-glass transition-all duration-300">
-      {/* Top action header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div className="flex flex-wrap items-center gap-3">
-          {renderSentimentBadge()}
-          {analysis.rating !== null ? (
-            <div className="flex items-center gap-2.5 rounded-full border border-slate-700 bg-slate-800/80 px-3.5 py-1.5 text-sm">
-              {renderStars(analysis.rating)}
-              <span className="font-mono font-bold text-white">
-                {analysis.rating} / 5
-              </span>
-              {ratingSourceLabel(analysis.rating_source) && (
-                <span className="text-[10px] uppercase tracking-wide text-slate-400 border-l border-slate-700 pl-2">
-                  {ratingSourceLabel(analysis.rating_source)}
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/80 px-3.5 py-1.5 text-sm text-slate-400">
-              <Star className="h-4 w-4 text-slate-600" />
-              <span className="font-mono font-semibold">No rating</span>
-              <span className="text-[10px] uppercase tracking-wide border-l border-slate-700 pl-2">
-                {ratingSourceLabel(analysis.rating_source) ?? 'Rating not found'}
-              </span>
-            </div>
-          )}
-        </div>
+    <div className="space-y-6">
+      {/* Top Banner: Sentiment & Stars Card */}
+      <div className="premium-panel p-6 relative overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+          {/* Sentiment & Rating Badge */}
+          <div className="flex flex-wrap items-center gap-4">
+            {renderSentimentBadge()}
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowJson(!showJson)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 hover:text-white transition"
-            title="Toggle Raw JSON View"
-          >
-            <Code2 className="h-3.5 w-3.5" />
-            {showJson ? 'Hide JSON' : 'View JSON'}
-          </button>
-          <button
-            type="button"
-            onClick={handleCopyJson}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 hover:text-white transition"
-            title="Copy Structured JSON"
-          >
-            {copied ? (
-              <>
-                <Check className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="text-emerald-400">Copied</span>
-              </>
-            ) : (
-              <>
-                <Copy className="h-3.5 w-3.5" />
-                <span>Copy JSON</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Raw JSON toggle preview */}
-      {showJson && (
-        <div className="mt-5 rounded-xl border border-slate-700 bg-[#0B0F17] p-4 text-xs font-mono text-purple-300 overflow-x-auto">
-          <pre>{JSON.stringify(analysis, null, 2)}</pre>
-        </div>
-      )}
-
-      {/* Main Content Sections: Pros & Cons */}
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Pros Card */}
-        <div className="flex flex-col rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 sm:p-5 backdrop-blur-sm">
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold text-sm mb-3">
-            <CheckCircle2 className="h-4 w-4" />
-            <span>Pros & Strengths</span>
-            <span className="ml-auto rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-mono text-emerald-300">
-              {analysis.pros.length}
-            </span>
-          </div>
-
-          {analysis.pros.length > 0 ? (
-            renderPointEvidenceList(analysis.pros, 'emerald')
-          ) : (
-            <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-emerald-900/40 p-4 text-xs text-slate-400 italic">
-              No clear pros mentioned in review
-            </div>
-          )}
-        </div>
-
-        {/* Cons Card */}
-        <div className="flex flex-col rounded-xl border border-rose-500/20 bg-rose-950/20 p-4 sm:p-5 backdrop-blur-sm">
-          <div className="flex items-center gap-2 text-rose-400 font-semibold text-sm mb-3">
-            <XCircle className="h-4 w-4" />
-            <span>Cons & Pain Points</span>
-            <span className="ml-auto rounded-full bg-rose-500/20 px-2 py-0.5 text-xs font-mono text-rose-300">
-              {analysis.cons.length}
-            </span>
-          </div>
-
-          {analysis.cons.length > 0 ? (
-            renderPointEvidenceList(analysis.cons, 'rose')
-          ) : (
-            <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-rose-900/40 p-4 text-xs text-slate-400 italic">
-              No clear cons mentioned in review
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Aspect sentiments (contract field; shown when present) */}
-      {analysis.aspects.length > 0 && (
-        <div className="mt-5 rounded-xl border border-cyan-500/20 bg-cyan-950/20 p-4 sm:p-5 backdrop-blur-sm">
-          <div className="flex items-center gap-2 text-cyan-300 font-semibold text-sm mb-2">
-            <FileText className="h-4 w-4 text-cyan-400" />
-            <span>Aspect Sentiments</span>
-            <span className="ml-auto rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs font-mono text-cyan-200">
-              {analysis.aspects.length}
-            </span>
-          </div>
-          <ul className="space-y-2">
-            {analysis.aspects.map((aspect, index) => (
-              <li
-                key={index}
-                className="rounded-lg border border-cyan-500/15 bg-cyan-900/20 p-2.5 text-xs sm:text-sm text-slate-200"
-              >
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-cyan-200 capitalize">
-                    {aspect.aspect}
-                  </span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                      aspect.sentiment === 'positive'
-                        ? 'bg-emerald-500/15 text-emerald-300'
-                        : aspect.sentiment === 'negative'
-                          ? 'bg-rose-500/15 text-rose-300'
-                          : aspect.sentiment === 'mixed'
-                            ? 'bg-violet-500/15 text-violet-300'
-                            : 'bg-amber-500/15 text-amber-300'
-                    }`}
-                  >
-                    {aspect.sentiment}
-                  </span>
+            {analysis.rating !== null ? (
+              <div className="flex items-center gap-2 rounded-xl border border-[#292A2B] bg-[#151617] px-4 py-2">
+                <div className="flex items-center text-[#D4AF5A]">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star
+                      key={star}
+                      className={`h-4 w-4 ${
+                        star <= (analysis.rating || 0)
+                          ? 'fill-[#D4AF5A] text-[#D4AF5A]'
+                          : 'text-[#292A2B]'
+                      }`}
+                    />
+                  ))}
                 </div>
-                {aspect.evidence && (
-                  <p className="mt-1 text-[11px] italic text-slate-400">
-                    Evidence: “{aspect.evidence}”
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+                <span className="text-sm font-semibold text-[#D4AF5A]">
+                  {analysis.rating} / 5
+                </span>
+                <span className="text-[10px] text-[#74736E] uppercase font-mono">
+                  ({analysis.rating_source || 'inferred'})
+                </span>
+              </div>
+            ) : (
+              <span className="text-xs text-[#74736E]">No explicit rating</span>
+            )}
+          </div>
 
-      {/* AI Summary Section */}
-      <div className="mt-5 rounded-xl border border-purple-500/20 bg-purple-950/20 p-4 sm:p-5 backdrop-blur-sm">
-        <div className="flex items-center gap-2 text-purple-300 font-semibold text-sm mb-2">
-          <FileText className="h-4 w-4 text-purple-400" />
-          <span>AI Executive Summary</span>
+          {/* Action Tools: JSON View & Copy */}
+          <div className="flex items-center gap-2 self-end sm:self-center">
+            <button
+              onClick={() => setShowJson(!showJson)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#292A2B] bg-[#151617] px-3 py-1.5 text-xs text-[#AAA79F] hover:border-[#D4AF5A]/30 hover:text-[#F5F2EA] transition"
+            >
+              <Code2 className="h-3.5 w-3.5 text-[#D4AF5A]" />
+              <span>{showJson ? 'Hide JSON' : 'View JSON'}</span>
+            </button>
+            <button
+              onClick={handleCopyJson}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#292A2B] bg-[#151617] px-3 py-1.5 text-xs text-[#AAA79F] hover:border-[#D4AF5A]/30 hover:text-[#F5F2EA] transition"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="text-emerald-400">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
-        <p className="text-sm leading-relaxed text-slate-200">
+
+        {/* JSON Output Viewer Drawer */}
+        {showJson && (
+          <div className="mt-4 rounded-xl border border-[#292A2B] bg-[#0E0F10] p-4 text-xs font-mono text-[#AAA79F] overflow-x-auto">
+            <pre>{JSON.stringify(analysis, null, 2)}</pre>
+          </div>
+        )}
+      </div>
+
+      {/* Executive Summary */}
+      <div className="premium-panel p-6 space-y-3">
+        <h3 className="text-xs uppercase tracking-wider font-semibold text-[#D4AF5A] flex items-center gap-2">
+          <FileText className="h-4 w-4" />
+          Executive Summary
+        </h3>
+        <p className="text-sm leading-relaxed text-[#F5F2EA]">
           {analysis.summary}
         </p>
       </div>
 
-      {/* Optional original text expandable reference */}
-      {originalText && (
-        <details className="mt-4 group text-xs">
-          <summary className="cursor-pointer text-slate-400 hover:text-slate-200 transition font-medium">
-            View Analyzed Customer Text
-          </summary>
-          <div className="mt-2 rounded-lg border border-slate-800 bg-[#0B0F17]/80 p-3 text-slate-400 italic">
-            "{originalText}"
+      {/* Aspects Analysis Breakdown */}
+      {analysis.aspects && analysis.aspects.length > 0 && (
+        <div className="premium-panel p-6 space-y-4">
+          <h3 className="text-xs uppercase tracking-wider font-semibold text-[#D4AF5A] flex items-center gap-2">
+            <Sparkles className="h-4 w-4" />
+            Aspect-Level Sentiment & Evidence
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {analysis.aspects.map((aspect, i) => {
+              const isPos = aspect.sentiment === 'positive';
+              const isNeg = aspect.sentiment === 'negative';
+              return (
+                <div
+                  key={i}
+                  className="rounded-xl border border-[#292A2B] bg-[#151617] p-4 space-y-2 text-xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-[#F5F2EA] uppercase tracking-wide">
+                      {aspect.aspect}
+                    </span>
+                    <span
+                      className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                        isPos
+                          ? 'border border-emerald-800/40 bg-emerald-950/40 text-emerald-400'
+                          : isNeg
+                          ? 'border border-rose-800/40 bg-rose-950/40 text-rose-400'
+                          : 'border border-[#292A2B] bg-[#111213] text-[#AAA79F]'
+                      }`}
+                    >
+                      {aspect.sentiment}
+                    </span>
+                  </div>
+                  {aspect.evidence && (
+                    <p className="text-[11px] italic text-[#74736E] leading-snug">
+                      "{aspect.evidence}"
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        </details>
+        </div>
       )}
+
+      {/* Pros & Cons with Evidence Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {/* Pros */}
+        <div className="premium-panel p-6 space-y-4">
+          <div className="flex items-center gap-2 text-emerald-400 border-b border-[#292A2B] pb-3 text-sm font-semibold">
+            <CheckCircle2 className="h-4 w-4" />
+            <span>Identified Strengths ({analysis.pros.length})</span>
+          </div>
+          {analysis.pros.length > 0 ? (
+            renderPointEvidenceList(analysis.pros, 'emerald')
+          ) : (
+            <p className="text-xs text-[#74736E] italic">No explicit pros identified in this review.</p>
+          )}
+        </div>
+
+        {/* Cons */}
+        <div className="premium-panel p-6 space-y-4">
+          <div className="flex items-center gap-2 text-rose-400 border-b border-[#292A2B] pb-3 text-sm font-semibold">
+            <XCircle className="h-4 w-4" />
+            <span>Identified Pain Points ({analysis.cons.length})</span>
+          </div>
+          {analysis.cons.length > 0 ? (
+            renderPointEvidenceList(analysis.cons, 'rose')
+          ) : (
+            <p className="text-xs text-[#74736E] italic">No explicit cons identified in this review.</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

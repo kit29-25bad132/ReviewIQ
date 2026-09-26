@@ -1,5 +1,6 @@
 import logging
-from typing import List, Optional
+import re
+from typing import List, Optional, Set
 
 from models.ecommerce import (
     ProductSummary,
@@ -23,41 +24,163 @@ PERSONA_DEFAULTS = {
 }
 
 
+# Domain-specific subcategory and product-type semantic taxonomy for genuine relationship matching
+PRODUCT_TAXONOMY = {
+    # Electronics
+    'audio_devices': {'headphone', 'headphones', 'earbud', 'earbuds', 'earphone', 'earphones', 'headset', 'audio', 'sound'},
+    'power_charging': {'power bank', 'charger', 'battery', 'charging', 'powerbank'},
+    'wearables': {'smartwatch', 'fitness tracker', 'smart watch', 'tracker', 'wearable'},
+    
+    # Fashion
+    'clothing_apparel': {'t-shirt', 'shirt', 'jeans', 'denim', 'pants', 'trousers', 'clothing', 'apparel', 'cotton', 'top'},
+    'fashion_accessories': {'bag', 'crossbody', 'handbag', 'tote', 'scarf', 'wool', 'leather', 'purse', 'wallet'},
+    
+    # Beauty
+    'skincare': {'cream', 'serum', 'lotion', 'moisturizer', 'facial', 'skin', 'anti-aging', 'hydrating', 'face'},
+    'cosmetics_makeup': {'lipstick', 'lip', 'makeup', 'matte', 'cosmetics', 'mascara', 'foundation'},
+    'haircare': {'shampoo', 'conditioner', 'hair', 'haircare', 'scalp'},
+    
+    # Health & Personal Care
+    'oral_care': {'toothbrush', 'toothpaste', 'floss', 'dental', 'oral', 'brush'},
+    'hygiene_sanitizer': {'sanitizer', 'soap', 'disinfectant', 'hand wash', 'antiseptic'},
+    'supplements_vitamins': {'multivitamin', 'vitamin', 'supplement', 'nutrition', 'capsules', 'tablets'},
+    'sleep_bedding': {'pillow', 'mattress', 'memory foam', 'bedding', 'cushion'},
+    
+    # Home & Kitchen
+    'drinkware': {'mug', 'coffee mug', 'cup', 'bottle', 'tumbler'},
+    'lighting': {'lamp', 'desk lamp', 'light', 'led', 'lighting'},
+    'cookware': {'pan', 'frying pan', 'skillet', 'pot', 'cookware'},
+    'kitchen_appliances': {'blender', 'mixer', 'juicer', 'food processor', 'grinder'},
+    
+    # Sports & Outdoors
+    'fitness_equipment': {'exercise bands', 'resistance bands', 'yoga mat', 'mat', 'bands', 'workout', 'fitness'},
+    'outdoor_bags': {'backpack', 'hiking', 'rucksack', 'daypack', 'camping'},
+    'hydration_bottles': {'water bottle', 'bottle', 'flask', 'hydration'},
+    
+    # Toys & Games
+    'tabletop_games_puzzles': {'board game', 'puzzle', 'puzzle set', 'card game', 'tabletop', 'game bundle'},
+    'building_toys': {'building kit', 'lego', 'blocks', 'bricks', 'construction'},
+    'rc_vehicles': {'remote control', 'rc car', 'car', 'vehicle', 'drone'},
+    
+    # Books
+    'fiction_literature': {'novel', 'thriller', 'mystery', 'fiction', 'literature'},
+    'nonfiction_selfhelp': {'self-help', 'motivational', 'guide', 'psychology'},
+    'cooking_culinary': {'cookbook', 'recipes', 'recipe', 'cooking'},
+    'children_literature': {'children', 'picture book', 'kids book', 'bedtime'},
+}
+
+STOPWORDS = {'a', 'an', 'the', 'and', 'or', 'with', 'for', 'of', 'in', 'on', 'at', 'by', 'set', 'pack', 'kit', 'bundle'}
+
+
+def extract_title_tokens(text: str) -> set:
+    words = re.findall(r'[a-zA-Z0-9]+', text.lower())
+    return {w for w in words if w not in STOPWORDS and len(w) > 1}
+
+
+def get_product_subcategories(title: str) -> set:
+    t_lower = title.lower()
+    matched = set()
+    for subcat, terms in PRODUCT_TAXONOMY.items():
+        for term in terms:
+            if re.search(r'\b' + re.escape(term) + r'\b', t_lower):
+                matched.add(subcat)
+    return matched
+
+
+def compute_product_relationship_score(
+    target_title: str, target_cat: str,
+    candidate_title: str, candidate_cat: str
+) -> float:
+    """
+    Computes genuine relationship score between two products using dataset metadata.
+    Must match exact category and have matching sub-category/product type or specific domain token overlap.
+    Broad department matching alone produces 0 score.
+    """
+    if not target_cat or not candidate_cat or target_cat.strip().lower() != candidate_cat.strip().lower():
+        return 0.0
+
+    target_subcats = get_product_subcategories(target_title)
+    cand_subcats = get_product_subcategories(candidate_title)
+    common_subcats = target_subcats.intersection(cand_subcats)
+
+    target_tokens = extract_title_tokens(target_title)
+    cand_tokens = extract_title_tokens(candidate_title)
+    common_tokens = target_tokens.intersection(cand_tokens)
+
+    score = 0.0
+    if common_subcats:
+        score += 50.0 * len(common_subcats)
+
+    if common_tokens:
+        score += 15.0 * len(common_tokens)
+
+    return score
+
+
 class RecommendationService:
     def get_similar_products(self, product_id: str, limit: int = 3) -> List[ProductSummary]:
+        """
+        Discovers genuinely related products in the dataset based on strict category,
+        sub-category, product-type, and metadata token overlap.
+        Excludes the selected product and broad department mismatches.
+        """
         if not ecommerce_db_service.is_ready():
             return []
 
         conn = ecommerce_db_service._get_connection()
         try:
             cursor = conn.cursor()
-            # Get category of selected product
-            cursor.execute("SELECT category FROM products WHERE product_id = ?;", (str(product_id),))
-            row = cursor.fetchone()
-            if not row or not row["category"]:
+            # Get category and title of selected product
+            cursor.execute(
+                "SELECT product_id, product_title, category FROM products WHERE product_id = ?;",
+                (str(product_id),)
+            )
+            target_row = cursor.fetchone()
+            if not target_row or not target_row["category"]:
                 return []
 
-            category = row["category"]
+            target_title = target_row["product_title"]
+            target_category = target_row["category"]
 
-            # Fetch other products in same category
+            # Fetch candidate products in same category excluding currently selected product
             cursor.execute("""
                 SELECT product_id, product_title, category, review_count, average_rating
                 FROM products
                 WHERE category = ? AND product_id != ?
-                ORDER BY review_count DESC
-                LIMIT ?;
-            """, (category, str(product_id), limit))
+                ORDER BY review_count DESC;
+            """, (target_category, str(product_id)))
 
-            rows = cursor.fetchall()
+            candidate_rows = cursor.fetchall()
+
+            # Score candidates strictly using subcategory and product-type metadata
+            scored_candidates = []
+            for row in candidate_rows:
+                score = compute_product_relationship_score(
+                    target_title=target_title,
+                    target_cat=target_category,
+                    candidate_title=row["product_title"],
+                    candidate_cat=row["category"]
+                )
+                # Strict threshold: must have genuine sub-category or product-type relationship
+                if score >= 30.0:
+                    scored_candidates.append((score, row))
+
+            # Sort by relationship score DESC, review_count DESC, average_rating DESC
+            scored_candidates.sort(
+                key=lambda x: (x[0], x[1]["review_count"] or 0, x[1]["average_rating"] or 0.0),
+                reverse=True
+            )
+
+            # Limit to top genuinely related products (max limit, default 3)
             return [
                 ProductSummary(
-                    product_id=str(r["product_id"]),
-                    product_title=r["product_title"],
-                    category=r["category"],
-                    review_count=r["review_count"],
-                    average_rating=r["average_rating"],
+                    product_id=str(r[1]["product_id"]),
+                    product_title=r[1]["product_title"],
+                    category=r[1]["category"],
+                    review_count=r[1]["review_count"],
+                    average_rating=r[1]["average_rating"],
                 )
-                for r in rows
+                for r in scored_candidates[:limit]
             ]
         finally:
             conn.close()

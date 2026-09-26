@@ -3,7 +3,7 @@ import { Dashboard } from './pages/Dashboard';
 
 export const App: React.FC = () => {
   return (
-    <div className="min-h-screen bg-[#080B11] text-slate-100 selection:bg-purple-500 selection:text-white">
+    <div className="min-h-screen bg-[#0E0F10] text-[#F5F2EA] selection:bg-[#D4AF5A] selection:text-[#111111]">
       <Dashboard />
     </div>
   );

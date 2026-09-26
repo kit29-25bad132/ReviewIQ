@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Sparkles, XCircle, Package, ArrowRight, AlertCircle, Layers } from 'lucide-react';
+import { Search, XCircle, Package, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
 import { ProductSummary } from '../types/ecommerce';
 import { searchProducts } from '../services/api';
 
@@ -101,7 +101,7 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
       {/* Search Input Box */}
       <form onSubmit={handleSubmit} className="relative">
         <div className="relative flex items-center">
-          <Search className="absolute left-4 h-5 w-5 text-purple-400 pointer-events-none" />
+          <Search className="absolute left-4 h-5 w-5 text-[#D4AF5A] pointer-events-none" />
           <input
             type="text"
             value={query}
@@ -110,8 +110,8 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
               setIsOpen(true);
             }}
             onFocus={() => setIsOpen(true)}
-            placeholder="Search product name... (e.g. Electric Toothbrush, LEGO Building Kit)"
-            className="w-full rounded-2xl border border-purple-500/30 bg-[#0B0F17]/90 py-4 pl-12 pr-28 text-sm sm:text-base text-white placeholder-slate-500 shadow-glass backdrop-blur-xl focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition duration-200"
+            placeholder="Search product name... (e.g. Electric Toothbrush, Noise-Canceling Headphones)"
+            className="w-full rounded-xl border border-[#292A2B] bg-[#151617] py-4 pl-12 pr-28 text-sm sm:text-base text-[#F5F2EA] placeholder-[#74736E] shadow-2xl focus:border-[#D4AF5A]/60 focus:outline-none focus:ring-2 focus:ring-[#D4AF5A]/20 transition duration-200"
           />
 
           <div className="absolute right-3 flex items-center gap-2">
@@ -119,98 +119,98 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
               <button
                 type="button"
                 onClick={handleClear}
-                className="p-1 text-slate-400 hover:text-white transition"
-                title="Clear input"
+                className="p-1 text-[#74736E] hover:text-[#F5F2EA] transition"
+                title="Clear search"
               >
                 <XCircle className="h-4 w-4" />
               </button>
             )}
+
             <button
               type="submit"
-              disabled={loading || !query.trim()}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 px-4 py-2 text-xs font-semibold text-white shadow-md hover:brightness-110 disabled:opacity-40 transition"
+              disabled={loading || suggestions.length === 0}
+              className="gold-button inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold disabled:opacity-40"
             >
-              {loading ? (
-                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              ) : (
-                <Sparkles className="h-3.5 w-3.5" />
-              )}
-              <span>Analyze</span>
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>{loading ? 'Searching...' : 'Analyze'}</span>
             </button>
           </div>
         </div>
       </form>
 
-      {/* Quick Search Suggestions Chips */}
-      <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-        <span className="text-slate-500 font-mono flex items-center gap-1">
-          <Layers className="h-3 w-3" /> Quick Test:
+      {/* Live Dropdown Suggestions */}
+      {isOpen && (suggestions.length > 0 || loading || notFoundMessage) && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-2 max-h-96 overflow-y-auto rounded-xl border border-[#292A2B] bg-[#151617] shadow-[0_20px_60px_rgba(0,0,0,0.8)] backdrop-blur-xl">
+          {loading && suggestions.length === 0 && (
+            <div className="flex items-center justify-center p-6 text-sm text-[#AAA79F]">
+              <div className="mr-3 h-4 w-4 animate-spin rounded-full border-2 border-[#D4AF5A] border-t-transparent" />
+              Searching review dataset...
+            </div>
+          )}
+
+          {notFoundMessage && !loading && (
+            <div className="flex items-center gap-3 p-4 text-sm text-[#AAA79F]">
+              <AlertCircle className="h-5 w-5 flex-shrink-0 text-amber-500" />
+              <span>{notFoundMessage}</span>
+            </div>
+          )}
+
+          {suggestions.map((item) => {
+            const isSelected = selectedProductId === item.product_id;
+            return (
+              <button
+                key={item.product_id}
+                onClick={() => handleSelect(item)}
+                className={`group flex w-full items-center justify-between border-b border-[#292A2B]/60 p-4 text-left transition hover:bg-[#1C1D1F] last:border-0 ${
+                  isSelected ? 'bg-[#1C1D1F] border-l-4 border-l-[#D4AF5A]' : ''
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 rounded-lg border border-[#292A2B] bg-[#111213] p-2 text-[#D4AF5A]">
+                    <Package className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-[#F5F2EA] group-hover:text-[#F0D58A] transition">
+                      {item.product_title}
+                    </h4>
+                    <p className="mt-0.5 text-xs text-[#74736E]">
+                      {item.category || 'Product'} · {item.review_count.toLocaleString()} real customer reviews
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <span className="text-sm font-semibold text-[#D4AF5A]">
+                      ★ {item.average_rating.toFixed(1)}
+                    </span>
+                    <span className="text-[10px] text-[#74736E] block">/ 5.0</span>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-[#74736E] transition group-hover:translate-x-1 group-hover:text-[#F0D58A]" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Quick Test Suggested Products */}
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <span className="text-xs text-[#74736E] font-medium flex items-center gap-1.5">
+          <Sparkles className="h-3 w-3 text-[#D4AF5A]" />
+          Quick Test:
         </span>
-        {SAMPLE_PRODUCTS.map((p) => (
+        {SAMPLE_PRODUCTS.map((prod) => (
           <button
-            key={p}
+            key={prod}
             type="button"
-            onClick={() => handleQuickChip(p)}
-            className="rounded-lg border border-slate-800 bg-[#111827]/80 px-2.5 py-1 text-slate-300 hover:border-purple-500/40 hover:bg-purple-500/10 hover:text-purple-300 transition"
+            onClick={() => handleQuickChip(prod)}
+            className="rounded-lg border border-[#292A2B] bg-[#151617] px-3 py-1.5 text-xs text-[#AAA79F] transition hover:border-[#D4AF5A]/40 hover:bg-[#1C1D1F] hover:text-[#F5F2EA]"
           >
-            {p}
+            {prod}
           </button>
         ))}
       </div>
-
-      {/* Autocomplete Dropdown */}
-      {isOpen && query.trim() && (
-        <div className="absolute left-0 right-0 top-14 z-50 overflow-hidden rounded-2xl border border-purple-500/30 bg-[#0B0F17] shadow-2xl backdrop-blur-xl animate-fadeIn">
-          {loading ? (
-            <div className="p-4 text-center text-xs text-slate-400 space-y-2">
-              <div className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
-              <p>Searching 4,000,000 dataset records...</p>
-            </div>
-          ) : notFoundMessage ? (
-            <div className="p-5 text-center text-xs text-rose-300 flex items-center justify-center gap-2">
-              <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
-              <span>{notFoundMessage}</span>
-            </div>
-          ) : suggestions.length > 0 ? (
-            <div className="divide-y divide-slate-800/80">
-              <div className="bg-slate-900/60 px-4 py-2 text-[10px] font-mono uppercase tracking-wider text-slate-400 flex justify-between">
-                <span>Verified Dataset Matches</span>
-                <span>Review Count</span>
-              </div>
-              {suggestions.map((item) => (
-                <button
-                  key={item.product_id}
-                  type="button"
-                  onClick={() => handleSelect(item)}
-                  className={`w-full flex items-center justify-between p-3.5 text-left text-xs transition hover:bg-purple-600/15 ${
-                    selectedProductId === item.product_id ? 'bg-purple-600/20 border-l-2 border-purple-500' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-950/60 border border-indigo-500/30 text-indigo-400 shrink-0">
-                      <Package className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <div className="font-semibold text-white">{item.product_title}</div>
-                      <div className="text-[11px] text-slate-400 font-mono">
-                        {item.category || 'General'} • ID: {item.product_id}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <div className="font-mono font-bold text-amber-400">{item.average_rating} ★</div>
-                      <div className="text-[10px] text-slate-500">{item.review_count.toLocaleString()} reviews</div>
-                    </div>
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-500" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      )}
     </div>
   );
 };

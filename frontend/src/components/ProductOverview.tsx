@@ -31,45 +31,47 @@ export const ProductOverview: React.FC<ProductOverviewProps> = ({ analysis }) =>
   return (
     <div className="space-y-6">
       {/* Main Product Hero Card */}
-      <div className="relative overflow-hidden rounded-2xl border border-purple-500/30 bg-[#111827]/90 p-6 sm:p-7 backdrop-blur-xl shadow-glass">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
+      <div className="premium-panel p-6 sm:p-8 relative overflow-hidden">
+        <div className="absolute right-0 top-0 h-40 w-40 rounded-bl-full border-b border-l border-[#D4AF5A]/10 pointer-events-none" />
+
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative">
+          <div className="space-y-3 max-w-2xl">
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="rounded-full bg-indigo-500/20 border border-indigo-500/30 px-3 py-0.5 text-xs font-semibold text-indigo-300">
+              <span className="rounded-full border border-[#D4AF5A]/30 bg-[#1B1915] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-[#D4AF5A]">
                 {product.category || 'General Category'}
               </span>
-              <span className="rounded-full bg-slate-800 border border-slate-700 px-3 py-0.5 text-xs font-mono text-slate-300">
-                Product ID: {product.product_id}
+              <span className="rounded-full border border-[#292A2B] bg-[#151617] px-3 py-1 text-xs font-mono text-[#74736E]">
+                ASIN / ID: {product.product_id}
               </span>
             </div>
 
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
+            <h2 className="text-2xl sm:text-3xl font-medium tracking-[-0.03em] text-[#F5F2EA]">
               {product.product_title}
             </h2>
 
-            <p className="text-xs text-slate-400 flex items-center gap-1.5 font-mono">
-              <Database className="h-3.5 w-3.5 text-cyan-400" />
-              <span>Source: ReviewIQ Product Review Dataset ({review_count.toLocaleString()} actual reviews)</span>
+            <p className="text-xs text-[#AAA79F] flex items-center gap-2">
+              <Database className="h-3.5 w-3.5 text-[#D4AF5A]" />
+              <span>Real Review Dataset ({review_count.toLocaleString()} actual customer reviews analyzed)</span>
             </p>
           </div>
 
           {/* Big Score Card */}
-          <div className="flex items-center gap-4 rounded-2xl border border-slate-800 bg-[#0B0F17]/90 p-4 sm:p-5 shrink-0">
+          <div className="flex items-center gap-6 rounded-xl border border-[#292A2B] bg-[#151617] p-5 shrink-0 shadow-lg">
             <div className="text-center">
-              <div className="text-3xl sm:text-4xl font-black font-mono text-amber-400 flex items-center justify-center gap-1">
-                <span>{average_rating.toFixed(2)}</span>
-                <Star className="h-6 w-6 fill-amber-400 text-amber-400" />
+              <div className="text-3xl sm:text-4xl font-semibold text-[#D4AF5A] flex items-center justify-center gap-1.5">
+                <span>{average_rating.toFixed(1)}</span>
+                <span className="text-base text-[#74736E]">/ 5</span>
               </div>
-              <div className="text-[11px] font-mono text-slate-400 mt-1">Average Rating</div>
+              <div className="text-[11px] uppercase tracking-wider text-[#74736E] mt-1">Average Rating</div>
             </div>
 
-            <div className="h-10 w-px bg-slate-800" />
+            <div className="h-10 w-px bg-[#292A2B]" />
 
             <div className="text-center">
-              <div className="text-2xl sm:text-3xl font-black font-mono text-white">
+              <div className="text-2xl sm:text-3xl font-semibold text-[#F5F2EA]">
                 {review_count.toLocaleString()}
               </div>
-              <div className="text-[11px] font-mono text-slate-400 mt-1">Verified Reviews</div>
+              <div className="text-[11px] uppercase tracking-wider text-[#74736E] mt-1">Total Reviews</div>
             </div>
           </div>
         </div>
@@ -78,13 +80,13 @@ export const ProductOverview: React.FC<ProductOverviewProps> = ({ analysis }) =>
       {/* Breakdown Grid: Rating Distribution & Sentiment Analysis */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Rating Distribution (5★ to 1★) */}
-        <div className="rounded-2xl border border-white/10 bg-[#111827]/80 p-6 backdrop-blur-xl shadow-glass space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-amber-400" />
+        <div className="premium-panel p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-[#292A2B] pb-3">
+            <h3 className="text-sm font-medium text-[#F5F2EA] flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-[#D4AF5A]" />
               Rating Distribution
             </h3>
-            <span className="text-[11px] font-mono text-slate-400">1 to 5 Stars</span>
+            <span className="text-xs text-[#74736E]">1 to 5 Stars</span>
           </div>
 
           <div className="space-y-3">
@@ -93,21 +95,20 @@ export const ProductOverview: React.FC<ProductOverviewProps> = ({ analysis }) =>
               const pct = ((count / totalReviews) * 100).toFixed(1);
               return (
                 <div key={star} className="flex items-center gap-3 text-xs">
-                  <div className="flex items-center gap-1 w-14 font-mono font-bold text-amber-300 shrink-0">
+                  <div className="flex items-center gap-1 w-12 font-medium text-[#D4AF5A] shrink-0">
                     <span>{star}</span>
-                    <Star className="h-3 w-3 fill-amber-400" />
+                    <Star className="h-3 w-3 fill-[#D4AF5A]" />
                   </div>
 
-                  <div className="h-2.5 flex-1 rounded-full bg-slate-800 overflow-hidden">
+                  <div className="relative h-2 flex-1 rounded-full bg-[#292A2B] overflow-hidden">
                     <div
-                      className="h-full bg-amber-400 rounded-full transition-all duration-500"
+                      className="h-full rounded-full bg-gradient-to-r from-[#D4AF5A] to-[#B98B28] transition-all duration-500"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
 
-                  <div className="w-24 text-right font-mono text-slate-300 shrink-0">
-                    <span>{count.toLocaleString()}</span>{' '}
-                    <span className="text-slate-500 text-[10px]">({pct}%)</span>
+                  <div className="w-20 text-right font-mono text-[#AAA79F] shrink-0">
+                    {count.toLocaleString()} ({pct}%)
                   </div>
                 </div>
               );
@@ -115,68 +116,56 @@ export const ProductOverview: React.FC<ProductOverviewProps> = ({ analysis }) =>
           </div>
         </div>
 
-        {/* Sentiment Analysis Breakdown */}
-        <div className="rounded-2xl border border-white/10 bg-[#111827]/80 p-6 backdrop-blur-xl shadow-glass space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-emerald-400" />
-              Sentiment Analysis
+        {/* Sentiment Analysis Distribution */}
+        <div className="premium-panel p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-[#292A2B] pb-3">
+            <h3 className="text-sm font-medium text-[#F5F2EA] flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-[#D4AF5A]" />
+              Sentiment Breakdown
             </h3>
-            <span className="text-[11px] font-mono text-slate-400">Ground-Truth Classification</span>
+            <span className="text-xs text-[#74736E]">Evidence Based</span>
           </div>
 
-          <div className="space-y-4 pt-1">
+          <div className="space-y-3">
             {/* Positive */}
-            <div>
-              <div className="flex justify-between text-xs font-semibold mb-1 text-emerald-400">
-                <span className="flex items-center gap-1.5">
-                  <ThumbsUp className="h-3.5 w-3.5" /> Positive Sentiment
-                </span>
-                <span className="font-mono">
-                  {posCount.toLocaleString()} ({posPct}%)
-                </span>
+            <div className="flex items-center justify-between rounded-lg border border-[#292A2B] bg-[#151617] p-3 text-xs">
+              <div className="flex items-center gap-2 text-emerald-400 font-medium">
+                <ThumbsUp className="h-4 w-4" />
+                <span>Positive Reviews</span>
               </div>
-              <div className="h-2.5 w-full rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                  style={{ width: `${posPct}%` }}
-                />
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[#F5F2EA]">{posCount.toLocaleString()}</span>
+                <span className="rounded bg-emerald-950/60 border border-emerald-800/40 px-2 py-0.5 font-mono text-emerald-400">
+                  {posPct}%
+                </span>
               </div>
             </div>
 
             {/* Neutral */}
-            <div>
-              <div className="flex justify-between text-xs font-semibold mb-1 text-amber-400">
-                <span className="flex items-center gap-1.5">
-                  <MinusCircle className="h-3.5 w-3.5" /> Neutral Sentiment
-                </span>
-                <span className="font-mono">
-                  {neuCount.toLocaleString()} ({neuPct}%)
-                </span>
+            <div className="flex items-center justify-between rounded-lg border border-[#292A2B] bg-[#151617] p-3 text-xs">
+              <div className="flex items-center gap-2 text-[#D4AF5A] font-medium">
+                <MinusCircle className="h-4 w-4" />
+                <span>Neutral Reviews</span>
               </div>
-              <div className="h-2.5 w-full rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                  style={{ width: `${neuPct}%` }}
-                />
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[#F5F2EA]">{neuCount.toLocaleString()}</span>
+                <span className="rounded bg-amber-950/60 border border-amber-800/40 px-2 py-0.5 font-mono text-[#D4AF5A]">
+                  {neuPct}%
+                </span>
               </div>
             </div>
 
             {/* Negative */}
-            <div>
-              <div className="flex justify-between text-xs font-semibold mb-1 text-rose-400">
-                <span className="flex items-center gap-1.5">
-                  <ThumbsDown className="h-3.5 w-3.5" /> Negative Sentiment
-                </span>
-                <span className="font-mono">
-                  {negCount.toLocaleString()} ({negPct}%)
-                </span>
+            <div className="flex items-center justify-between rounded-lg border border-[#292A2B] bg-[#151617] p-3 text-xs">
+              <div className="flex items-center gap-2 text-rose-400 font-medium">
+                <ThumbsDown className="h-4 w-4" />
+                <span>Negative Reviews</span>
               </div>
-              <div className="h-2.5 w-full rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-rose-500 rounded-full transition-all duration-500"
-                  style={{ width: `${negPct}%` }}
-                />
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[#F5F2EA]">{negCount.toLocaleString()}</span>
+                <span className="rounded bg-rose-950/60 border border-rose-800/40 px-2 py-0.5 font-mono text-rose-400">
+                  {negPct}%
+                </span>
               </div>
             </div>
           </div>

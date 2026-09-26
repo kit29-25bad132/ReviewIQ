@@ -4,19 +4,20 @@ import {
   Trash2,
   ExternalLink,
   Search,
-  Filter,
   Calendar,
   AlertTriangle,
   X,
+  Sparkles,
 } from 'lucide-react';
 import { ReviewHistoryItem } from '../types/review';
 import { AnalysisResult } from './AnalysisResult';
 
 interface ReviewHistoryProps {
   history: ReviewHistoryItem[];
-  onSelectReview: (item: ReviewHistoryItem) => void;
+  onSelectReview?: (item: ReviewHistoryItem) => void;
   onDeleteReview: (id: string) => void;
   onClearHistory: () => void;
+  storageSource?: 'supabase' | 'local';
 }
 
 export const ReviewHistory: React.FC<ReviewHistoryProps> = ({
@@ -24,6 +25,7 @@ export const ReviewHistory: React.FC<ReviewHistoryProps> = ({
   onSelectReview,
   onDeleteReview,
   onClearHistory,
+  storageSource = 'local',
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sentimentFilter, setSentimentFilter] = useState<
@@ -68,89 +70,86 @@ export const ReviewHistory: React.FC<ReviewHistoryProps> = ({
     }
   };
 
-  const getSentimentDot = (sentiment: string) => {
-    switch (sentiment) {
-      case 'positive':
-        return <span title="Positive">🟢</span>;
-      case 'negative':
-        return <span title="Negative">🔴</span>;
-      case 'mixed':
-        return <span title="Mixed">🟣</span>;
-      case 'neutral':
-      default:
-        return <span title="Neutral">🟡</span>;
-    }
-  };
-
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#111827]/80 p-6 backdrop-blur-xl shadow-glass">
+    <div className="premium-panel p-6 sm:p-8 space-y-6">
       {/* Header with Search and Clear Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#292A2B] pb-5">
         <div>
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <History className="h-5 w-5 text-purple-400" />
-            Analysis History
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Locally saved review assessments ({history.length} total)
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-lg font-medium text-[#F5F2EA] flex items-center gap-2">
+              <History className="h-4 w-4 text-[#D4AF5A]" />
+              Analysis History
+            </h2>
+            <span
+              className={`rounded-full border px-2.5 py-0.5 text-[10px] font-mono ${
+                storageSource === 'supabase'
+                  ? 'border-emerald-800/40 bg-emerald-950/40 text-emerald-400'
+                  : 'border-[#292A2B] bg-[#151617] text-[#AAA79F]'
+              }`}
+            >
+              {storageSource === 'supabase' ? 'Supabase Synced' : 'Local Storage'}
+            </span>
+          </div>
+          <p className="text-xs text-[#74736E] mt-1">
+            {history.length} saved review assessments
           </p>
         </div>
 
         {history.length > 0 && (
           <div className="flex flex-wrap items-center gap-3">
             {/* Search Input */}
-            <div className="relative min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#74736E]" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search history..."
-                className="w-full rounded-lg border border-slate-700 bg-[#0B0F17] py-1.5 pl-8 pr-3 text-xs text-slate-200 placeholder-slate-500 focus:border-purple-500 focus:outline-none"
+                className="w-44 sm:w-56 rounded-xl border border-[#292A2B] bg-[#151617] py-1.5 pl-9 pr-3 text-xs text-[#F5F2EA] placeholder-[#74736E] focus:border-[#D4AF5A]/60 focus:outline-none"
               />
             </div>
 
-            {/* Sentiment filter */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-[#0B0F17] p-1 text-xs">
-              <Filter className="h-3 w-3 text-slate-400 ml-1.5" />
-              <select
-                value={sentimentFilter}
-                onChange={(e) => setSentimentFilter(e.target.value as any)}
-                className="bg-transparent text-slate-300 focus:outline-none pr-1 cursor-pointer"
-              >
-                <option value="all" className="bg-[#111827]">All</option>
-                <option value="positive" className="bg-[#111827]">Positive</option>
-                <option value="neutral" className="bg-[#111827]">Neutral</option>
-                <option value="negative" className="bg-[#111827]">Negative</option>
-                <option value="mixed" className="bg-[#111827]">Mixed</option>
-              </select>
+            {/* Sentiment Filter */}
+            <div className="flex items-center gap-1 rounded-xl border border-[#292A2B] bg-[#151617] p-1">
+              {(['all', 'positive', 'neutral', 'negative', 'mixed'] as const).map((sent) => (
+                <button
+                  key={sent}
+                  onClick={() => setSentimentFilter(sent)}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] capitalize transition ${
+                    sentimentFilter === sent
+                      ? 'bg-[#1B1915] border border-[#D4AF5A]/40 text-[#F0D58A] font-medium'
+                      : 'text-[#AAA79F] hover:text-[#F5F2EA]'
+                  }`}
+                >
+                  {sent}
+                </button>
+              ))}
             </div>
 
-            {/* Clear button */}
+            {/* Clear all */}
             <button
-              type="button"
               onClick={() => setShowConfirmClear(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-300 hover:bg-rose-500/20 transition"
-              title="Clear all history"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-900/40 bg-rose-950/20 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-900/30 transition"
+              title="Clear all saved history"
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Clear History
+              <span>Clear</span>
             </button>
           </div>
         )}
       </div>
 
-      {/* Confirmation Modal for Clearing History */}
+      {/* Confirm Clear Modal Dialog */}
       {showConfirmClear && (
-        <div className="mt-4 rounded-xl border border-rose-500/40 bg-rose-950/40 p-4 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-rose-300 text-xs">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
-            <span>Are you sure you want to delete all saved review analyses? This action cannot be undone.</span>
+        <div className="rounded-xl border border-rose-900/60 bg-rose-950/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-xs text-rose-200">
+            <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+            <span>Are you sure you want to delete all {history.length} history records?</span>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 self-end sm:self-center">
             <button
               onClick={() => setShowConfirmClear(false)}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-xs text-slate-300 hover:text-white"
+              className="rounded-lg border border-[#292A2B] bg-[#151617] px-3 py-1 text-xs text-[#AAA79F] hover:text-[#F5F2EA]"
             >
               Cancel
             </button>
@@ -161,125 +160,138 @@ export const ReviewHistory: React.FC<ReviewHistoryProps> = ({
               }}
               className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500"
             >
-              Confirm Clear
+              Yes, Clear All
             </button>
           </div>
         </div>
       )}
 
-      {/* History Items or Empty State */}
-      <div className="mt-5 space-y-3">
-        {history.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-800 py-12 px-4 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800/80 text-slate-400 mb-3">
-              <History className="h-6 w-6" />
-            </div>
-            <h3 className="text-sm font-semibold text-slate-200">No reviews analyzed yet.</h3>
-            <p className="mt-1 text-xs text-slate-400 max-w-sm">
-              Analyze your first customer review to see insights, pros/cons, and rating metrics here.
-            </p>
-          </div>
-        ) : filteredHistory.length === 0 ? (
-          <div className="py-8 text-center text-xs text-slate-400">
-            No reviews matching your search filter.
-          </div>
-        ) : (
-          filteredHistory.map((item) => (
+      {/* History Items List */}
+      {history.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[#292A2B] bg-[#151617]/40 p-12 text-center space-y-2">
+          <History className="h-8 w-8 text-[#74736E] mx-auto" />
+          <p className="text-sm font-medium text-[#F5F2EA]">No analysis history yet</p>
+          <p className="text-xs text-[#74736E]">
+            Analyzed reviews will be saved and listed here for quick access.
+          </p>
+        </div>
+      ) : filteredHistory.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[#292A2B] bg-[#151617]/40 p-8 text-center text-xs text-[#74736E]">
+          No history items match your search filter "{searchTerm}".
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredHistory.map((item) => (
             <div
               key={item.id}
-              className="group relative flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-800 bg-[#0B0F17]/80 p-4 transition-all hover:border-purple-500/30 hover:bg-[#111827]"
+              className="rounded-xl border border-[#292A2B] bg-[#151617] p-4 transition hover:border-[#D4AF5A]/30 space-y-3"
             >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                  <span className="text-sm leading-none">{getSentimentDot(item.analysis.sentiment)}</span>
-                  <span className="text-xs font-semibold capitalize text-slate-200">
-                    {item.analysis.sentiment}
-                  </span>
-                  <span className="text-slate-600">•</span>
-                  <span className="text-xs font-mono font-bold text-amber-400">
-                    {item.analysis.rating !== null
-                      ? `${'★'.repeat(item.analysis.rating)}${'☆'.repeat(5 - item.analysis.rating)} (${item.analysis.rating}/5)`
-                      : 'No rating'}
-                  </span>
-                  <span className="text-slate-600">•</span>
-                  <span className="flex items-center gap-1 text-[11px] text-slate-400">
-                    <Calendar className="h-3 w-3" />
-                    {formatDate(item.createdAt)}
-                  </span>
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                        item.analysis.sentiment === 'positive'
+                          ? 'border border-emerald-800/40 bg-emerald-950/40 text-emerald-400'
+                          : item.analysis.sentiment === 'negative'
+                          ? 'border border-rose-800/40 bg-rose-950/40 text-rose-400'
+                          : 'border border-[#D4AF5A]/40 bg-[#1B1915] text-[#D4AF5A]'
+                      }`}
+                    >
+                      {item.analysis.sentiment}
+                    </span>
+
+                    {item.analysis.rating !== null && (
+                      <span className="text-xs font-semibold text-[#D4AF5A]">
+                        ★ {item.analysis.rating}/5
+                      </span>
+                    )}
+
+                    <span className="text-[11px] text-[#74736E] flex items-center gap-1 font-mono">
+                      <Calendar className="h-3 w-3" />
+                      {formatDate(item.createdAt)}
+                    </span>
+                  </div>
+
+                  <p className="text-xs sm:text-sm text-[#F5F2EA] leading-relaxed line-clamp-2">
+                    {item.analysis.summary || item.reviewText}
+                  </p>
                 </div>
 
-                {/* Review excerpt */}
-                <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
-                  "{item.reviewText}"
-                </p>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => {
+                      if (onSelectReview) onSelectReview(item);
+                      setSelectedModalItem(item);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[#292A2B] bg-[#111213] px-2.5 py-1.5 text-xs text-[#D4AF5A] hover:border-[#D4AF5A]/40 hover:bg-[#1C1D1F] transition"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    <span>Inspect</span>
+                  </button>
 
-                {/* Summary badge */}
-                <p className="mt-1 text-[11px] text-purple-400 line-clamp-1 italic">
-                  Summary: {item.analysis.summary}
-                </p>
+                  <button
+                    onClick={() => onDeleteReview(item.id)}
+                    className="rounded-lg p-1.5 text-[#74736E] hover:bg-rose-950/30 hover:text-rose-400 transition"
+                    title="Delete item"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                <button
-                  type="button"
-                  onClick={() => setSelectedModalItem(item)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-purple-500/20 bg-purple-500/10 px-2.5 py-1.5 text-xs font-medium text-purple-300 hover:bg-purple-500/20 transition"
-                  title="View full report"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  <span>View</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectReview(item)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 transition"
-                  title="Load into active analyzer"
-                >
-                  <span>Load</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onDeleteReview(item.id)}
-                  className="inline-flex items-center justify-center rounded-lg p-1.5 text-slate-400 hover:bg-rose-500/20 hover:text-rose-400 transition"
-                  title="Delete review"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+              {/* Snippet stats */}
+              <div className="flex items-center gap-4 text-[11px] text-[#74736E] pt-2 border-t border-[#292A2B]/60">
+                <span>Pros: {item.analysis.pros.length}</span>
+                <span>Cons: {item.analysis.cons.length}</span>
+                <span>Aspects: {item.analysis.aspects.length}</span>
+                <span className="truncate max-w-xs italic text-[#AAA79F]">"{item.reviewText.slice(0, 60)}..."</span>
               </div>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Modal Dialog to View Full Past Analysis */}
+      {/* Inspect Review Detail Modal */}
       {selectedModalItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-purple-500/30 bg-[#0B0F17] p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <History className="h-4 w-4 text-purple-400" />
-                Historical Analysis Detail
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="relative max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#292A2B] bg-[#111213] shadow-2xl p-6 space-y-6">
+            <div className="flex items-center justify-between border-b border-[#292A2B] pb-4">
+              <div>
+                <h3 className="text-base font-medium text-[#F5F2EA] flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-[#D4AF5A]" />
+                  Saved Review Analysis
+                </h3>
+                <p className="text-xs text-[#74736E] mt-0.5">
+                  Saved on {formatDate(selectedModalItem.createdAt)}
+                </p>
+              </div>
+
               <button
-                type="button"
                 onClick={() => setSelectedModalItem(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+                className="rounded-lg p-1.5 text-[#74736E] hover:bg-[#1C1D1F] hover:text-[#F5F2EA] transition"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
+            {/* Original review */}
+            <div className="rounded-xl border border-[#292A2B] bg-[#151617] p-4 space-y-1.5">
+              <span className="text-[10px] uppercase tracking-wider text-[#74736E] font-medium">Original Review Text</span>
+              <p className="text-xs sm:text-sm text-[#F5F2EA] leading-relaxed italic">
+                "{selectedModalItem.reviewText}"
+              </p>
+            </div>
+
+            {/* Structured Result */}
             <AnalysisResult
               analysis={selectedModalItem.analysis}
-              originalText={selectedModalItem.reviewText}
             />
 
-            <div className="mt-5 flex justify-end">
+            <div className="pt-4 border-t border-[#292A2B] text-right">
               <button
-                type="button"
                 onClick={() => setSelectedModalItem(null)}
-                className="rounded-xl bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                className="rounded-lg border border-[#292A2B] bg-[#151617] px-5 py-2 text-xs text-[#F5F2EA] hover:bg-[#1C1D1F] transition"
               >
                 Close
               </button>
