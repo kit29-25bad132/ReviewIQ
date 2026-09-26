@@ -15,6 +15,7 @@ from routes.analytics import router as analytics_router
 from routes.evaluation import router as evaluation_router
 from routes.products import router as products_router
 from routes.reviews import router as reviews_router
+from routes.retrieval import router as retrieval_router
 from services.ai_analyzer import analyzer_service
 
 # Setup logging
@@ -51,6 +52,7 @@ app.include_router(review_router)
 app.include_router(dataset_router)
 app.include_router(analytics_router)
 app.include_router(evaluation_router)
+app.include_router(retrieval_router)
 
 
 @app.get("/health", tags=["Health"])
