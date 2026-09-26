@@ -6,10 +6,19 @@ from typing import List, Optional
 from dotenv import load_dotenv
 
 from models.ecommerce import AISummaryResponse
-from services.ai.contracts import AIGenerationRequest
+from services.ai.contracts import AIGenerationRequest, ModelRef
 from services.ai.errors import AIProviderError
-from services.ai.registry import TASK_DATASET_SUMMARY
-from services.ai.routing import build_target_chain, skips_remaining_provider_models
+from services.ai.registry import GEMINI_PROVIDER, TASK_DATASET_SUMMARY
+from services.ai.routing import (
+    build_target_chain,
+    provider_configured_checker,
+    skips_remaining_provider_models,
+)
+from services.ai.routing_policy import (
+    apply_route_decision,
+    route_metadata,
+    select_initial_target,
+)
 from services.ai_analyzer import analyzer_service
 
 load_dotenv()
@@ -81,12 +90,39 @@ Synthesize these dataset reviews according to your system instructions into stru
         # -> Groq models -> OpenRouter route, filtered to configured
         # providers; generation goes through the AI Gateway so no provider
         # SDK/HTTP detail is duplicated here.
+        #
+        # V2-P6: the same routing policy as review analysis selects the
+        # initial target from this already-built chain (default
+        # gemini_first = P5 order unchanged); the fallback loop below and its
+        # provider-skip semantics are untouched.
+        gemini_primary = os.getenv("GEMINI_MODEL") or None
         targets = build_target_chain(
             analyzer_service.gateway,
-            primary=os.getenv("GEMINI_MODEL") or None,
+            primary=gemini_primary,
             capability=TASK_DATASET_SUMMARY,
             per_provider_limit=5,
         )
+        decision = None
+        if targets:
+            decision = select_initial_target(
+                targets,
+                is_configured=provider_configured_checker(analyzer_service.gateway),
+                task=TASK_DATASET_SUMMARY,
+                override=(
+                    ModelRef(provider=GEMINI_PROVIDER, model=gemini_primary)
+                    if gemini_primary
+                    else None
+                ),
+            )
+            targets = apply_route_decision(targets, decision)
+            logger.info(
+                "Routing decision (dataset summary): strategy=%s provider=%s "
+                "model=%s reason=%s",
+                decision.strategy,
+                decision.selected.provider,
+                decision.selected.model,
+                decision.reason,
+            )
         first_target = targets[0] if targets else None
         skipped_providers: set = set()
 
@@ -106,6 +142,9 @@ Synthesize these dataset reviews according to your system instructions into stru
                 metadata={
                     "task": TASK_DATASET_SUMMARY,
                     "fallback": target != first_target,
+                    # V2-P6 internal routing audit fields (server-side only;
+                    # never serialized into the API response envelope).
+                    **route_metadata(decision),
                 },
             )
             try:

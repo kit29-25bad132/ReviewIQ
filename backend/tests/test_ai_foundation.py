@@ -416,9 +416,19 @@ def test_registry_holds_expected_metadata():
     assert spec.enabled is True
     assert spec.supports_structured_output is True
     assert spec.is_default_primary is True
-    # Cost/context stay unset rather than inventing values.
-    assert spec.estimated_cost_per_1k_input is None
-    assert spec.context_window is None
+    # V2-P6: verified pricing/context (official docs, ADR-008) replaces the
+    # earlier "unset rather than inventing values" state for this model.
+    # gemini-3.8-flash: $0.75/$3.75 per 1M input/output -> per-1K below.
+    assert spec.estimated_cost_per_1k_input == 0.00075
+    assert spec.estimated_cost_per_1k_output == 0.00375
+    assert spec.context_window == 1_000_000
+    assert spec.free_tier is True
+    # Unverified models keep None — never an invented number.
+    unverified = model_registry.get(GEMINI_PROVIDER, "gemini-3.6-flash")
+    assert unverified is not None
+    assert unverified.estimated_cost_per_1k_input is None
+    assert unverified.estimated_cost_per_1k_output is None
+    assert unverified.context_window is None
 
 
 def test_registry_enabled_only_filter():

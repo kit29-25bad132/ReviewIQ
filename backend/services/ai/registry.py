@@ -1,12 +1,15 @@
 """Model registry: provider-neutral metadata for selectable models.
 
-This is the foundation for the V2 cost-aware router. This milestone records
-capability, quality, structured-output, ordering, and enable/disable metadata
-only. It deliberately implements **no** routing algorithm yet.
+Originally the foundation for the V2 cost-aware router (ADR-004); V2-P6
+(ADR-008) now populates verified cost, context-window, and free-tier metadata
+so ``services/ai/routing_policy.py`` can rank targets deterministically. The
+registry still implements no routing algorithm itself.
 
-Cost and context-window fields stay ``None`` because the project does not have
-verified values for them. They are configurable rather than hardcoded so the
-routing milestone can populate real numbers instead of inventing prices.
+Verified values are recorded in USD per 1K tokens (converted from published
+per-1M prices) with the source documented in ADR-008. A field stays ``None``
+when the project does not have a verified value — unknown metadata is never
+invented and must never be treated as zero cost by consumers. This data is
+time-sensitive: re-verify when provider pricing or free-tier policies change.
 """
 
 from dataclasses import dataclass
@@ -64,8 +67,10 @@ _ALL_TASKS = frozenset({TASK_REVIEW_ANALYSIS, TASK_DATASET_SUMMARY})
 class ModelSpec:
     """Everything the application needs to know about one selectable model.
 
-    ``estimated_cost_*`` and ``context_window`` are intentionally optional: an
-    unknown value must never be represented as a made-up number.
+    ``estimated_cost_*``, ``context_window``, and ``free_tier`` are optional:
+    an unknown value must never be represented as a made-up number. V2-P6
+    populates them only from verified provider documentation (ADR-008);
+    ``None`` means "unverified", never "zero" or "free".
     """
 
     provider: str
@@ -78,6 +83,10 @@ class ModelSpec:
     context_window: Optional[int] = None
     estimated_cost_per_1k_input: Optional[float] = None
     estimated_cost_per_1k_output: Optional[float] = None
+    # Verified free-tier availability: True = provider documents a free tier
+    # for this model/account, False = verified paid-only, None = unverified.
+    # Never inferred from a low paid price.
+    free_tier: Optional[bool] = None
     # The model used when no explicit primary is configured for the provider.
     is_default_primary: bool = False
     # Whether the model participates in the provider's fallback pool.
@@ -193,10 +202,68 @@ class ModelRegistry:
         return targets[:limit] if limit is not None else targets
 
 
+# ---------------------------------------------------------------------------
+# V2-P6 verified model metadata (ADR-008; official provider documentation,
+# verified 2026-09-26). USD per 1K tokens, converted from published per-1M
+# prices. Models without a clearly verified price/context keep None — values
+# are never invented. Time-sensitive: re-verify when provider pricing or
+# free-tier policies change.
+# ---------------------------------------------------------------------------
+# Gemini (per-1M published prices -> per-1K): gemini-3.8-flash $0.75/$3.75
+# (introductory, through 2026-12-31); gemini-3.5-flash $1.50/$9.00;
+# gemini-3.5-flash-lite $0.30/$2.50. No verified price is clearly published
+# for gemini-3.6-flash or the gemini-flash-latest alias, so those stay None.
+# Gemini free-tier access is listed as free for eligible models/accounts, so
+# every registry Gemini model records free_tier=True (not inferred from
+# price — from the documented free-tier availability).
+_VERIFIED_GEMINI_COST_PER_1K = {
+    DEFAULT_MODEL_NAME: (0.00075, 0.00375),
+    "gemini-3.5-flash": (0.0015, 0.009),
+    "gemini-3.5-flash-lite": (0.0003, 0.0025),
+}
+_VERIFIED_GEMINI_CONTEXT_WINDOW = {
+    DEFAULT_MODEL_NAME: 1_000_000,
+    "gemini-3.5-flash": 1_000_000,
+    "gemini-3.5-flash-lite": 1_048_576,
+}
+# Groq (per-1M published prices -> per-1K): gpt-oss-120b $0.15/$0.60;
+# gpt-oss-20b $0.075/$0.30; qwen3.8-27b $0.80/$4.00. Context windows per
+# Groq model pages. free_tier stays None: no applicable free plan is
+# established by the verified sources for these models.
+_VERIFIED_GROQ_COST_PER_1K = {
+    "openai/gpt-oss-120b": (0.00015, 0.0006),
+    "openai/gpt-oss-20b": (0.000075, 0.0003),
+    "qwen/qwen3.8-27b": (0.0008, 0.004),
+}
+_VERIFIED_GROQ_CONTEXT_WINDOW = {
+    "openai/gpt-oss-120b": 131_072,
+    "openai/gpt-oss-20b": 131_072,
+    "qwen/qwen3.8-27b": 131_042,
+}
+# OpenRouter's free route: $0 input/$0 output, 200K context, verified free
+# tier (officially limited, e.g. 50 requests/day). It is an opaque router
+# that resolves the underlying model upstream — never a statically
+# identifiable model.
+_OPENROUTER_ROUTE_INPUT_COST = 0.0
+_OPENROUTER_ROUTE_OUTPUT_COST = 0.0
+_OPENROUTER_ROUTE_CONTEXT_WINDOW = 200_000
+
+
+def _cost_fields(
+    table: Dict[str, tuple], model: str
+) -> Tuple[Optional[float], Optional[float]]:
+    input_cost, output_cost = table.get(model, (None, None))
+    return input_cost, output_cost
+
+
 def build_default_registry() -> ModelRegistry:
     """Registry populated with the Gemini chain (verified, unchanged) plus the
-    V2-P5 Groq and OpenRouter entries. Cost/context metadata stays ``None``:
-    no verified values exist, so none are invented."""
+    V2-P5 Groq and OpenRouter entries, annotated with V2-P6 verified
+    cost/context/free-tier metadata. Unverified fields stay ``None``: no
+    verified value exists, so none is invented."""
+    primary_input, primary_output = _cost_fields(
+        _VERIFIED_GEMINI_COST_PER_1K, DEFAULT_MODEL_NAME
+    )
     specs = [
         ModelSpec(
             provider=GEMINI_PROVIDER,
@@ -208,9 +275,14 @@ def build_default_registry() -> ModelRegistry:
             # The default primary is a configuration value, not part of the
             # fallback pool (preserves V1 ordering semantics exactly).
             is_fallback_candidate=False,
+            estimated_cost_per_1k_input=primary_input,
+            estimated_cost_per_1k_output=primary_output,
+            context_window=_VERIFIED_GEMINI_CONTEXT_WINDOW[DEFAULT_MODEL_NAME],
+            free_tier=True,
         )
     ]
     for position, model in enumerate(FALLBACK_MODEL_NAMES, start=1):
+        input_cost, output_cost = _cost_fields(_VERIFIED_GEMINI_COST_PER_1K, model)
         specs.append(
             ModelSpec(
                 provider=GEMINI_PROVIDER,
@@ -219,12 +291,17 @@ def build_default_registry() -> ModelRegistry:
                 quality_tier=QUALITY_LITE if model.endswith("lite") else QUALITY_STANDARD,
                 priority=position,
                 is_fallback_candidate=True,
+                estimated_cost_per_1k_input=input_cost,
+                estimated_cost_per_1k_output=output_cost,
+                context_window=_VERIFIED_GEMINI_CONTEXT_WINDOW.get(model),
+                free_tier=True,
             )
         )
 
     # V2-P5: Groq model chain (primary first, then fallback candidates).
     for position, model in enumerate(GROQ_MODEL_NAMES):
         is_primary = position == 0
+        input_cost, output_cost = _cost_fields(_VERIFIED_GROQ_COST_PER_1K, model)
         specs.append(
             ModelSpec(
                 provider=GROQ_PROVIDER,
@@ -234,6 +311,10 @@ def build_default_registry() -> ModelRegistry:
                 priority=position,
                 is_default_primary=is_primary,
                 is_fallback_candidate=not is_primary,
+                estimated_cost_per_1k_input=input_cost,
+                estimated_cost_per_1k_output=output_cost,
+                context_window=_VERIFIED_GROQ_CONTEXT_WINDOW.get(model),
+                free_tier=None,
             )
         )
 
@@ -247,6 +328,10 @@ def build_default_registry() -> ModelRegistry:
             priority=0,
             is_default_primary=True,
             is_fallback_candidate=False,
+            estimated_cost_per_1k_input=_OPENROUTER_ROUTE_INPUT_COST,
+            estimated_cost_per_1k_output=_OPENROUTER_ROUTE_OUTPUT_COST,
+            context_window=_OPENROUTER_ROUTE_CONTEXT_WINDOW,
+            free_tier=True,
         )
     )
     return ModelRegistry(specs)

@@ -22,7 +22,16 @@ from services.ai.registry import (
     TASK_REVIEW_ANALYSIS,
     model_registry,
 )
-from services.ai.routing import build_target_chain, skips_remaining_provider_models
+from services.ai.routing import (
+    build_target_chain,
+    provider_configured_checker,
+    skips_remaining_provider_models,
+)
+from services.ai.routing_policy import (
+    apply_route_decision,
+    route_metadata,
+    select_initial_target,
+)
 from services.analysis_graph import (
     EmptyResponseError,
     SkipTargetError,
@@ -106,6 +115,11 @@ class AIAnalyzerService:
     single ``openrouter/free`` route — filtered to configured providers. An
     AUTHENTICATION/CONFIGURATION failure skips the remaining models of that
     provider; every other failure continues along the model chain.
+
+    V2-P6: before falling back, ``services.ai.routing_policy`` picks the
+    initial target from that chain (default ``gemini_first`` preserves P5
+    order exactly; opt-in ``cost_aware`` only moves the chosen target to the
+    head). Routing never replaces the fallback loop above.
     """
 
     def __init__(
@@ -246,13 +260,43 @@ class AIAnalyzerService:
         graph (before the first attempt); the retrieved context shapes every
         attempt's prompt while grounding stays original-review-only. When
         disabled or empty, prompts are byte-identical to V1/P2.
+
+        V2-P6: before the first attempt, the routing policy
+        (``services.ai.routing_policy``) selects the *initial* target from
+        the already-built P5 chain and moves it to the head; every other
+        target keeps its exact relative order, so the fallback tail is P5
+        unchanged. Routing never builds a chain, never probes the network,
+        and cannot bypass provider configuration checks. The retrieved RAG
+        context (V2-P3) still runs once and is shared across every attempt;
+        grounding and validation still run on every success.
         """
+        gemini_primary = os.getenv("GEMINI_MODEL") or None
         targets = build_target_chain(
             self.gateway,
-            primary=os.getenv("GEMINI_MODEL") or None,
+            primary=gemini_primary,
             capability=TASK_REVIEW_ANALYSIS,
             per_provider_limit=5,
         )
+        decision = None
+        if targets:
+            decision = select_initial_target(
+                targets,
+                is_configured=provider_configured_checker(self.gateway),
+                task=TASK_REVIEW_ANALYSIS,
+                override=(
+                    ModelRef(provider=GEMINI_PROVIDER, model=gemini_primary)
+                    if gemini_primary
+                    else None
+                ),
+            )
+            targets = apply_route_decision(targets, decision)
+            logger.info(
+                "Routing decision: strategy=%s provider=%s model=%s reason=%s",
+                decision.strategy,
+                decision.selected.provider,
+                decision.selected.model,
+                decision.reason,
+            )
         first_target = targets[0] if targets else None
         # Providers whose credentials/config failed: their remaining targets
         # are advanced past without API calls (error-aware provider skip).
@@ -288,6 +332,9 @@ class AIAnalyzerService:
                 metadata={
                     "task": TASK_REVIEW_ANALYSIS,
                     "fallback": target != first_target,
+                    # V2-P6 internal routing audit fields (server-side only;
+                    # never serialized into the API response envelope).
+                    **route_metadata(decision),
                 },
             )
             # Provider-neutral error surface: the gateway/adapters return a

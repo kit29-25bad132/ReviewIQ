@@ -20,7 +20,12 @@ def hermetic_provider_env(monkeypatch):
     neutralize both fallback keys for each test so no chain ever reaches a real
     provider endpoint. GEMINI_API_KEY is left untouched: Gemini-only tests
     configure or remove it explicitly to match their scenario.
+
+    ROUTING_STRATEGY is also neutralized so every test starts from the
+    gemini_first default; V2-P6 routing tests opt in explicitly via
+    monkeypatch.setenv (which runs after this fixture).
     """
     monkeypatch.setattr("services.ai_analyzer.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ROUTING_STRATEGY", raising=False)

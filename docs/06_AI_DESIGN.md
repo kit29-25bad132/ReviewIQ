@@ -25,10 +25,23 @@ Input normalization → prompt construction → provider request (Gemini → Gro
 - A provider with no API key configured is removed from the chain entirely; unset keys never cause failed requests.
 - Bound: at most 5 Gemini + 3 Groq + 1 OpenRouter attempts per request; no unbounded retries.
 
+## Cost-Aware Routing (V2-P6)
+- **Routing ≠ fallback.** Routing (`services/ai/routing_policy.py`) chooses the *initial* target; fallback (`services/ai/routing.py`, P5) handles failure afterwards. The P5 fallback order, provider-skip policy, single-shot gateway, and LangGraph loop are unchanged.
+- Flow: build the existing P5 chain → `select_initial_target()` picks one target → `apply_route_decision()` moves it to the head (all other targets keep their exact relative order) → existing fallback runs on the tail.
+- Strategies (`ROUTING_STRATEGY` in `backend/.env.example`):
+  - `gemini_first` (default): selects the chain head — byte-for-byte P5 behavior.
+  - `cost_aware` (opt-in): deterministic, offline ranking over verified registry metadata only: free-tier preference → total verified cost (USD per 1K input+output) → quality tier → priority → original chain order.
+- Verified metadata only (ADR-008): cost/context/free-tier values come from official provider documentation; unknown values stay `None` and are never treated as zero cost, never inferred, never probed.
+- `GEMINI_MODEL` remains the Gemini-scoped explicit override and always wins over policy.
+- No network calls, no live availability probing, no randomness, no clock in routing decisions. Invalid `ROUTING_STRATEGY` values fall back to `gemini_first` with a server-side warning only.
+- Routing audit metadata (`routing_strategy`, `selected_provider`, `selected_model`, `routing_reason`) rides in server-side request metadata only; it is never returned in `AnalyzeReviewResponse`, `AISummaryResponse`, or API error payloads.
+- Pricing/free-tier data is time-sensitive: re-verify when provider policies change.
+
 ## Reliability Controls
 - Model and SDK configuration documented.
 - Timeout and bounded retry policy.
 - Provider fallback with error-aware skip (ADR-007).
+- Deterministic, offline initial-target routing with a safe default strategy (ADR-008).
 - Schema validation.
 - Rating range validation.
 - Evidence presence and source-grounding checks.
