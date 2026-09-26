@@ -32,6 +32,11 @@ from services.ai.routing_policy import (
     route_metadata,
     select_initial_target,
 )
+from services.ai.retry_policy import (
+    generate_with_retry,
+    resolve_request_timeout,
+    resolve_retry_policy,
+)
 from services.analysis_graph import (
     EmptyResponseError,
     SkipTargetError,
@@ -303,6 +308,11 @@ class AIAnalyzerService:
         skipped_providers: set = set()
 
         rag_service = self._rag_service or RagRetrievalService(self.rag_config)
+        # V2-P7: the reliability layer is resolved once per request. Retry
+        # re-attempts the SAME target below the target loop; the LangGraph
+        # fallback loop and the single-shot gateway are unchanged.
+        retry_policy = resolve_retry_policy()
+        request_timeout = resolve_request_timeout()
         # Context is shared between the graph's retrieval node and attempt_fn
         # via a per-request holder; attempt_fn keeps its two-argument signature.
         context_holder: Dict[str, Optional[RagContext]] = {}
@@ -329,6 +339,7 @@ class AIAnalyzerService:
                 system_instruction=system_instruction,
                 temperature=0.2,
                 response_schema=ReviewAnalysis,
+                timeout_seconds=request_timeout,
                 metadata={
                     "task": TASK_REVIEW_ANALYSIS,
                     "fallback": target != first_target,
@@ -338,9 +349,14 @@ class AIAnalyzerService:
                 },
             )
             # Provider-neutral error surface: the gateway/adapters return a
-            # normalized failure instead of leaking SDK exceptions.
+            # normalized failure instead of leaking SDK exceptions. V2-P7:
+            # retryable failures are retried on the SAME target before the
+            # fallback loop advances; non-retryable failures return after one
+            # call, preserving P5/P6 call counts.
             try:
-                response = self.gateway.generate(request)
+                response = generate_with_retry(
+                    self.gateway, request, retry_policy
+                )
             except AIProviderError as err:
                 if skips_remaining_provider_models(err.error_type):
                     skipped_providers.add(target.provider)

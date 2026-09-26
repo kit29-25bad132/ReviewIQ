@@ -109,7 +109,7 @@ class _FakeClient:
 def _install_fake_sdk(monkeypatch, attempts, fail_first=0):
     """Install a fake google-genai SDK in sys.modules (no network, no real install)."""
     fake_genai = mock.MagicMock()
-    fake_genai.Client = lambda api_key: _FakeClient(attempts, fail_first)
+    fake_genai.Client = lambda api_key, **kwargs: _FakeClient(attempts, fail_first)
     fake_types = mock.MagicMock()
     monkeypatch.setitem(sys.modules, "google", mock.MagicMock(genai=fake_genai))
     monkeypatch.setitem(sys.modules, "google.genai", fake_genai)

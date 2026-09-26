@@ -17,6 +17,13 @@ from services.ai.errors import (
 from services.ai.gateway import AIGateway
 from services.ai.provider import AIProvider
 from services.ai.registry import ModelRegistry, ModelSpec, model_registry
+from services.ai.retry_policy import (
+    RetryPolicy,
+    generate_with_retry,
+    is_retryable,
+    resolve_request_timeout,
+    resolve_retry_policy,
+)
 
 __all__ = [
     "AIConfigurationError",
@@ -31,6 +38,11 @@ __all__ = [
     "ModelRef",
     "ModelRegistry",
     "ModelSpec",
+    "RetryPolicy",
     "UnknownProviderError",
+    "generate_with_retry",
+    "is_retryable",
     "model_registry",
+    "resolve_request_timeout",
+    "resolve_retry_policy",
 ]

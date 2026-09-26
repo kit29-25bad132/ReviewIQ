@@ -37,9 +37,21 @@ Input normalization → prompt construction → provider request (Gemini → Gro
 - Routing audit metadata (`routing_strategy`, `selected_provider`, `selected_model`, `routing_reason`) rides in server-side request metadata only; it is never returned in `AnalyzeReviewResponse`, `AISummaryResponse`, or API error payloads.
 - Pricing/free-tier data is time-sensitive: re-verify when provider policies change.
 
+## Bounded Retry (V2-P7)
+- **Retry ≠ fallback.** Retry (`services/ai/retry_policy.py`) repeats the **same** provider/model target; fallback (V2-P5, `services/ai/routing.py`) advances to the **next** target. Retry runs below the target loop and above the single-shot `AIGateway`.
+- **Retryable:** only `rate_limit`, `timeout`, `transient`. **Not retryable:** `authentication`, `configuration`, `model_unavailable`, `invalid_request`, `invalid_response`, `unknown`. Retrying a malformed deterministic response would only burn tokens.
+- **Attempt semantics:** `RETRY_MAX_ATTEMPTS` counts TOTAL attempts for one target (`1` = no retry, `2` = original + one retry — the default, `3` = original + two).
+- **Backoff:** `delay = min(RETRY_BASE_DELAY_SECONDS * 2**(retry-1), RETRY_MAX_DELAY_SECONDS)`. `RETRY_JITTER=true` applies full jitter (uniform `0..delay`).
+- **Retry-After:** a provider `Retry-After` header (integer seconds, decimal seconds, or HTTP-date) is preferred over the computed delay and clamped to `RETRY_MAX_DELAY_SECONDS`. Invalid values fall back to exponential backoff. The Groq/OpenRouter transport extracts it and stores it on the normalized failure; it never crosses into an API envelope.
+- **Timeout:** every request carries a unified `AI_REQUEST_TIMEOUT_SECONDS` (default 30s). Gemini enforces it through the SDK `HttpOptions.timeout` (milliseconds); the Gemini SDK's native retry is deliberately left disabled so there is exactly **one** application retry layer.
+- **RAG invariant:** retrieval runs once per request before any attempt and is shared across retries and fallback. Retry never re-runs retrieval, embeddings, or vector search.
+- **Product summary:** the summary path uses the identical `generate_with_retry` helper and `RetryPolicy`; there is no separate retry implementation.
+- **Observability:** safe internal `AIResponse.metadata` only — `retry_attempts`, `retry_count`, `retryable`, `retry_reason`, `retry_delay_seconds`. Never keys, headers, prompts, or review text. Retry metadata is never exposed through the public API.
+
 ## Reliability Controls
 - Model and SDK configuration documented.
-- Timeout and bounded retry policy.
+- Unified request timeout plus bounded, exponential-backoff retry policy (ADR-009).
+- Retry-After honored and clamped; invalid values fall back to computed backoff.
 - Provider fallback with error-aware skip (ADR-007).
 - Deterministic, offline initial-target routing with a safe default strategy (ADR-008).
 - Schema validation.

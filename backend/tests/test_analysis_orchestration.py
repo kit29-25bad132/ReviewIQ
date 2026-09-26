@@ -78,7 +78,7 @@ class _ScriptedClient:
 
 def _install_scripted_sdk(monkeypatch, attempts: List[str], script):
     fake_genai = mock.MagicMock()
-    fake_genai.Client = lambda api_key: _ScriptedClient(attempts, script)
+    fake_genai.Client = lambda api_key, **kwargs: _ScriptedClient(attempts, script)
     fake_types = mock.MagicMock()
     monkeypatch.setitem(sys.modules, "google", mock.MagicMock(genai=fake_genai))
     monkeypatch.setitem(sys.modules, "google.genai", fake_genai)

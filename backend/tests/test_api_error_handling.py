@@ -240,7 +240,7 @@ def _install_scripted_empty_then_valid_sdk(monkeypatch, attempts, script):
         models = _ScriptedModels()
 
     fake_genai = mock.MagicMock()
-    fake_genai.Client = lambda api_key: _ScriptedClient()
+    fake_genai.Client = lambda api_key, **kwargs: _ScriptedClient()
     fake_types = mock.MagicMock()
     monkeypatch.setitem(sys.modules, "google", mock.MagicMock(genai=fake_genai))
     monkeypatch.setitem(sys.modules, "google.genai", fake_genai)

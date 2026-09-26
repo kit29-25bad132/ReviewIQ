@@ -15,6 +15,7 @@ from services.ai.contracts import AIGenerationRequest, AIResponse, AIUsage
 from services.ai.errors import classify_provider_error
 from services.ai.provider import AIProvider
 from services.ai.registry import GEMINI_PROVIDER
+from services.ai.retry_policy import resolve_request_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,17 @@ class GeminiProvider(AIProvider):
 
         model = request.model or ""
         started = time.perf_counter()
-        client = genai.Client(api_key=self.api_key)
+        # V2-P7: enforce an application-level timeout on every Gemini call.
+        # ``HttpOptions.timeout`` is expressed in milliseconds; an unset/
+        # invalid request timeout resolves to the unified application default.
+        # ``retry_options`` is deliberately never set: the SDK keeps its
+        # native single-attempt behavior so exactly ONE retry layer (the
+        # application's ``generate_with_retry``) exists above the gateway.
+        timeout_seconds = request.timeout_seconds
+        if timeout_seconds is None or timeout_seconds <= 0:
+            timeout_seconds = resolve_request_timeout()
+        http_options = types.HttpOptions(timeout=int(timeout_seconds * 1000))
+        client = genai.Client(api_key=self.api_key, http_options=http_options)
 
         config = types.GenerateContentConfig(
             system_instruction=request.system_instruction,

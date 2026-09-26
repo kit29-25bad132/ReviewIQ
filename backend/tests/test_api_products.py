@@ -306,7 +306,7 @@ def test_ai_summary_uses_canonical_verified_model_pool(monkeypatch):
         models = _Models()
 
     fake_genai = mock.MagicMock()
-    fake_genai.Client = lambda api_key: _Client()
+    fake_genai.Client = lambda api_key, **kwargs: _Client()
     fake_types = mock.MagicMock()
     monkeypatch.setitem(sys.modules, "google", mock.MagicMock(genai=fake_genai))
     monkeypatch.setitem(sys.modules, "google.genai", fake_genai)

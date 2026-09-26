@@ -24,8 +24,19 @@ def hermetic_provider_env(monkeypatch):
     ROUTING_STRATEGY is also neutralized so every test starts from the
     gemini_first default; V2-P6 routing tests opt in explicitly via
     monkeypatch.setenv (which runs after this fixture).
+
+    V2-P7: RETRY_MAX_ATTEMPTS is neutralized to 1 so the pre-existing
+    fallback-count assertions (5 Gemini + 3 Groq + 1 OpenRouter) measure
+    fallback alone, just as before retry existed. New retry tests opt in by
+    setting RETRY_MAX_ATTEMPTS (and the delay/jitter vars) explicitly, and
+    every delay is zero by default there, so no test ever waits.
     """
     monkeypatch.setattr("services.ai_analyzer.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("ROUTING_STRATEGY", raising=False)
+    monkeypatch.setenv("RETRY_MAX_ATTEMPTS", "1")
+    monkeypatch.delenv("RETRY_BASE_DELAY_SECONDS", raising=False)
+    monkeypatch.delenv("RETRY_MAX_DELAY_SECONDS", raising=False)
+    monkeypatch.delenv("RETRY_JITTER", raising=False)
+    monkeypatch.delenv("AI_REQUEST_TIMEOUT_SECONDS", raising=False)

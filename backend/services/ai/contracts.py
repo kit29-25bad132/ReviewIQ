@@ -68,6 +68,10 @@ class AIResponse:
     latency_ms: Optional[float] = None
     fallback: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # V2-P7: server-suggested retry delay (seconds) parsed from a provider
+    # ``Retry-After`` header, when present. Internal only — it never appears
+    # in an API envelope or frontend contract; the retry layer consumes it.
+    retry_after_seconds: Optional[float] = None
 
     @classmethod
     def failure(
@@ -79,6 +83,7 @@ class AIResponse:
         error_message: str,
         latency_ms: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        retry_after_seconds: Optional[float] = None,
     ) -> "AIResponse":
         return cls(
             content="",
@@ -89,4 +94,5 @@ class AIResponse:
             error_message=error_message,
             latency_ms=latency_ms,
             metadata=metadata or {},
+            retry_after_seconds=retry_after_seconds,
         )

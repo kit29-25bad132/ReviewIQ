@@ -18,6 +18,7 @@ Guarantees:
   fallback, not a retry storm.
 """
 
+import datetime
 import json
 import logging
 import os
@@ -26,6 +27,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Dict, Optional
 
 from services.ai.contracts import AIGenerationRequest, AIResponse, AIUsage
@@ -37,12 +39,54 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT_SECONDS = 30.0
 _MAX_ERROR_BODY_CHARS = 500
 
+# HTTP status codes whose ``Retry-After`` header is meaningful to honour.
+_RETRY_AFTER_STATUS_CODES = frozenset({429, 503})
+
+
+def _parse_retry_after(headers) -> Optional[float]:
+    """Parse an HTTP ``Retry-After`` value into non-negative seconds.
+
+    Supports integer seconds, decimal seconds, and the HTTP-date form
+    (RFC 7231, via stdlib ``email.utils``). Returns ``None`` when the header
+    is absent or unparseable so the caller can fall back to exponential
+    backoff. Only the header value is read — request headers (including
+    ``Authorization``) are never inspected or stored here.
+    """
+    if headers is None:
+        return None
+    try:
+        raw = headers.get("Retry-After")
+    except Exception:  # defensive: unknown header container
+        return None
+    if raw is None:
+        return None
+    value = str(raw).strip()
+    if not value:
+        return None
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        try:
+            when = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if when is None:
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=datetime.timezone.utc)
+        seconds = (when - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+    if seconds < 0:
+        return 0.0
+    return seconds
+
 
 class OpenAICompatError(RuntimeError):
     """Normalized failure from an OpenAI-compatible endpoint.
 
     ``body`` is a truncated copy of the provider's error payload (used for
     classification only) and never contains the Authorization header.
+    ``retry_after_seconds`` is the server-suggested delay parsed from a
+    ``Retry-After`` header, when present and valid.
     """
 
     def __init__(
@@ -53,6 +97,7 @@ class OpenAICompatError(RuntimeError):
         body: str = "",
         is_timeout: bool = False,
         error_type: Optional[AIErrorType] = None,
+        retry_after_seconds: Optional[float] = None,
     ) -> None:
         super().__init__(message)
         self.status = status
@@ -61,6 +106,7 @@ class OpenAICompatError(RuntimeError):
         # Explicit classification for structural failures decided in code
         # (e.g. malformed response shape); None means "classify from text".
         self.error_type = error_type
+        self.retry_after_seconds = retry_after_seconds
 
     @property
     def classification_text(self) -> str:
@@ -141,6 +187,9 @@ def chat_completion(
             raw = response.read()
     except urllib.error.HTTPError as exc:
         # HTTPError is also a URLError: must be caught first.
+        retry_after = None
+        if exc.code in _RETRY_AFTER_STATUS_CODES:
+            retry_after = _parse_retry_after(getattr(exc, "headers", None))
         try:
             error_body = (
                 exc.read()[:_MAX_ERROR_BODY_CHARS].decode("utf-8", "replace")
@@ -151,6 +200,7 @@ def chat_completion(
             f"HTTP {exc.code} from provider endpoint",
             status=exc.code,
             body=error_body,
+            retry_after_seconds=retry_after,
         ) from None
     except urllib.error.URLError as exc:
         reason = getattr(exc, "reason", exc)
@@ -331,6 +381,7 @@ class OpenAICompatProvider(AIProvider):
                 error_type=error_type,
                 error_message=str(exc),
                 latency_ms=latency_ms,
+                retry_after_seconds=exc.retry_after_seconds,
             )
         except Exception as exc:  # safety net; raw text never reaches clients
             latency_ms = (time.perf_counter() - started) * 1000

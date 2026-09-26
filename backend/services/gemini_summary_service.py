@@ -19,6 +19,11 @@ from services.ai.routing_policy import (
     route_metadata,
     select_initial_target,
 )
+from services.ai.retry_policy import (
+    generate_with_retry,
+    resolve_request_timeout,
+    resolve_retry_policy,
+)
 from services.ai_analyzer import analyzer_service
 
 load_dotenv()
@@ -125,6 +130,10 @@ Synthesize these dataset reviews according to your system instructions into stru
             )
         first_target = targets[0] if targets else None
         skipped_providers: set = set()
+        # V2-P7: same reliability layer as review analysis — retry the SAME
+        # target below the loop, then fall back to the next target unchanged.
+        retry_policy = resolve_retry_policy()
+        request_timeout = resolve_request_timeout()
 
         last_error = None
         for target in targets:
@@ -139,6 +148,7 @@ Synthesize these dataset reviews according to your system instructions into stru
                 system_instruction=SUMMARY_SYSTEM_INSTRUCTION,
                 temperature=0.2,
                 response_schema=AISummaryResponse,
+                timeout_seconds=request_timeout,
                 metadata={
                     "task": TASK_DATASET_SUMMARY,
                     "fallback": target != first_target,
@@ -148,7 +158,9 @@ Synthesize these dataset reviews according to your system instructions into stru
                 },
             )
             try:
-                response = analyzer_service.gateway.generate(request)
+                response = generate_with_retry(
+                    analyzer_service.gateway, request, retry_policy
+                )
             except ImportError:
                 raise
             except AIProviderError as e:
