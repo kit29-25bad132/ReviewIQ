@@ -7,6 +7,8 @@ Covers:
 - Mixed supported/unsupported items: only unsupported items removed.
 - Empty/whitespace evidence never grounded.
 - Claim (point) policy: points are not substring-validated.
+- V2-P4: duplicate supported evidence removed within a collection
+  (normalized identity, first wins, no cross-collection dedupe).
 - Offline analyzer integration: Gemini output -> Pydantic -> grounding.
 
 V1 behavior under test: unsupported evidence-backed items are removed
@@ -244,6 +246,63 @@ def test_point_not_checked_when_evidence_unsupported():
     ])
     grounded = ground_analysis(REVIEW, analysis)
     assert grounded.pros == []
+
+
+# ---------------------------------------------------------------------------
+# V2-P4: duplicate evidence handling (dedupe within a collection)
+# ---------------------------------------------------------------------------
+
+def test_duplicate_evidence_removed_first_occurrence_wins():
+    review = "The camera is excellent and the screen is bright."
+    analysis = make_analysis(pros=[
+        {"point": "Good camera", "evidence": "The camera is excellent"},
+        {"point": "Great photos", "evidence": "The camera is excellent"},
+        {"point": "Bright screen", "evidence": "the screen is bright"},
+    ])
+    grounded = ground_analysis(review, analysis)
+    # First occurrence wins; order otherwise preserved; survivor's original
+    # evidence text unchanged.
+    assert [p.point for p in grounded.pros] == ["Good camera", "Bright screen"]
+    assert grounded.pros[0].evidence == "The camera is excellent"
+
+
+def test_duplicate_evidence_normalized_identity_deduped():
+    # Case / punctuation / whitespace variants normalize to one identity.
+    analysis = make_analysis(pros=[
+        {"point": "A", "evidence": "The battery lasts all day."},
+        {"point": "B", "evidence": " the battery lasts all day  "},
+        {"point": "C", "evidence": "THE BATTERY LASTS ALL DAY!"},
+    ])
+    grounded = ground_analysis(REVIEW, analysis)
+    assert [p.point for p in grounded.pros] == ["A"]
+    assert grounded.pros[0].evidence == "The battery lasts all day."
+
+
+def test_distinct_evidence_sharing_keywords_not_deduped():
+    review = "The battery lasts all day and the battery charges fast."
+    analysis = make_analysis(pros=[
+        {"point": "All-day battery", "evidence": "The battery lasts all day"},
+        {"point": "Fast charging", "evidence": "the battery charges fast"},
+    ])
+    grounded = ground_analysis(review, analysis)
+    assert [p.point for p in grounded.pros] == ["All-day battery", "Fast charging"]
+
+
+def test_duplicate_evidence_not_deduped_across_collections():
+    # pros and aspects are independent contract collections: identical
+    # evidence text in both must survive (dedupe never crosses collections).
+    analysis = make_analysis(
+        pros=[
+            {"point": "All-day battery", "evidence": "The battery lasts all day"},
+        ],
+        aspects=[
+            {"aspect": "battery", "sentiment": "positive",
+             "evidence": "the battery lasts all day"},
+        ],
+    )
+    grounded = ground_analysis(REVIEW, analysis)
+    assert len(grounded.pros) == 1
+    assert len(grounded.aspects) == 1
 
 
 # ---------------------------------------------------------------------------

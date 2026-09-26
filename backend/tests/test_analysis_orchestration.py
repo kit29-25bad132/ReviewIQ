@@ -24,6 +24,7 @@ from services.analysis_graph import (
     build_analysis_graph,
     run_analysis_graph,
 )
+from services.grounding_service import is_evidence_supported
 
 
 VALID_PAYLOAD = {
@@ -258,6 +259,38 @@ def test_grounding_filtered_valid_result_does_not_retry(monkeypatch):
     assert result.pros == []
     assert _run.last_attempts == [DEFAULT_MODEL_NAME]
     assert len(_run.last_attempts) == 1
+
+
+# ---------------------------------------------------------------------------
+# V2-P4 — Non-string (structurally malformed) evidence: Pydantic rejects
+# the primary response, fallback is invoked, result is grounded, and no
+# malformed evidence ever reaches the public contract.
+# ---------------------------------------------------------------------------
+
+def test_non_string_evidence_falls_back_and_fallback_is_grounded(monkeypatch):
+    malformed = {
+        **VALID_PAYLOAD,
+        "aspects": [],
+        "pros": [
+            # evidence must be a string; a list is structurally malformed
+            {"point": "All-day battery", "evidence": ["The battery lasts all day"]},
+        ],
+    }
+    result = _run(
+        monkeypatch,
+        [_payload_text(malformed), _payload_text(VALID_PAYLOAD)],
+    )
+    # Structured validation rejected the primary payload -> fallback ran.
+    assert _run.last_attempts == [DEFAULT_MODEL_NAME, FALLBACK_MODEL_NAMES[0]]
+    # Fallback result is grounded against the original review text.
+    assert [p.point for p in result.pros] == ["All-day battery"]
+    assert all(is_evidence_supported(REVIEW, p.evidence) for p in result.pros)
+    # No malformed (non-string) evidence reaches the response, and the
+    # final analysis round-trips through the unchanged public contract.
+    for item in [*result.pros, *result.aspects]:
+        assert isinstance(item.evidence, str)
+    revalidated = ReviewAnalysis.model_validate(result.model_dump())
+    assert revalidated == result
 
 
 # ---------------------------------------------------------------------------

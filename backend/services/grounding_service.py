@@ -14,6 +14,21 @@ V1 behavior (documented):
   summarize its evidence. Grounding applies only to the evidence string.
 - Standard library only: no network calls, no external models.
 
+V2-P4 additions (documented decisions):
+- Duplicate supported evidence within a single collection (pros / cons /
+  aspects) is removed: identity is the exact same normalization used for
+  grounding, first occurrence wins, the survivor keeps its original
+  evidence text, and otherwise order is preserved. Dedupe never crosses
+  collections (the contract keeps pros, cons, and aspects independent).
+- Confidence/status is intentionally NOT exposed. Support is a
+  deterministic boolean (exact or normalized textual match); any numeric
+  score would be fake statistics, and any new field would change the
+  locked public API contract. The exact-vs-normalized distinction stays
+  internal and derivable on demand.
+- Relevance is textual support only: no fuzzy matching, no embeddings,
+  no second model (claim<->evidence semantic similarity is out of scope
+  by design).
+
 Normalization handles case (casefold), whitespace (collapse), punctuation
 (replaced with spaces so word boundaries are preserved), and common
 quote/apostrophe variants.
@@ -75,25 +90,48 @@ def is_evidence_supported(review_text: str, evidence: str) -> bool:
     return normalized_evidence in normalized_review
 
 
+def _dedupe_supported_evidence(items: list) -> list:
+    """Keep the first item of each normalized-evidence identity (V2-P4).
+
+    Must be called only with items whose evidence already passed
+    ``is_evidence_supported`` (so every key is non-empty). Comparison uses
+    the exact same ``normalize_text`` as grounding — no second algorithm —
+    so case/punctuation/whitespace variants collapse into one identity,
+    while distinct evidence that merely shares keywords stays distinct.
+    The surviving item keeps its original evidence text unchanged and
+    input order is preserved.
+    """
+    seen = set()
+    kept = []
+    for item in items:
+        key = normalize_text(item.evidence)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(item)
+    return kept
+
+
 def ground_analysis(review_text: str, analysis: ReviewAnalysis) -> ReviewAnalysis:
     """Return a grounded copy of the analysis.
 
     Removes every pro, con, or aspect whose evidence string is not supported
-    by the original review text. Items with supported evidence are kept
-    unchanged. Never invents, rewrites, or replaces evidence.
+    by the original review text, then removes duplicate supported evidence
+    within each collection (first occurrence wins). Items that survive are
+    kept unchanged. Never invents, rewrites, or replaces evidence.
     """
-    grounded_pros = [
+    grounded_pros = _dedupe_supported_evidence([
         p for p in analysis.pros
         if is_evidence_supported(review_text, p.evidence)
-    ]
-    grounded_cons = [
+    ])
+    grounded_cons = _dedupe_supported_evidence([
         c for c in analysis.cons
         if is_evidence_supported(review_text, c.evidence)
-    ]
-    grounded_aspects = [
+    ])
+    grounded_aspects = _dedupe_supported_evidence([
         a for a in analysis.aspects
         if is_evidence_supported(review_text, a.evidence)
-    ]
+    ])
     return analysis.model_copy(update={
         "pros": grounded_pros,
         "cons": grounded_cons,

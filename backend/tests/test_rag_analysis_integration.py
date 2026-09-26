@@ -3,6 +3,10 @@
 Offline: scripted in-process provider (tests.test_ai_foundation.FakeProvider)
 captures the exact prompt/system instruction the AI would receive; the HTTP
 test reuses the fake google-genai SDK from tests.test_model_configuration.
+
+V2-P4 additions: full retrieval -> failure -> fallback -> grounding path,
+and the shared-phrase provenance invariant (text support, not source
+tracking).
 """
 
 import json
@@ -20,6 +24,7 @@ from services.ai_analyzer import (
 )
 from services.analysis_graph import run_analysis_graph
 from services.embeddings.errors import EmbeddingError, EmbeddingErrorType
+from services.grounding_service import is_evidence_supported
 from services.rag.config import RAGConfig
 from services.rag.prompting import CONTEXT_HEADER, CONTEXT_SYSTEM_RULES
 from services.rag.retrieval import RagRetrievalService
@@ -271,6 +276,105 @@ def test_retrieval_runs_once_across_model_fallback():
     assert len(provider.requests) == 2
     assert CONTEXT_HEADER in provider.requests[0].prompt
     assert CONTEXT_HEADER in provider.requests[1].prompt
+
+
+# ---------------------------------------------------------------------------
+# V2-P4: full path — retrieval -> primary fails -> fallback -> grounding
+# ---------------------------------------------------------------------------
+
+def test_rag_primary_failure_fallback_grounds_full_path():
+    """End-to-end P4 behavior in one offline test.
+
+    RAG enabled -> retrieval occurs -> primary model fails -> fallback model
+    returns analysis mixing original-supported and context-only evidence ->
+    grounding drops the context-only item, keeps the supported one, and the
+    public contract stays unchanged.
+    """
+    payload = json.dumps(
+        {
+            "sentiment": "positive",
+            "rating": 5,
+            "rating_source": "explicit",
+            "summary": "Bright screen with an all-day battery.",
+            "aspects": [],
+            "pros": [
+                {"point": "Bright screen", "evidence": "screen is bright"},
+                # only present in the retrieved context review, NOT in REVIEW
+                {"point": "All-day battery", "evidence": "battery lasts all day"},
+            ],
+            "cons": [],
+        }
+    )
+    config = RAGConfig(enabled=True, top_k=3, similarity_threshold=0.0)
+    search = _ScriptedSearch(results=(_result("ctx-1", CONTEXT_REVIEW_TEXT, 0.9),))
+    service = RagRetrievalService(config, search_service=search)
+    provider = FakeProvider([RuntimeError("primary model failure"), payload])
+    analyzer = _analyzer(provider, rag_service=service)
+
+    analysis = analyzer.analyze_review(REVIEW)
+
+    # 1. retrieval occurred (once, with the original review as query)
+    assert len(search.calls) == 1
+    assert search.calls[0]["query"] == REVIEW
+    # 2. primary model failed -> 3. fallback model was attempted; every
+    # attempt saw the retrieved context as background only
+    assert len(provider.requests) == 2
+    for request in provider.requests:
+        assert CONTEXT_HEADER in request.prompt
+        assert CONTEXT_REVIEW_TEXT in request.prompt
+    # 4. fallback response was grounded: 5. context-only evidence removed,
+    # 6. original-review-supported evidence remains
+    assert [p.point for p in analysis.pros] == ["Bright screen"]
+    assert all(is_evidence_supported(REVIEW, p.evidence) for p in analysis.pros)
+    # 7. public analysis contract remains unchanged
+    dumped = analysis.model_dump()
+    assert set(dumped) == {
+        "sentiment",
+        "rating",
+        "rating_source",
+        "summary",
+        "aspects",
+        "pros",
+        "cons",
+    }
+    ReviewAnalysis.model_validate(dumped)
+
+
+def test_shared_phrase_provenance_is_text_support_not_source_tracking():
+    """Grounding guarantees TEXT SUPPORT by the original review, not
+    provenance of which source influenced the model.
+
+    The shared phrase exists in both the original and the retrieved review;
+    the evidence is accepted because the ORIGINAL contains it — no provenance
+    tracking is introduced (nor needed) for the invariant to hold.
+    """
+    review = "The battery lasts all day and the camera is excellent."
+    retrieved = "The battery lasts all day and the display is bright."
+    payload = json.dumps(
+        {
+            "sentiment": "positive",
+            "rating": 5,
+            "rating_source": "explicit",
+            "summary": "Strong battery life.",
+            "aspects": [],
+            "pros": [{"point": "All-day battery", "evidence": "The battery lasts all day"}],
+            "cons": [],
+        }
+    )
+    config = RAGConfig(enabled=True, top_k=3, similarity_threshold=0.0)
+    search = _ScriptedSearch(results=(_result("ctx-1", retrieved, 0.95),))
+    service = RagRetrievalService(config, search_service=search)
+    provider = FakeProvider([payload])
+    analyzer = _analyzer(provider, rag_service=service)
+
+    analysis = analyzer.analyze_review(review)
+
+    # The retrieved review (sharing the phrase) really was in the prompt...
+    assert retrieved in provider.requests[0].prompt
+    # ...yet the evidence is accepted purely because the original supports it.
+    assert [p.point for p in analysis.pros] == ["All-day battery"]
+    assert analysis.pros[0].evidence == "The battery lasts all day"
+    assert is_evidence_supported(review, analysis.pros[0].evidence)
 
 
 # ---------------------------------------------------------------------------
