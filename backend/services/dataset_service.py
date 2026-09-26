@@ -36,6 +36,12 @@ class DatasetService:
 
     def _load(self) -> list[DatasetReview]:
         if not self.path.is_file():
+            try:
+                from scripts.seed_sample_data import seed_database
+                seed_database()
+            except Exception:
+                pass
+        if not self.path.is_file():
             raise DatasetUnavailableError("Review dataset could not be loaded. Add amazon_review.csv to backend/data/.")
         with self.path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)

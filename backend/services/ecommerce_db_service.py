@@ -30,6 +30,12 @@ class EcommerceDBService:
         return conn
 
     def is_ready(self) -> bool:
+        if not self.db_path.exists():
+            try:
+                from scripts.seed_sample_data import seed_database
+                seed_database()
+            except Exception:
+                pass
         return self.db_path.exists()
 
     def search_products(self, query: str, limit: int = 20) -> List[ProductSummary]:
