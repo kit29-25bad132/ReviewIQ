@@ -5,8 +5,14 @@ LangGraph tracks the current model, runs one attempt, and routes:
   failure + models remaining -> attempt_model
   failure + exhausted -> END (caller raises last meaningful error)
 
+V2-P3: an optional retrieval stage runs before the first attempt when a
+``retrieve_fn`` is supplied (START -> retrieve_context -> attempt_model). The
+retrieved context is stored in state under ``rag_context`` for observability;
+attempt functions read it from the caller's closure (``attempt_fn`` keeps its
+two-argument signature).
+
 Orchestration only. Gemini generation, JSON parsing, Pydantic validation,
-and evidence grounding stay in AIAnalyzerService.
+evidence grounding, and RAG retrieval itself stay in their own services.
 """
 
 import logging
@@ -19,6 +25,7 @@ from models.review import ReviewAnalysis
 logger = logging.getLogger(__name__)
 
 AttemptFn = Callable[[str, str], ReviewAnalysis]
+RetrieveFn = Callable[[str], Any]
 
 
 class EmptyResponseError(Exception):
@@ -36,6 +43,24 @@ class AnalysisGraphState(TypedDict, total=False):
     analysis: Optional[ReviewAnalysis]
     last_error: Optional[Exception]
     attempts: int
+    # V2-P3: present only when a retrieval stage ran.
+    rag_context: Any
+
+
+def _make_retrieve_node(retrieve_fn: RetrieveFn):
+    def retrieve_context(state: AnalysisGraphState) -> dict:
+        review_text = state.get("review_text", "")
+        try:
+            context = retrieve_fn(review_text)
+        except Exception as exc:
+            # Best-effort stage: a retrieval failure must never block analysis.
+            logger.warning(
+                "RAG retrieval stage failed; continuing without context: %s", exc
+            )
+            return {"rag_context": None}
+        return {"rag_context": context}
+
+    return retrieve_context
 
 
 def _make_attempt_node(attempt_fn: AttemptFn):
@@ -78,11 +103,23 @@ def _route_result(state: AnalysisGraphState) -> str:
     return END
 
 
-def build_analysis_graph(attempt_fn: AttemptFn):
-    """Compile a single graph: START -> attempt_model -> route_result."""
+def build_analysis_graph(
+    attempt_fn: AttemptFn,
+    retrieve_fn: Optional[RetrieveFn] = None,
+):
+    """Compile the graph: START -> [retrieve_context ->] attempt_model -> route.
+
+    The retrieval stage is included only when ``retrieve_fn`` is provided, so
+    callers that do not opt in get the exact V1/P2 graph and state shape.
+    """
     builder = StateGraph(AnalysisGraphState)
     builder.add_node("attempt_model", _make_attempt_node(attempt_fn))
-    builder.add_edge(START, "attempt_model")
+    if retrieve_fn is not None:
+        builder.add_node("retrieve_context", _make_retrieve_node(retrieve_fn))
+        builder.add_edge(START, "retrieve_context")
+        builder.add_edge("retrieve_context", "attempt_model")
+    else:
+        builder.add_edge(START, "attempt_model")
     builder.add_conditional_edges(
         "attempt_model",
         _route_result,
@@ -95,12 +132,13 @@ def run_analysis_graph(
     review_text: str,
     models: List[str],
     attempt_fn: AttemptFn,
+    retrieve_fn: Optional[RetrieveFn] = None,
 ) -> AnalysisGraphState:
     """Run the fallback graph and return the final state.
 
     Does not raise; the caller decides how to surface analysis/last_error.
     """
-    graph = build_analysis_graph(attempt_fn)
+    graph = build_analysis_graph(attempt_fn, retrieve_fn=retrieve_fn)
     initial: AnalysisGraphState = {
         "review_text": review_text,
         "models": list(models),
@@ -109,5 +147,7 @@ def run_analysis_graph(
         "last_error": None,
         "attempts": 0,
     }
+    if retrieve_fn is not None:
+        initial["rag_context"] = None
     final_state: Any = graph.invoke(initial)
     return final_state

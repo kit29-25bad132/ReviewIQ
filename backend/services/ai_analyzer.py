@@ -2,7 +2,8 @@ import json
 import logging
 import os
 import re
-from typing import Optional
+from typing import Dict, Optional, Tuple
+
 from dotenv import load_dotenv
 
 from models.review import ReviewAnalysis
@@ -19,6 +20,10 @@ from services.ai.registry import (
 )
 from services.analysis_graph import EmptyResponseError, run_analysis_graph
 from services.grounding_service import ground_analysis
+from services.rag.config import RAGConfig
+from services.rag.context_builder import RagContext, build_rag_context
+from services.rag.prompting import build_analysis_prompt
+from services.rag.retrieval import RagRetrievalResult, RagRetrievalService
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -76,15 +81,25 @@ class AIAnalyzerService:
     Gemini SDK access is delegated to the AI Gateway/provider adapter; this
     service owns configuration, prompt construction, output parsing/validation,
     and evidence grounding — the provider-neutral parts of the pipeline.
+
+    V2-P3: an optional best-effort RAG stage (disabled unless ``RAG_ENABLED``)
+    retrieves similar reviews and builds a context block that shapes the
+    prompt. Grounding remains original-review-only; retrieval failures never
+    block analysis.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
         gateway: Optional[AIGateway] = None,
+        *,
+        rag_config: Optional[RAGConfig] = None,
+        rag_service: Optional[RagRetrievalService] = None,
     ):
         self._api_key = api_key
         self._gateway = gateway
+        self._rag_config = rag_config
+        self._rag_service = rag_service
 
     @property
     def api_key(self) -> str:
@@ -116,6 +131,48 @@ class AIAnalyzerService:
             )
         return self._gateway
 
+    @property
+    def rag_config(self) -> RAGConfig:
+        """Resolved RAG settings (constructor override, else environment)."""
+        if self._rag_config is not None:
+            return self._rag_config
+        return RAGConfig.from_env()
+
+    def _retrieve_rag_context(
+        self, review_text: str, service: RagRetrievalService
+    ) -> Tuple[Optional[RagContext], Optional[RagRetrievalResult]]:
+        """Best-effort RAG stage: never raises.
+
+        Returns ``(context, retrieval_result)``; both are ``None`` only when
+        the stage is disabled. Logged fields are limited to safe metadata
+        (status/counts/thresholds) — the review text and query are never
+        written to logs.
+        """
+        if not service.config.enabled:
+            return None, None
+        result = service.retrieve(review_text)
+        context: Optional[RagContext] = None
+        try:
+            context = build_rag_context(result.results, service.config)
+        except Exception:
+            logger.warning(
+                "RAG context construction failed; continuing without context.",
+                exc_info=True,
+            )
+        meta = result.metadata
+        logger.info(
+            "RAG retrieval status=%s retrieved=%d top_k=%d threshold=%.4f "
+            "context_reviews=%d context_chars=%d error_type=%s",
+            meta.status,
+            meta.retrieved_count,
+            meta.top_k,
+            meta.similarity_threshold,
+            len(context.reviews) if context else 0,
+            context.char_count if context else 0,
+            meta.error_type,
+        )
+        return context, result
+
     def analyze_review(self, review_text: str) -> ReviewAnalysis:
         """
         Analyzes a customer review using Google Gemini API.
@@ -141,17 +198,36 @@ class AIAnalyzerService:
 
         Retained name for backwards compatibility. Gemini SDK access now happens
         behind the AI Gateway; this method owns the provider-neutral workflow:
-        generation -> parsing -> Pydantic validation -> evidence grounding.
+        optional RAG retrieval -> generation -> parsing -> Pydantic validation
+        -> evidence grounding.
+
+        V2-P3: when the RAG stage is enabled, retrieval runs once inside the
+        graph (before the first attempt); the retrieved context shapes every
+        attempt's prompt while grounding stays original-review-only. When
+        disabled or empty, prompts are byte-identical to V1/P2.
         """
         models_to_try = _build_model_list(os.getenv("GEMINI_MODEL"))
         primary_model = models_to_try[0] if models_to_try else None
 
+        rag_service = self._rag_service or RagRetrievalService(self.rag_config)
+        # Context is shared between the graph's retrieval node and attempt_fn
+        # via a per-request holder; attempt_fn keeps its two-argument signature.
+        context_holder: Dict[str, Optional[RagContext]] = {}
+
+        def retrieve_fn(text: str) -> Optional[RagContext]:
+            context, _ = self._retrieve_rag_context(text, rag_service)
+            context_holder["context"] = context
+            return context
+
         def attempt_fn(text: str, model_name: str) -> ReviewAnalysis:
+            prompt, system_instruction = build_analysis_prompt(
+                text, context_holder.get("context"), SYSTEM_INSTRUCTION
+            )
             request = AIGenerationRequest(
-                prompt=f"Analyze this customer product review:\n\n\"\"\"\n{text}\n\"\"\"",
+                prompt=prompt,
                 provider=GEMINI_PROVIDER,
                 model=model_name,
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=system_instruction,
                 temperature=0.2,
                 response_schema=ReviewAnalysis,
                 metadata={
@@ -184,7 +260,12 @@ class AIAnalyzerService:
             # filtered-but-valid analysis is success.
             return ground_analysis(text, analysis)
 
-        final_state = run_analysis_graph(review_text, models_to_try, attempt_fn)
+        final_state = run_analysis_graph(
+            review_text,
+            models_to_try,
+            attempt_fn,
+            retrieve_fn=retrieve_fn if rag_service.config.enabled else None,
+        )
         analysis = final_state.get("analysis")
         if analysis is not None:
             return analysis
