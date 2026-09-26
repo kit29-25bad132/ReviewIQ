@@ -1,8 +1,9 @@
-"""Phase 4: simple LangGraph orchestration for Gemini multi-model fallback.
+"""Phase 4: simple LangGraph orchestration for multi-provider/model fallback.
 
-LangGraph tracks the current model, runs one attempt, and routes:
+LangGraph tracks the current target (a provider-qualified ``ModelRef`` since
+V2-P5), runs one attempt, and routes:
   success -> END
-  failure + models remaining -> attempt_model
+  failure + targets remaining -> attempt_model
   failure + exhausted -> END (caller raises last meaningful error)
 
 V2-P3: an optional retrieval stage runs before the first attempt when a
@@ -11,8 +12,14 @@ retrieved context is stored in state under ``rag_context`` for observability;
 attempt functions read it from the caller's closure (``attempt_fn`` keeps its
 two-argument signature).
 
-Orchestration only. Gemini generation, JSON parsing, Pydantic validation,
-evidence grounding, and RAG retrieval itself stay in their own services.
+V2-P5: attempts may raise ``SkipTargetError`` to advance past a target without
+replacing the recorded error — used by callers to skip a provider's remaining
+models after a provider-level failure. The graph stays provider-agnostic: it
+never inspects provider names or error types.
+
+Orchestration only. Generation, JSON parsing, Pydantic validation, evidence
+grounding, RAG retrieval, and provider/model selection stay in their own
+services.
 """
 
 import logging
@@ -24,21 +31,31 @@ from models.review import ReviewAnalysis
 
 logger = logging.getLogger(__name__)
 
-AttemptFn = Callable[[str, str], ReviewAnalysis]
+AttemptFn = Callable[[Any, Any], ReviewAnalysis]
 RetrieveFn = Callable[[str], Any]
 
 
 class EmptyResponseError(Exception):
-    """Raised when a Gemini model returns an empty/whitespace-only response.
+    """Raised when a model returns an empty/whitespace-only response.
 
     Treated as an attempt failure that advances the model index but does not
     replace a previously recorded provider/parse/validation error.
     """
 
 
+class SkipTargetError(Exception):
+    """Raised to advance past a target without recording an error.
+
+    V2-P5: callers use this to skip the remaining models of a provider after
+    a provider-level failure (bad credentials / bad configuration) while
+    preserving the previously recorded error as the meaningful one.
+    """
+
+
 class AnalysisGraphState(TypedDict, total=False):
     review_text: str
-    models: List[str]
+    # Provider-qualified targets (ModelRef) — opaque to the graph.
+    models: List[Any]
     current_model_index: int
     analysis: Optional[ReviewAnalysis]
     last_error: Optional[Exception]
@@ -69,17 +86,18 @@ def _make_attempt_node(attempt_fn: AttemptFn):
         models = state.get("models") or []
         if index >= len(models):
             return {}
-        model_name = models[index]
+        target = models[index]
         review_text = state.get("review_text", "")
         try:
-            analysis = attempt_fn(review_text, model_name)
-        except EmptyResponseError:
+            analysis = attempt_fn(review_text, target)
+        except (EmptyResponseError, SkipTargetError):
+            # Advance without replacing a previously recorded real error.
             return {
                 "current_model_index": index + 1,
                 "attempts": state.get("attempts", 0) + 1,
             }
         except Exception as exc:
-            logger.debug("Graph attempt failed for %s: %s", model_name, exc)
+            logger.debug("Graph attempt failed for %s: %s", target, exc)
             return {
                 "current_model_index": index + 1,
                 "attempts": state.get("attempts", 0) + 1,
@@ -130,7 +148,7 @@ def build_analysis_graph(
 
 def run_analysis_graph(
     review_text: str,
-    models: List[str],
+    models: List[Any],
     attempt_fn: AttemptFn,
     retrieve_fn: Optional[RetrieveFn] = None,
 ) -> AnalysisGraphState:

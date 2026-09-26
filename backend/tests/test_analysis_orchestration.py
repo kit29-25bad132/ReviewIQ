@@ -189,6 +189,10 @@ def test_third_model_success(monkeypatch):
 
 def test_all_five_models_fail_no_sixth_attempt(monkeypatch):
     attempts: List[str] = []
+    monkeypatch.setattr("services.ai_analyzer.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-a-real-secret")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     _install_scripted_sdk(
         monkeypatch,

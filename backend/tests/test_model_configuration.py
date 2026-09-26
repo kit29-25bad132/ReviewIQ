@@ -152,7 +152,11 @@ def test_gemini_model_documented_in_env_example():
 
 
 def test_max_five_attempts_when_all_models_fail(monkeypatch):
-    attempts = []
+    attempts: list = []
+    monkeypatch.setattr("services.ai_analyzer.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-a-real-secret")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     with pytest.raises(RuntimeError, match="unavailable"):
         _run_genai_call(monkeypatch, attempts, fail_first=99)
@@ -179,6 +183,8 @@ def test_fallback_used_in_order_after_primary_failure(monkeypatch, caplog):
 def test_missing_api_key_raises_configuration_error(monkeypatch):
     monkeypatch.setattr("services.ai_analyzer.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ValueError, match="GEMINI_API_KEY"):
         analyzer_service.analyze_review("Some customer review text.")
 
@@ -187,6 +193,9 @@ def test_missing_sdk_raises_clear_install_error(monkeypatch):
     # Simulate the SDK not being installed: sys.modules entry set to None makes
     # 'from google import genai' raise ImportError.
     monkeypatch.setitem(sys.modules, "google", None)
+    monkeypatch.setattr("services.ai_analyzer.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-123")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="google-genai"):
         analyzer_service.analyze_review("Some customer review text.")

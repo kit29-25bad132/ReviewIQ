@@ -21,6 +21,11 @@ class AIErrorType(str, Enum):
     TIMEOUT = "timeout"
     TRANSIENT = "transient"
     INVALID_RESPONSE = "invalid_response"
+    # The provider rejected the *request* (e.g. "invalid argument", HTTP 400).
+    # Deliberately distinct from AUTHENTICATION: V2-P5 skips a provider's
+    # remaining models only on AUTHENTICATION/CONFIGURATION, and a malformed
+    # request is not evidence that the provider's credentials are wrong.
+    INVALID_REQUEST = "invalid_request"
     MODEL_UNAVAILABLE = "model_unavailable"
     UNKNOWN = "unknown"
 
@@ -87,7 +92,6 @@ _AUTH_HINTS = (
     "unauthorized",
     "permission",
     "forbidden",
-    "invalid argument",
     "401",
     "403",
 )
@@ -111,6 +115,15 @@ _TRANSIENT_HINTS = (
     "500",
     "transient",
 )
+# A malformed *request* (not credentials). Checked last so more specific
+# categories (rate limit / auth / timeout / model / transient) win when a
+# message contains several hints, e.g. "invalid argument: model not found".
+_INVALID_REQUEST_HINTS = (
+    "invalid argument",
+    "invalid_argument",
+    "bad request",
+    "400 bad request",
+)
 
 
 def classify_error_text(text: str) -> AIErrorType:
@@ -122,6 +135,7 @@ def classify_error_text(text: str) -> AIErrorType:
         (_TIMEOUT_HINTS, AIErrorType.TIMEOUT),
         (_MODEL_HINTS, AIErrorType.MODEL_UNAVAILABLE),
         (_TRANSIENT_HINTS, AIErrorType.TRANSIENT),
+        (_INVALID_REQUEST_HINTS, AIErrorType.INVALID_REQUEST),
     ):
         if any(hint in lowered for hint in hints):
             return error_type

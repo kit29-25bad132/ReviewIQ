@@ -8,8 +8,9 @@ from dotenv import load_dotenv
 from models.ecommerce import AISummaryResponse
 from services.ai.contracts import AIGenerationRequest
 from services.ai.errors import AIProviderError
-from services.ai.registry import GEMINI_PROVIDER, TASK_DATASET_SUMMARY
-from services.ai_analyzer import _build_model_list, analyzer_service
+from services.ai.registry import TASK_DATASET_SUMMARY
+from services.ai.routing import build_target_chain, skips_remaining_provider_models
+from services.ai_analyzer import analyzer_service
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -42,9 +43,9 @@ class GeminiSummaryService:
             )
 
         if not analyzer_service.is_configured():
-            # Graceful fallback if Gemini API key is not configured
+            # Graceful fallback when no AI provider key is configured
             return AISummaryResponse(
-                summary=f"Analysis based on {len(sample_reviews)} reviews in the dataset. Configure GEMINI_API_KEY in backend/.env for AI executive insights.",
+                summary=f"Analysis based on {len(sample_reviews)} reviews in the dataset. Configure GEMINI_API_KEY (or GROQ_API_KEY / OPENROUTER_API_KEY) in backend/.env for AI executive insights.",
                 common_pros=["Dataset reviews available for manual inspection below"],
                 common_cons=[],
                 key_themes=[category or "General"],
@@ -76,34 +77,67 @@ Synthesize these dataset reviews according to your system instructions into stru
             )
 
     def _generate_summary(self, prompt: str) -> AISummaryResponse:
-        # Same verified Gemini-only model pool as the analyzer (max 5,
-        # GEMINI_MODEL first); generation goes through the AI Gateway so no
-        # Gemini SDK detail is duplicated here.
-        models_to_try = _build_model_list(os.getenv("GEMINI_MODEL"))
+        # Same provider-qualified pool as the analyzer (V2-P5): Gemini models
+        # -> Groq models -> OpenRouter route, filtered to configured
+        # providers; generation goes through the AI Gateway so no provider
+        # SDK/HTTP detail is duplicated here.
+        targets = build_target_chain(
+            analyzer_service.gateway,
+            primary=os.getenv("GEMINI_MODEL") or None,
+            capability=TASK_DATASET_SUMMARY,
+            per_provider_limit=5,
+        )
+        first_target = targets[0] if targets else None
+        skipped_providers: set = set()
 
         last_error = None
-        for index, model_name in enumerate(models_to_try):
+        for target in targets:
+            if target.provider in skipped_providers:
+                # Provider-level failure already recorded; skip its remaining
+                # models without another API call.
+                continue
             request = AIGenerationRequest(
                 prompt=prompt,
-                provider=GEMINI_PROVIDER,
-                model=model_name,
+                provider=target.provider,
+                model=target.model,
                 system_instruction=SUMMARY_SYSTEM_INSTRUCTION,
                 temperature=0.2,
                 response_schema=AISummaryResponse,
-                metadata={"task": TASK_DATASET_SUMMARY, "fallback": index > 0},
+                metadata={
+                    "task": TASK_DATASET_SUMMARY,
+                    "fallback": target != first_target,
+                },
             )
             try:
                 response = analyzer_service.gateway.generate(request)
             except ImportError:
                 raise
+            except AIProviderError as e:
+                if skips_remaining_provider_models(e.error_type):
+                    skipped_providers.add(target.provider)
+                logger.warning(
+                    "Summary failed with %s model %s: %s",
+                    target.provider,
+                    target.model,
+                    e,
+                )
+                last_error = e
+                continue
             except Exception as e:
-                logger.warning(f"Summary failed with model {model_name}: {e}")
+                logger.warning(
+                    "Summary failed with %s model %s: %s",
+                    target.provider,
+                    target.model,
+                    e,
+                )
                 last_error = e
                 continue
 
             if not response.success:
+                if skips_remaining_provider_models(response.error_type):
+                    skipped_providers.add(target.provider)
                 last_error = AIProviderError(
-                    response.error_message or f"Model {model_name} failed.",
+                    response.error_message or f"Model {target.model} failed.",
                     response.error_type,
                     provider=response.provider,
                     model=response.model,

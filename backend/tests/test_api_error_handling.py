@@ -254,6 +254,9 @@ def test_empty_gemini_response_all_models_safe_http_error(monkeypatch):
     from services.ai_analyzer import DEFAULT_MODEL_NAME, FALLBACK_MODEL_NAMES
     from tests.test_model_configuration import _FakeResponse, _install_fake_sdk
 
+    monkeypatch.setattr("services.ai_analyzer.load_dotenv", lambda *a, **k: False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-a-real-secret")
     monkeypatch.setattr(_FakeResponse, "text", "")

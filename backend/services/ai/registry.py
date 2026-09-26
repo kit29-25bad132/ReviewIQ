@@ -10,9 +10,17 @@ routing milestone can populate real numbers instead of inventing prices.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+
+from services.ai.contracts import ModelRef
 
 GEMINI_PROVIDER = "gemini"
+GROQ_PROVIDER = "groq"
+OPENROUTER_PROVIDER = "openrouter"
+
+# Provider hierarchy for cross-provider fallback (V2-P5). This order is the
+# contract: Gemini first (verified V1 chain), Groq second, OpenRouter last.
+PROVIDER_ORDER: Tuple[str, ...] = (GEMINI_PROVIDER, GROQ_PROVIDER, OPENROUTER_PROVIDER)
 
 # Task capability identifiers used by the registry.
 TASK_REVIEW_ANALYSIS = "review_analysis"
@@ -35,6 +43,19 @@ FALLBACK_MODEL_NAMES = [
     "gemini-3.5-flash",
     "gemini-3.5-flash-lite",
 ]
+
+# Groq model chain (V2-P5, exact locked IDs). Primary first; the rest are
+# fallback candidates in priority order.
+GROQ_DEFAULT_MODEL_NAME = "openai/gpt-oss-120b"
+GROQ_MODEL_NAMES = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
+]
+
+# OpenRouter uses a single free route, not a hardcoded model list: the route
+# resolves the actual model upstream, so nothing is pinned here.
+OPENROUTER_MODEL_ROUTE = "openrouter/free"
 
 _ALL_TASKS = frozenset({TASK_REVIEW_ANALYSIS, TASK_DATASET_SUMMARY})
 
@@ -132,9 +153,50 @@ class ModelRegistry:
                 break
         return chain[:limit]
 
+    def chain_refs(
+        self,
+        provider_order: Sequence[str] = PROVIDER_ORDER,
+        *,
+        primary: Optional[str] = None,
+        primary_provider: str = GEMINI_PROVIDER,
+        capability: Optional[str] = None,
+        is_configured: Optional[Callable[[str], bool]] = None,
+        per_provider_limit: int = 5,
+        limit: Optional[int] = None,
+    ) -> List[ModelRef]:
+        """Provider-qualified fallback chain (V2-P5): ``ModelRef`` targets.
+
+        Walks ``provider_order`` (Gemini -> Groq -> OpenRouter by default) and,
+        for each configured provider, appends that provider's model chain in
+        the same order as :meth:`chain`. Providers that are not configured
+        (``is_configured`` callback returns False, or not consulted at all
+        when the callback is ``None``) contribute no targets and never raise —
+        an unconfigured provider must not break startup or analysis.
+
+        ``primary`` overrides the primary model of ``primary_provider`` only
+        (the ``GEMINI_MODEL`` override stays Gemini-scoped).
+        """
+        targets: List[ModelRef] = []
+        for provider in provider_order:
+            if is_configured is not None and not is_configured(provider):
+                continue
+            provider_primary = primary if provider == primary_provider else None
+            for model in self.chain(
+                provider,
+                provider_primary,
+                capability=capability,
+                limit=per_provider_limit,
+            ):
+                targets.append(ModelRef(provider=provider, model=model))
+            if limit is not None and len(targets) >= limit:
+                break
+        return targets[:limit] if limit is not None else targets
+
 
 def build_default_registry() -> ModelRegistry:
-    """Registry populated with the Gemini models already used by V1."""
+    """Registry populated with the Gemini chain (verified, unchanged) plus the
+    V2-P5 Groq and OpenRouter entries. Cost/context metadata stays ``None``:
+    no verified values exist, so none are invented."""
     specs = [
         ModelSpec(
             provider=GEMINI_PROVIDER,
@@ -159,6 +221,34 @@ def build_default_registry() -> ModelRegistry:
                 is_fallback_candidate=True,
             )
         )
+
+    # V2-P5: Groq model chain (primary first, then fallback candidates).
+    for position, model in enumerate(GROQ_MODEL_NAMES):
+        is_primary = position == 0
+        specs.append(
+            ModelSpec(
+                provider=GROQ_PROVIDER,
+                model=model,
+                capabilities=_ALL_TASKS,
+                quality_tier=QUALITY_LITE if model == "openai/gpt-oss-20b" else QUALITY_STANDARD,
+                priority=position,
+                is_default_primary=is_primary,
+                is_fallback_candidate=not is_primary,
+            )
+        )
+
+    # V2-P5: OpenRouter final fallback — a single route, not a model list.
+    specs.append(
+        ModelSpec(
+            provider=OPENROUTER_PROVIDER,
+            model=OPENROUTER_MODEL_ROUTE,
+            capabilities=_ALL_TASKS,
+            quality_tier=QUALITY_STANDARD,
+            priority=0,
+            is_default_primary=True,
+            is_fallback_candidate=False,
+        )
+    )
     return ModelRegistry(specs)
 
 

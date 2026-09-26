@@ -12,13 +12,18 @@ router = APIRouter(prefix="/api", tags=["Review Analysis"])
 # provider/SDK text is never echoed to API consumers.
 _PROVIDER_ERROR_MESSAGES = {
     AIErrorType.RATE_LIMIT: "API rate limit reached. Please try again in a few moments.",
-    AIErrorType.AUTHENTICATION: "Invalid or unauthenticated Gemini API key. Please check backend/.env",
+    AIErrorType.AUTHENTICATION: "Invalid or unauthenticated AI provider API key. Please check backend/.env",
     AIErrorType.CONFIGURATION: "AI analysis is unavailable. Please check the server configuration.",
     AIErrorType.TIMEOUT: "Connection to AI service timed out or unavailable. Please verify your network connection.",
     AIErrorType.TRANSIENT: "Connection to AI service timed out or unavailable. Please verify your network connection.",
     AIErrorType.MODEL_UNAVAILABLE: "No AI model is currently available to analyze this review. Please try again later.",
 }
 _DEFAULT_PROVIDER_ERROR_MESSAGE = "AI analysis failed. Please try again."
+# Fixed configuration message for the "no provider key at all" ValueError.
+_NO_KEY_DETAIL = (
+    "No AI provider API key is configured. "
+    "Please set GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY in backend/.env"
+)
 
 
 def _provider_error_message(error_type) -> str:
@@ -58,8 +63,9 @@ async def analyze_review_endpoint(payload: ReviewRequest):
         # Log the full detail server-side; never echo parser/model-output text
         # (Pydantic ValidationError is a ValueError subclass and may embed raw output).
         logger.warning(f"Validation or configuration error: {val_err}", exc_info=True)
-        if "gemini api key" in str(val_err).lower():
-            detail = "Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env"
+        lowered = str(val_err).lower()
+        if "gemini api key" in lowered or "provider api key" in lowered:
+            detail = _NO_KEY_DETAIL
         else:
             detail = "Review analysis failed validation. Please try again."
         raise HTTPException(

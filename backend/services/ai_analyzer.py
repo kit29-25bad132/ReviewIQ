@@ -7,18 +7,27 @@ from typing import Dict, Optional, Tuple
 from dotenv import load_dotenv
 
 from models.review import ReviewAnalysis
-from services.ai.contracts import AIGenerationRequest
+from services.ai.contracts import AIGenerationRequest, ModelRef
 from services.ai.errors import AIProviderError
 from services.ai.gateway import AIGateway
 from services.ai.providers.gemini import GeminiProvider
+from services.ai.providers.groq import GroqProvider
+from services.ai.providers.openrouter import OpenRouterProvider
 from services.ai.registry import (
     DEFAULT_MODEL_NAME,
     FALLBACK_MODEL_NAMES,
     GEMINI_PROVIDER,
+    GROQ_PROVIDER,
+    OPENROUTER_PROVIDER,
     TASK_REVIEW_ANALYSIS,
     model_registry,
 )
-from services.analysis_graph import EmptyResponseError, run_analysis_graph
+from services.ai.routing import build_target_chain, skips_remaining_provider_models
+from services.analysis_graph import (
+    EmptyResponseError,
+    SkipTargetError,
+    run_analysis_graph,
+)
 from services.grounding_service import ground_analysis
 from services.rag.config import RAGConfig
 from services.rag.context_builder import RagContext, build_rag_context
@@ -39,6 +48,10 @@ def _build_model_list(primary: Optional[str]) -> list:
 
     Model ordering is owned by the registry so it is never hardcoded across
     the codebase, and future providers can be added without touching callers.
+
+    Kept for backwards compatibility (Gemini-only view of the chain); the
+    analysis pipeline now uses the provider-qualified
+    ``services.ai.routing.build_target_chain`` instead.
     """
     return model_registry.chain(
         GEMINI_PROVIDER,
@@ -78,14 +91,21 @@ Return strictly structured JSON with these fields:
 class AIAnalyzerService:
     """Service handling AI product review analysis with structured outputs.
 
-    Gemini SDK access is delegated to the AI Gateway/provider adapter; this
-    service owns configuration, prompt construction, output parsing/validation,
-    and evidence grounding — the provider-neutral parts of the pipeline.
+    Provider SDK/HTTP access is delegated to the AI Gateway/provider adapters;
+    this service owns configuration, prompt construction, output parsing/
+    validation, and evidence grounding — the provider-neutral parts of the
+    pipeline.
 
     V2-P3: an optional best-effort RAG stage (disabled unless ``RAG_ENABLED``)
     retrieves similar reviews and builds a context block that shapes the
     prompt. Grounding remains original-review-only; retrieval failures never
     block analysis.
+
+    V2-P5: fallback targets are provider-qualified ``ModelRef`` entries —
+    Gemini's verified model chain, then Groq's model chain, then OpenRouter's
+    single ``openrouter/free`` route — filtered to configured providers. An
+    AUTHENTICATION/CONFIGURATION failure skips the remaining models of that
+    provider; every other failure continues along the model chain.
     """
 
     def __init__(
@@ -111,21 +131,34 @@ class AIAnalyzerService:
         return key.strip() if key else ""
 
     def is_configured(self) -> bool:
-        """Check if a non-placeholder Gemini API key is configured."""
-        key = self.api_key
-        return bool(key and key != "YOUR_GEMINI_API_KEY_HERE" and key != "your_gemini_api_key_here")
+        """True when at least one AI provider has usable credentials.
+
+        Gemini/Groq/OpenRouter each count independently; a missing Groq or
+        OpenRouter key never blocks analysis that Gemini can serve (and vice
+        versa).
+        """
+        return any(
+            provider.is_configured() for provider in self.gateway.providers.values()
+        )
 
     @property
     def gateway(self) -> AIGateway:
-        """The shared AI Gateway (Gemini adapter wired to this service's key).
+        """The shared AI Gateway (all provider adapters wired to this service).
 
-        Built lazily and cached; the adapter resolves the API key on every call
-        so environment changes are respected without rebuilding the gateway.
+        Built lazily and cached; the Gemini adapter resolves its API key on
+        every call (Groq/OpenRouter read their env vars per call) so
+        environment changes are respected without rebuilding the gateway.
+        Adapters without credentials are registered but filtered out of the
+        fallback chain by ``services.ai.routing.build_target_chain``.
         """
         if self._gateway is None:
-            provider = GeminiProvider(api_key_provider=lambda: self.api_key)
+            gemini = GeminiProvider(api_key_provider=lambda: self.api_key)
             self._gateway = AIGateway(
-                providers={provider.name: provider},
+                providers={
+                    gemini.name: gemini,
+                    GROQ_PROVIDER: GroqProvider(),
+                    OPENROUTER_PROVIDER: OpenRouterProvider(),
+                },
                 registry=model_registry,
                 default_provider=GEMINI_PROVIDER,
             )
@@ -175,12 +208,13 @@ class AIAnalyzerService:
 
     def analyze_review(self, review_text: str) -> ReviewAnalysis:
         """
-        Analyzes a customer review using Google Gemini API.
+        Analyzes a customer review via the AI Gateway (any configured provider).
         Returns a validated ReviewAnalysis Pydantic instance.
         """
         if not self.is_configured():
             raise ValueError(
-                "Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env"
+                "No AI provider API key is configured. Please set GEMINI_API_KEY "
+                "(or GROQ_API_KEY / OPENROUTER_API_KEY) in backend/.env"
             )
 
         # Modern google-genai SDK only (legacy google-generativeai support was
@@ -194,20 +228,35 @@ class AIAnalyzerService:
             )
 
     def _call_google_genai(self, review_text: str) -> ReviewAnalysis:
-        """Run the analysis pipeline with LangGraph-orchestrated model fallback.
+        """Run the analysis pipeline with LangGraph-orchestrated fallback.
 
-        Retained name for backwards compatibility. Gemini SDK access now happens
+        Retained name for backwards compatibility. Provider access now happens
         behind the AI Gateway; this method owns the provider-neutral workflow:
         optional RAG retrieval -> generation -> parsing -> Pydantic validation
         -> evidence grounding.
+
+        V2-P5: the chain is a list of provider-qualified ``ModelRef`` targets
+        (Gemini model chain -> Groq model chain -> OpenRouter route), filtered
+        to configured providers. Each attempt sends the target's provider and
+        model to the gateway; an AUTHENTICATION/CONFIGURATION failure marks
+        that provider skipped so its remaining models are advanced past
+        without further API calls.
 
         V2-P3: when the RAG stage is enabled, retrieval runs once inside the
         graph (before the first attempt); the retrieved context shapes every
         attempt's prompt while grounding stays original-review-only. When
         disabled or empty, prompts are byte-identical to V1/P2.
         """
-        models_to_try = _build_model_list(os.getenv("GEMINI_MODEL"))
-        primary_model = models_to_try[0] if models_to_try else None
+        targets = build_target_chain(
+            self.gateway,
+            primary=os.getenv("GEMINI_MODEL") or None,
+            capability=TASK_REVIEW_ANALYSIS,
+            per_provider_limit=5,
+        )
+        first_target = targets[0] if targets else None
+        # Providers whose credentials/config failed: their remaining targets
+        # are advanced past without API calls (error-aware provider skip).
+        skipped_providers: set = set()
 
         rag_service = self._rag_service or RagRetrievalService(self.rag_config)
         # Context is shared between the graph's retrieval node and attempt_fn
@@ -219,28 +268,41 @@ class AIAnalyzerService:
             context_holder["context"] = context
             return context
 
-        def attempt_fn(text: str, model_name: str) -> ReviewAnalysis:
+        def attempt_fn(text: str, target: ModelRef) -> ReviewAnalysis:
+            if target.provider in skipped_providers:
+                # Provider already failed at the provider level; skip its
+                # remaining models without another API call or a new error.
+                raise SkipTargetError(
+                    f"Skipping remaining targets for provider '{target.provider}'."
+                )
             prompt, system_instruction = build_analysis_prompt(
                 text, context_holder.get("context"), SYSTEM_INSTRUCTION
             )
             request = AIGenerationRequest(
                 prompt=prompt,
-                provider=GEMINI_PROVIDER,
-                model=model_name,
+                provider=target.provider,
+                model=target.model,
                 system_instruction=system_instruction,
                 temperature=0.2,
                 response_schema=ReviewAnalysis,
                 metadata={
                     "task": TASK_REVIEW_ANALYSIS,
-                    "fallback": model_name != primary_model,
+                    "fallback": target != first_target,
                 },
             )
             # Provider-neutral error surface: the gateway/adapters return a
             # normalized failure instead of leaking SDK exceptions.
-            response = self.gateway.generate(request)
+            try:
+                response = self.gateway.generate(request)
+            except AIProviderError as err:
+                if skips_remaining_provider_models(err.error_type):
+                    skipped_providers.add(target.provider)
+                raise
             if not response.success:
+                if skips_remaining_provider_models(response.error_type):
+                    skipped_providers.add(target.provider)
                 raise AIProviderError(
-                    response.error_message or f"Model {model_name} failed.",
+                    response.error_message or f"Model {target.model} failed.",
                     response.error_type,
                     provider=response.provider,
                     model=response.model,
@@ -250,19 +312,20 @@ class AIAnalyzerService:
                 # Empty output is an attempt failure that advances the model
                 # index without replacing a previously recorded real error.
                 raise EmptyResponseError(
-                    f"Empty response received from model {model_name}."
+                    f"Empty response received from model {target.model}."
                 )
-            logger.info(f"Review analysis succeeded using model: {model_name}")
+            logger.info(f"Review analysis succeeded using model: {target.model}")
             analysis = self._parse_and_validate(content)
             # Phase 2: deterministic evidence grounding against the original
             # review text. Unsupported evidence-backed items are filtered out
             # before the analysis is returned. Grounding never raises: a
-            # filtered-but-valid analysis is success.
+            # filtered-but-valid analysis is success. Grounding runs for every
+            # provider — no provider can bypass it.
             return ground_analysis(text, analysis)
 
         final_state = run_analysis_graph(
             review_text,
-            models_to_try,
+            targets,
             attempt_fn,
             retrieve_fn=retrieve_fn if rag_service.config.enabled else None,
         )

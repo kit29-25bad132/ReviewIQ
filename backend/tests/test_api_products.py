@@ -311,6 +311,10 @@ def test_ai_summary_uses_canonical_verified_model_pool(monkeypatch):
     monkeypatch.setitem(sys.modules, "google", mock.MagicMock(genai=fake_genai))
     monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
     monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+    monkeypatch.setattr("services.ai_analyzer.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-a-real-secret")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
 
     with pytest.raises(RuntimeError):
