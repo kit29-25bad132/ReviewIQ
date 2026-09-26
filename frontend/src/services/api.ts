@@ -19,9 +19,10 @@ import {
   PersonalizedRecommendationResponse,
 } from '../types/ecommerce';
 
+const envApiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL !== undefined && import.meta.env.VITE_API_BASE_URL !== ''
-    ? import.meta.env.VITE_API_BASE_URL
+  envApiUrl !== undefined && envApiUrl.trim() !== ''
+    ? envApiUrl.trim().replace(/\/+$/, '')
     : import.meta.env.PROD
     ? ''
     : 'http://127.0.0.1:8000';

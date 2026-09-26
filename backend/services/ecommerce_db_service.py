@@ -21,11 +21,14 @@ class EcommerceDBService:
         self.db_path = db_path
 
     def _get_connection(self) -> sqlite3.Connection:
-        if not self.db_path.exists():
+        if not self.is_ready():
             raise FileNotFoundError(
                 f"Database file not found at {self.db_path}. Please run dataset ingestion."
             )
-        conn = sqlite3.connect(self.db_path)
+        try:
+            conn = sqlite3.connect(self.db_path)
+        except sqlite3.OperationalError:
+            conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         return conn
 
