@@ -150,3 +150,27 @@ Future decisions must be added rather than silently changing the locked directio
 - **Reason:** a small, pure, injectable retry layer recovers the cheapest and most common failures without touching any P5/P6 guarantee, keeps fallback as the single source of target advancement, and gives exactly one bounded retry layer with no storm risk.
 - **Consequences:** new `backend/services/ai/retry_policy.py` and `backend/tests/test_retry_policy.py` (39 tests; suite total 460, all green). `contracts.AIResponse` gains an internal `retry_after_seconds` field. `services/ai_analyzer.py` and `services/gemini_summary_service.py` call `generate_with_retry` and populate `timeout_seconds`. `services/ai/providers/gemini.py` applies the timeout; `services/ai/providers/openai_compat.py` extracts `Retry-After`. Existing test SDK fakes now accept the `http_options` kwarg. No public API or frontend contract changed.
 - **Follow-up:** live smoke tests for Groq/OpenRouter when keys are available; consider optional per-provider rate-limit/quota metadata before any production rollout of `cost_aware`.
+
+## ADR-010 — Deterministic aspect evidence support, not model confidence (V2-P8)
+- **Date:** 2026-09-27 (V2-P8 aspect-level intelligence milestone)
+- **Status:** Accepted
+- **Decision makers:** Project team (V2 locked scope)
+- **Context:** Aspect-level intelligence (extraction, per-aspect sentiment, evidence, grounding, dedupe, RAG provenance, provider compatibility, Pydantic validation, frontend rendering) was already implemented across P1–P4. P8's remaining goal was an aspect-quality signal. An LLM self-reported `confidence: float` would be uncalibrated and unverifiable, and a hand-rolled numeric score would be invented statistics.
+- **Decision:**
+  - **Add an OPTIONAL, application-computed `AspectSentiment.support`** with `Literal["strong", "moderate", "weak"]`, defaulting to `None`. The model never supplies a trusted value; `grounding_service.ground_analysis()` overwrites it after grounding.
+  - **Deterministic rules** (see `grounding_service.classify_aspect_support`), using only application-known facts:
+    - `strong` = evidence grounded AND a verbatim substring of the original review AND mentions the aspect (normalized aspect and evidence share a token of length >= 2).
+    - `moderate` = evidence grounded (normalization required) AND mentions the aspect.
+    - `weak` = evidence grounded but does not mention the aspect. Unsupported evidence is `weak` defensively; such aspects are removed by grounding and never emitted with a support status.
+  - **Grounding runs first; classification after.** Because unsupported aspects are removed before classification, unsupported evidence can never receive `strong`/`moderate` in a result. The existing normalized-containment grounding is untouched; no fuzzy matching, no embeddings, no numeric score, no second model.
+  - **No numeric confidence, no probability, no calibration claim.** The enum is an ordered textual-support signal, not a statistical estimate.
+  - **No `positive_aspects`/`negative_aspects` arrays:** `aspects[].sentiment` is the canonical source; duplicating it adds no value and risks drift.
+  - **No new pain-point schema:** negative aspect sentiment plus review-level `cons`, and the dataset-level keyword themes, already express pain points; no severity numbers.
+  - **Topic/theme layers remain separate:** review-level `aspects`, dataset `ProConTheme`, and product-summary `key_themes` keep distinct scopes.
+  - **Prompt/providers unchanged:** the LLM is not asked to invent support, so `SYSTEM_INSTRUCTION` and the RAG context rules are untouched. Gemini keeps native structured schema; Groq/OpenRouter keep `json_object` mode; application-side Pydantic validation remains authoritative. Overwriting in grounding makes any model-emitted value irrelevant.
+  - **RAG provenance preserved:** grounding still consults only the original review; retrieved context can never become aspect evidence or support.
+  - **Backward compatible:** `support` is optional (`None` by default), pre-P8 payloads validate, and the `AnalyzeReviewResponse` envelope is unchanged (only a new optional nested field is added).
+- **Alternatives considered:** LLM-reported confidence (rejected — uncalibrated, unverifiable); a single boolean `grounded` (rejected as trivially constant in output since grounding already removes unsupported aspects); a numeric score/token-overlap ratio (rejected — unjustified arithmetic); exposing exact-vs-normalized as the only signal (rejected as too narrow; aspect-mention coverage is a meaningful, documented second signal); dedicated positive/negative arrays and a pain-point taxonomy (rejected — redundant with existing fields).
+- **Reason:** a small, explainable, deterministic enum adds real signal (does the grounded evidence actually cover the named aspect, and how literally) without pretending to measure model certainty.
+- **Consequences:** `models/review.py` gains `AspectSupport` + optional `support` with a lenient before-validator; `grounding_service.py` gains `classify_aspect_support`; frontend type/rendering surface the badge; `docs/06_AI_DESIGN.md` documents the rules. New `backend/tests/test_aspect_support.py`. No new dependencies, no DB changes, no provider/fallback/routing/retry/RAG changes.
+- **Follow-up:** re-evaluate the coverage-token rule only if real-world aspect evidence proves it too strict; keep it deterministic and documented if changed.

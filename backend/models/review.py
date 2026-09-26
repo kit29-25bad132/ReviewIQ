@@ -1,6 +1,14 @@
 from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# V2-P8: deterministic, application-computed evidence-support levels for an
+# aspect. These are NEVER inferred, scored, or emitted by the model — the
+# grounding stage assigns them from application-known facts. Not a probability
+# and not a calibrated confidence score.
+AspectSupport = Literal["strong", "moderate", "weak"]
+
+_SUPPORT_VALUES = ("strong", "moderate", "weak")
+
 
 class ReviewRequest(BaseModel):
     """Incoming request payload containing customer review text."""
@@ -33,7 +41,15 @@ class PointEvidence(BaseModel):
 
 
 class AspectSentiment(BaseModel):
-    """A single aspect-level sentiment with supporting evidence text."""
+    """A single aspect-level sentiment with supporting evidence text.
+
+    V2-P8: ``support`` is an OPTIONAL, application-computed evidence-support
+    signal. The model must never be trusted to supply it: ``grounding_service``
+    re-computes and overwrites it deterministically after evidence grounding.
+    It stays ``None`` only for analyses that bypass the grounding stage (e.g.
+    raw contract validation), so pre-P8 payloads and existing clients keep
+    validating unchanged.
+    """
     aspect: str = Field(
         ...,
         description="Product aspect/attribute discussed in the review (e.g. 'battery')"
@@ -46,6 +62,34 @@ class AspectSentiment(BaseModel):
         ...,
         description="Supporting text for the aspect sentiment"
     )
+    support: Optional[AspectSupport] = Field(
+        default=None,
+        description=(
+            "Deterministic evidence-support level computed by the application "
+            "after grounding (never a model confidence or probability): "
+            "'strong' = evidence is a verbatim substring of the original review "
+            "and mentions the aspect; 'moderate' = evidence is grounded only "
+            "after normalization and mentions the aspect; 'weak' = grounded but "
+            "does not mention the aspect. Null when grounding has not run."
+        ),
+    )
+
+    @field_validator("support", mode="before")
+    @classmethod
+    def normalize_support_input(cls, v: Any) -> Optional[str]:
+        """Accept only recognized support values; discard anything else.
+
+        The value is authoritative only when assigned by the grounding stage.
+        Normalizing here prevents an unexpected model-emitted value from
+        turning a valid analysis into a validation failure (which would waste
+        a fallback attempt), while preserving legitimate round-trips of an
+        already-grounded analysis.
+        """
+        if isinstance(v, str):
+            candidate = v.strip().lower()
+            if candidate in _SUPPORT_VALUES:
+                return candidate
+        return None
 
 
 class ReviewAnalysis(BaseModel):

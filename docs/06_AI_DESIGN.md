@@ -48,6 +48,19 @@ Input normalization → prompt construction → provider request (Gemini → Gro
 - **Product summary:** the summary path uses the identical `generate_with_retry` helper and `RetryPolicy`; there is no separate retry implementation.
 - **Observability:** safe internal `AIResponse.metadata` only — `retry_attempts`, `retry_count`, `retryable`, `retry_reason`, `retry_delay_seconds`. Never keys, headers, prompts, or review text. Retry metadata is never exposed through the public API.
 
+## Aspect-Level Intelligence (V2-P8)
+- **Aspects already exist** in the analysis contract: `ReviewAnalysis.aspects[]` of `AspectSentiment{aspect, sentiment, evidence}`. Per-aspect extraction, sentiment, evidence, grounding, dedupe, RAG provenance, provider compatibility, and validation were already implemented (P1–P4); P8 enhances rather than rebuilds them.
+- **`support` is deterministic, not a model confidence.** `AspectSentiment.support` is an OPTIONAL `Literal["strong", "moderate", "weak"]` computed by `grounding_service.classify_aspect_support()` **after** grounding. The model is never trusted to supply it, and any model-emitted value is overwritten. It is not a probability and not calibrated.
+- **Exact support rules** (application-known facts only; no fuzzy matching, no embeddings, no numeric score):
+  - `strong` — evidence is grounded, is a verbatim substring of the original review, and mentions the aspect (normalized aspect and evidence share a token of length ≥ 2).
+  - `moderate` — evidence is grounded only after normalization and mentions the aspect.
+  - `weak` — evidence is grounded but does not mention the aspect. Unsupported evidence classifies as `weak` defensively; such aspects are removed by grounding and never emitted with a support status.
+- **Grounding invariant preserved:** only the original review is authoritative. Grounding removes unsupported aspect evidence first, so unsupported evidence can never receive `strong`/`moderate`. RAG retrieved context can never become aspect evidence or support.
+- **RAG provenance:** original review stays verbatim; retrieved reviews remain background only; retrieval runs once per request and is shared across fallback/retry attempts.
+- **Providers:** Gemini keeps its native structured schema (new optional field included); Groq/OpenRouter keep `json_object` mode; app-side Pydantic validation stays authoritative. No provider-specific aspect logic.
+- **Deliberately NOT added:** `positive_aspects`/`negative_aspects` arrays (`aspects[].sentiment` is canonical) and a dedicated pain-point schema (negative aspect sentiment + `cons` + dataset themes already express it; no severity numbers). Review-level aspects, dataset `ProConTheme` themes, and product-summary `key_themes` remain separate scopes.
+- **Backward compatible:** `support` is optional (`None` by default), pre-P8 payloads validate, and the `AnalyzeReviewResponse` envelope is unchanged.
+
 ## Reliability Controls
 - Model and SDK configuration documented.
 - Unified request timeout plus bounded, exponential-backoff retry policy (ADR-009).

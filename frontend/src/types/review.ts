@@ -7,10 +7,15 @@ export interface PointEvidence {
   evidence: string;
 }
 
+// V2-P8: deterministic, application-computed evidence-support level.
+// Never a model confidence score or probability.
+export type AspectSupport = 'strong' | 'moderate' | 'weak';
+
 export interface AspectSentiment {
   aspect: string;
   sentiment: SentimentType;
   evidence: string;
+  support?: AspectSupport | null;
 }
 
 export interface ReviewAnalysis {

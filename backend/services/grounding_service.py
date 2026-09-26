@@ -20,14 +20,22 @@ V2-P4 additions (documented decisions):
   grounding, first occurrence wins, the survivor keeps its original
   evidence text, and otherwise order is preserved. Dedupe never crosses
   collections (the contract keeps pros, cons, and aspects independent).
-- Confidence/status is intentionally NOT exposed. Support is a
-  deterministic boolean (exact or normalized textual match); any numeric
-  score would be fake statistics, and any new field would change the
-  locked public API contract. The exact-vs-normalized distinction stays
-  internal and derivable on demand.
+- Numeric confidence is intentionally NOT exposed: any number would be fake
+  statistics.
 - Relevance is textual support only: no fuzzy matching, no embeddings,
   no second model (claim<->evidence semantic similarity is out of scope
   by design).
+
+V2-P8 additions (documented decisions):
+- ``AspectSentiment.support`` is a deterministic, application-computed
+  evidence-support level (``strong`` / ``moderate`` / ``weak``). It is NOT a
+  model output and NOT a probability: the model is never trusted to supply it,
+  and ``ground_analysis`` overwrites it after grounding. A removed aspect can
+  never carry a support status because it does not survive the filter.
+- Classification is a pure function of application-known facts: whether the
+  evidence is grounded, whether it is a verbatim substring of the original
+  review, and whether it mentions the aspect (shared normalized token). No
+  fuzzy matching, no embeddings, no invented score, no second model.
 
 Normalization handles case (casefold), whitespace (collapse), punctuation
 (replaced with spaces so word boundaries are preserved), and common
@@ -112,13 +120,68 @@ def _dedupe_supported_evidence(items: list) -> list:
     return kept
 
 
+# V2-P8: deterministic evidence-support levels (see module docstring).
+SUPPORT_STRONG = "strong"
+SUPPORT_MODERATE = "moderate"
+SUPPORT_WEAK = "weak"
+
+# A token must be at least this long to count as "the evidence mentions the
+# aspect". This is a fixed, documented rule (not a tuned score) that avoids
+# matching on trivial one-character tokens.
+_MIN_COVERAGE_TOKEN_LEN = 2
+
+
+def _coverage_tokens(normalized_text: str) -> set:
+    """Content tokens used for the deterministic aspect-mention check."""
+    return {
+        token
+        for token in normalized_text.split()
+        if len(token) >= _MIN_COVERAGE_TOKEN_LEN
+    }
+
+
+def classify_aspect_support(review_text: str, aspect: str, evidence: str) -> str:
+    """Deterministic evidence-support level for one aspect (V2-P8).
+
+    Rules (application-known facts only; no model self-report, no probability):
+      * unsupported evidence -> ``weak`` (defensive; such aspects are removed
+        by grounding before classification, so this can never surface in an
+        analysis result);
+      * grounded + verbatim substring of the original review + mentions the
+        aspect -> ``strong``;
+      * grounded + mentions the aspect (match only after normalization) ->
+        ``moderate``;
+      * grounded but does not mention the aspect -> ``weak``.
+
+    "Mentions the aspect" means the normalized aspect and normalized evidence
+    share at least one token of length >= 2. Evidence support is textual only:
+    no fuzzy matching, no embeddings, no numeric score.
+    """
+    if not is_evidence_supported(review_text, evidence):
+        return SUPPORT_WEAK
+    stripped = (evidence or "").strip()
+    verbatim = bool(stripped) and stripped in review_text
+    mentions_aspect = bool(
+        _coverage_tokens(normalize_text(aspect))
+        & _coverage_tokens(normalize_text(evidence))
+    )
+    if mentions_aspect and verbatim:
+        return SUPPORT_STRONG
+    if mentions_aspect:
+        return SUPPORT_MODERATE
+    return SUPPORT_WEAK
+
+
 def ground_analysis(review_text: str, analysis: ReviewAnalysis) -> ReviewAnalysis:
     """Return a grounded copy of the analysis.
 
     Removes every pro, con, or aspect whose evidence string is not supported
     by the original review text, then removes duplicate supported evidence
     within each collection (first occurrence wins). Items that survive are
-    kept unchanged. Never invents, rewrites, or replaces evidence.
+    kept unchanged, except that each surviving aspect receives its
+    deterministic, application-computed ``support`` level (V2-P8). Never
+    invents, rewrites, or replaces evidence. The original review remains the
+    only authoritative source; retrieved RAG context is never consulted here.
     """
     grounded_pros = _dedupe_supported_evidence([
         p for p in analysis.pros
@@ -128,10 +191,20 @@ def ground_analysis(review_text: str, analysis: ReviewAnalysis) -> ReviewAnalysi
         c for c in analysis.cons
         if is_evidence_supported(review_text, c.evidence)
     ])
-    grounded_aspects = _dedupe_supported_evidence([
+    supported_aspects = _dedupe_supported_evidence([
         a for a in analysis.aspects
         if is_evidence_supported(review_text, a.evidence)
     ])
+    grounded_aspects = [
+        a.model_copy(
+            update={
+                "support": classify_aspect_support(
+                    review_text, a.aspect, a.evidence
+                )
+            }
+        )
+        for a in supported_aspects
+    ]
     return analysis.model_copy(update={
         "pros": grounded_pros,
         "cons": grounded_cons,

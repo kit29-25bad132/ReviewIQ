@@ -207,20 +207,36 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
                   key={i}
                   className="rounded-xl border border-[#292A2B] bg-[#151617] p-4 space-y-2 text-xs"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-[#F5F2EA] uppercase tracking-wide">
                       {aspect.aspect}
                     </span>
-                    <span
-                      className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                        isPos
-                          ? 'border border-emerald-800/40 bg-emerald-950/40 text-emerald-400'
-                          : isNeg
-                          ? 'border border-rose-800/40 bg-rose-950/40 text-rose-400'
-                          : 'border border-[#292A2B] bg-[#111213] text-[#AAA79F]'
-                      }`}
-                    >
-                      {aspect.sentiment}
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      {aspect.support && (
+                        <span
+                          title="Deterministic evidence support (application-computed, not a model confidence score)"
+                          className={`rounded px-2 py-0.5 text-[10px] font-mono uppercase ${
+                            aspect.support === 'strong'
+                              ? 'border border-emerald-800/40 bg-emerald-950/30 text-emerald-300'
+                              : aspect.support === 'moderate'
+                              ? 'border border-[#D4AF5A]/40 bg-[#1B1915] text-[#F0D58A]'
+                              : 'border border-[#292A2B] bg-[#111213] text-[#AAA79F]'
+                          }`}
+                        >
+                          {aspect.support} support
+                        </span>
+                      )}
+                      <span
+                        className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                          isPos
+                            ? 'border border-emerald-800/40 bg-emerald-950/40 text-emerald-400'
+                            : isNeg
+                            ? 'border border-rose-800/40 bg-rose-950/40 text-rose-400'
+                            : 'border border-[#292A2B] bg-[#111213] text-[#AAA79F]'
+                        }`}
+                      >
+                        {aspect.sentiment}
+                      </span>
                     </span>
                   </div>
                   {aspect.evidence && (
