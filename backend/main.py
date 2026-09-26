@@ -37,8 +37,8 @@ origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origins=origins if "*" not in origins else ["*"],
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,6 +51,17 @@ app.include_router(review_router)
 app.include_router(dataset_router)
 app.include_router(analytics_router)
 app.include_router(evaluation_router)
+
+
+@app.get("/", tags=["Root"])
+async def root():
+    """Root endpoint for quick API status verification."""
+    return {
+        "status": "online",
+        "service": "ReviewIQ - Product Review Intelligence API",
+        "docs": "/docs",
+        "health": "/health",
+    }
 
 
 @app.get("/health", tags=["Health"])
