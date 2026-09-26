@@ -2,7 +2,10 @@
   "name": "reviewiq",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
-    "build": "npm run build --prefix frontend"
+    "build": "npm run build --workspace=frontend"
   }
 }
