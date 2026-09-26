@@ -101,22 +101,27 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
       {/* Top Header */}
       <header className="border-b border-[#292A2B]/80 bg-[#0E0F10]/95 backdrop-blur px-6 py-6 sm:px-8 lg:px-10">
         <div className="mx-auto flex max-w-[1280px] items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#D4AF5A]">
-                ReviewIQ
-              </span>
-              <span className="text-[#74736E]">·</span>
-              <span className="text-[10px] uppercase tracking-[0.18em] text-[#74736E]">
-                Product Intelligence
-              </span>
+          <div className="flex items-center gap-4">
+            <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#D4AF5A]/40 bg-[#191714] shadow-md">
+              <img src="/logo.png" alt="ReviewIQ Logo" className="h-full w-full object-cover" />
             </div>
-            <h1 className="mt-1.5 text-2xl sm:text-3xl font-medium tracking-tight">
-              Product Insights & Analytics
-            </h1>
-            <p className="mt-1 text-xs text-[#AAA79F]">
-              Explore structured customer feedback, rating distributions, pros/cons, and category comparisons.
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#D4AF5A]">
+                  ReviewIQ
+                </span>
+                <span className="text-[#74736E]">·</span>
+                <span className="text-[10px] uppercase tracking-[0.18em] text-[#74736E]">
+                  Product Intelligence
+                </span>
+              </div>
+              <h1 className="mt-1 text-2xl sm:text-3xl font-medium tracking-tight">
+                Product Insights & Analytics
+              </h1>
+              <p className="mt-0.5 text-xs text-[#AAA79F]">
+                Explore structured customer feedback, rating distributions, pros/cons, and category comparisons.
+              </p>
+            </div>
           </div>
 
           {onBack && (

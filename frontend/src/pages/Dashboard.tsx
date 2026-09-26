@@ -192,10 +192,10 @@ export const Dashboard: React.FC = () => {
           {/* Logo */}
           <button
             onClick={() => setActiveTab('home')}
-            className="flex items-center gap-3 text-left focus:outline-none"
+            className="flex items-center gap-3 text-left focus:outline-none group"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#D4AF5A]/40 bg-[#191714]">
-              <Sparkles className="h-4 w-4 text-[#D4AF5A]" />
+            <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-[#D4AF5A]/40 bg-[#191714] shadow-md transition group-hover:border-[#D4AF5A]">
+              <img src="/logo.png" alt="ReviewIQ Logo" className="h-full w-full object-cover" />
             </div>
 
             <div>
@@ -503,8 +503,12 @@ export const Dashboard: React.FC = () => {
             {/* Footer */}
             <footer className="border-t border-[#292A2B] py-8 text-center text-xs text-[#74736E]">
               <div className="mx-auto max-w-[1280px] px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <p>© 2026 ReviewIQ — Product Intelligence Engine. Built with React & FastAPI.</p>
+                <div className="flex items-center gap-2.5">
+                  <img src="/logo.png" alt="ReviewIQ" className="h-5 w-5 rounded-md object-cover" />
+                  <p>© 2026 ReviewIQ — Product Intelligence Engine. Built with React & FastAPI.</p>
+                </div>
                 <div className="flex items-center gap-6">
+                  <button onClick={() => setActiveTab('home')} className="hover:text-[#F5F2EA]">Home</button>
                   <button onClick={() => setActiveTab('analyze')} className="hover:text-[#F5F2EA]">Analyze</button>
                   <button onClick={() => setActiveTab('history')} className="hover:text-[#F5F2EA]">History</button>
                   <button onClick={() => setActiveTab('insights')} className="hover:text-[#F5F2EA]">Insights</button>
