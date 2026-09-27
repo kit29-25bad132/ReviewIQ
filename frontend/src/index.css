@@ -3,59 +3,181 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg-main: #0e0f10;
+    --bg-surface: #151617;
+    --bg-elevated: #1c1d1f;
+
+    --gold: #d4af5a;
+    --gold-bright: #f0d58a;
+    --gold-muted: #a88a45;
+
+    --text-primary: #f5f2ea;
+    --text-secondary: #aaa79f;
+    --text-muted: #74736e;
+
+    --border: #292a2b;
+    --border-gold: rgba(212, 175, 90, 0.28);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    background: var(--bg-main);
+  }
+
   body {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    background-color: #080B11;
-    color: #E2E8F0;
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+
+    font-family:
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+
+    background: var(--bg-main);
+    color: var(--text-primary);
+
     overflow-x: hidden;
   }
 
-  code, pre, .font-mono {
-    font-family: 'JetBrains Mono', monospace;
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: rgba(212, 175, 90, 0.25);
+    color: #fff8e6;
   }
 }
 
-/* Glassmorphism custom classes */
-.glass-panel {
-  background: rgba(17, 24, 39, 0.7);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
+/* --------------------------------
+   Scrollbar
+-------------------------------- */
 
-.glass-panel-hover {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.glass-panel-hover:hover {
-  background: rgba(26, 36, 56, 0.75);
-  border-color: rgba(139, 92, 246, 0.3);
-  box-shadow: 0 10px 30px -10px rgba(139, 92, 246, 0.2);
-}
-
-.glow-accent {
-  position: absolute;
-  filter: blur(80px);
-  pointer-events: none;
-  opacity: 0.4;
-  z-index: 0;
-}
-
-/* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B0F17;
+  background: #0e0f10;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1F2937;
-  border-radius: 4px;
+  background: #353638;
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+  background: #57534b;
+}
+
+/* --------------------------------
+   Premium surface
+-------------------------------- */
+
+.premium-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.premium-panel-hover {
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    transform 180ms ease;
+}
+
+.premium-panel-hover:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-gold);
+  transform: translateY(-1px);
+}
+
+/* --------------------------------
+   Gold elements
+-------------------------------- */
+
+.gold-text {
+  color: var(--gold);
+}
+
+.gold-text-bright {
+  color: var(--gold-bright);
+}
+
+.gold-border {
+  border-color: var(--border-gold);
+}
+
+.gold-divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(212, 175, 90, 0.45),
+    transparent
+  );
+}
+
+/* --------------------------------
+   Premium button
+-------------------------------- */
+
+.gold-button {
+  background: var(--gold);
+  color: #17130a;
+  border: 1px solid var(--gold);
+  border-radius: 9px;
+  font-weight: 700;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.gold-button:hover {
+  background: var(--gold-bright);
+  box-shadow: 0 6px 24px rgba(212, 175, 90, 0.16);
+  transform: translateY(-1px);
+}
+
+.gold-button:active {
+  transform: translateY(0);
+}
+
+/* --------------------------------
+   Subtle focus states
+-------------------------------- */
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: rgba(212, 175, 90, 0.65);
+  box-shadow: 0 0 0 3px rgba(212, 175, 90, 0.08);
+}
+
+/* --------------------------------
+   Utility
+-------------------------------- */
+
+.text-balance {
+  text-wrap: balance;
 }
