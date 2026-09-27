@@ -1329,14 +1329,12 @@ LangGraph is used for orchestration and controlled branching, not for exposing o
 
 ### Observability and Cost Tracking
 
-- Request logging.
-- Provider/model logging.
-- Latency tracking.
-- Fallback tracking.
-- Token usage tracking.
-- Estimated AI cost tracking.
-- RAG retrieval logging.
-- Model-selection logging.
+- Per-request correlation IDs in server log lines (`rid=...`; internal only, never returned to clients).
+- Consolidated `ai_request_outcome` log event per analysis/summary request (outcome, provider/model, fallback, retry counts, cache and RAG status, provider and total latency).
+- Fallback transition and retry-exhaustion log events (server-side only).
+- Request, provider/model, routing/model-selection, and RAG retrieval logging.
+- Internal token usage is captured on `AIResponse.usage` but is never logged or surfaced.
+- Deferred (explicitly out of scope): user-facing cost/billing metrics, metrics endpoints, and dashboards (ADR-012).
 
 ### Product Integration
 
@@ -1386,9 +1384,9 @@ V2 is being implemented incrementally on the `v2-main` branch.
 | Evidence grounding expansion | ⏳ |
 | Aspect-level intelligence | ⏳ |
 | Caching | ✅ |
-| Reliability / rate-limit handling | ⏳ |
+| Reliability / rate-limit handling | ✅ |
 | Evaluation / regression testing | ✅ |
-| Observability / cost tracking | ⏳ |
+| Observability (log-only; ADR-012) | ✅ |
 | End-to-end V2 integration | ⏳ |
 | V2 production readiness | ⏳ |
 

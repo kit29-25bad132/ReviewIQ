@@ -14,8 +14,10 @@ two-argument signature).
 
 V2-P5: attempts may raise ``SkipTargetError`` to advance past a target without
 replacing the recorded error — used by callers to skip a provider's remaining
-models after a provider-level failure. The graph stays provider-agnostic: it
-never inspects provider names or error types.
+models after a provider-level failure. The graph stays provider-agnostic for
+ROUTING: it never inspects provider names or error types to make decisions.
+V2-P11 (ADR-012) logs the failed-attempt transition at INFO with duck-typed
+``getattr`` fields for observability only — never the raw exception message.
 
 Orchestration only. Generation, JSON parsing, Pydantic validation, evidence
 grounding, RAG retrieval, and provider/model selection stay in their own
@@ -80,6 +82,44 @@ def _make_retrieve_node(retrieve_fn: RetrieveFn):
     return retrieve_context
 
 
+def _error_type_label(exc: Exception) -> str:
+    """Fixed, safe error category for logs — never the raw exception text."""
+    if isinstance(exc, EmptyResponseError):
+        return "empty_response"
+    if isinstance(exc, SkipTargetError):
+        return "provider_skip"
+    error_type = getattr(exc, "error_type", None)
+    label = getattr(error_type, "value", error_type)
+    if isinstance(label, str) and label:
+        return label
+    return type(exc).__name__
+
+
+def _log_fallback_transition(
+    models: List[Any], index: int, target: Any, exc: Exception
+) -> None:
+    """V2-P11: INFO record of a failed attempt -> next target transition.
+
+    Emitted only when a next target exists (a real transition); the terminal
+    failure of the last target is covered by the caller's consolidated
+    ``ai_request_outcome`` event. Logs fixed fields only — provider, model
+    and error category — never the raw exception message, which may echo
+    provider output (ADR-012).
+    """
+    next_target = models[index + 1] if index + 1 < len(models) else None
+    if next_target is None:
+        return
+    logger.info(
+        "Graph fallback from_provider=%s from_model=%s to_provider=%s "
+        "to_model=%s error_type=%s",
+        getattr(target, "provider", None),
+        getattr(target, "model", None),
+        getattr(next_target, "provider", None),
+        getattr(next_target, "model", None),
+        _error_type_label(exc),
+    )
+
+
 def _make_attempt_node(attempt_fn: AttemptFn):
     def attempt_model(state: AnalysisGraphState) -> dict:
         index = state.get("current_model_index", 0)
@@ -90,14 +130,15 @@ def _make_attempt_node(attempt_fn: AttemptFn):
         review_text = state.get("review_text", "")
         try:
             analysis = attempt_fn(review_text, target)
-        except (EmptyResponseError, SkipTargetError):
+        except (EmptyResponseError, SkipTargetError) as exc:
             # Advance without replacing a previously recorded real error.
+            _log_fallback_transition(models, index, target, exc)
             return {
                 "current_model_index": index + 1,
                 "attempts": state.get("attempts", 0) + 1,
             }
         except Exception as exc:
-            logger.debug("Graph attempt failed for %s: %s", target, exc)
+            _log_fallback_transition(models, index, target, exc)
             return {
                 "current_model_index": index + 1,
                 "attempts": state.get("attempts", 0) + 1,

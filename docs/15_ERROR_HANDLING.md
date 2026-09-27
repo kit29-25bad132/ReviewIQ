@@ -16,7 +16,7 @@
 ## Rules
 - Never expose secrets or stack traces.
 - Use stable error codes.
-- Log correlation/request identifiers where available.
+- Request correlation IDs are assigned per HTTP request and included in every server log line (`rid=...`, V2-P11); they are internal-only and never returned to clients.
 - Do not retry indefinitely.
 - Do not persist partially validated results.
 - Ensure frontend handles every documented error code.

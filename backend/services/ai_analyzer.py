@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any, Dict, Optional, Tuple
 
 from dotenv import load_dotenv
@@ -45,6 +46,7 @@ from services.analysis_graph import (
 from services.cache.keys import sha256_hex
 from services.cache.llm_cache import LLMCache
 from services.grounding_service import ground_analysis
+from services.observability import emit_ai_outcome
 from services.rag.config import RAGConfig
 from services.rag.context_builder import RagContext, build_rag_context, render_context_block
 from services.rag.prompting import build_analysis_prompt
@@ -268,12 +270,57 @@ class AIAnalyzerService:
             )
 
     def _call_google_genai(self, review_text: str) -> ReviewAnalysis:
+        """Backwards-compatible entry point (name retained, V2-P11 wrapper).
+
+        Runs the analysis pipeline (``_analysis_pipeline``) and emits exactly
+        ONE consolidated ``ai_request_outcome`` event — success AND final
+        failure alike — in ``finally``, so no exit path can skip it. All
+        fields are fixed, safe metadata only (ADR-012): never prompts, review
+        text, provider bodies or secrets. Emission failures are swallowed.
+        """
+        started = time.perf_counter()
+        # V2-P11 outcome holder: filled by the pipeline's closures (last
+        # target attempted, retry metadata, cache/RAG state) and emitted below.
+        outcome: Dict[str, Any] = {
+            "provider": None,
+            "model": None,
+            "fallback": None,
+            "retry_attempts": None,
+            "retry_count": None,
+            "provider_latency_ms": None,
+            "cache": None,
+            "rag_status": None,
+        }
+        status = "failure"
+        try:
+            analysis = self._analysis_pipeline(review_text, outcome)
+            status = "success"
+            return analysis
+        finally:
+            emit_ai_outcome(
+                task=TASK_REVIEW_ANALYSIS,
+                outcome=status,
+                provider=outcome["provider"],
+                model=outcome["model"],
+                fallback=outcome["fallback"],
+                retry_attempts=outcome["retry_attempts"],
+                retry_count=outcome["retry_count"],
+                cache=outcome["cache"],
+                rag_status=outcome["rag_status"],
+                provider_latency_ms=outcome["provider_latency_ms"],
+                total_ms=round((time.perf_counter() - started) * 1000),
+            )
+
+    def _analysis_pipeline(
+        self, review_text: str, outcome: Dict[str, Any]
+    ) -> ReviewAnalysis:
         """Run the analysis pipeline with LangGraph-orchestrated fallback.
 
-        Retained name for backwards compatibility. Provider access now happens
-        behind the AI Gateway; this method owns the provider-neutral workflow:
-        optional RAG retrieval -> generation -> parsing -> Pydantic validation
-        -> evidence grounding.
+        Provider access happens behind the AI Gateway; this method owns the
+        provider-neutral workflow: optional RAG retrieval -> generation ->
+        parsing -> Pydantic validation -> evidence grounding. It fills the
+        caller-owned ``outcome`` holder (V2-P11) with safe metadata at each
+        stage; the wrapper emits the consolidated event.
 
         V2-P5: the chain is a list of provider-qualified ``ModelRef`` targets
         (Gemini model chain -> Groq model chain -> OpenRouter route), filtered
@@ -310,6 +357,10 @@ class AIAnalyzerService:
         # --- V2-P9: cache lookup, strictly before the P5/P6/P7 pipeline ----
         rag_service = self._rag_service or RagRetrievalService(self.rag_config)
         llm_cache = self.llm_cache
+        # V2-P11: record cache/RAG state up front — a cache hit or an early
+        # failure returns before the later stages ever run.
+        outcome["cache"] = "miss" if llm_cache.config.llm_enabled else "disabled"
+        outcome["rag_status"] = None if rag_service.config.enabled else "disabled"
         cached = llm_cache.get_analysis(
             review_text=review_text,
             task=TASK_REVIEW_ANALYSIS,
@@ -318,6 +369,7 @@ class AIAnalyzerService:
             rag_config=rag_service.config,
         )
         if cached is not None:
+            outcome["cache"] = "hit"
             logger.info(
                 "Review analysis served from cache; routing/retry/provider "
                 "bypassed (task=%s).",
@@ -370,8 +422,14 @@ class AIAnalyzerService:
         success_holder: Dict[str, Any] = {}
 
         def retrieve_fn(text: str) -> Optional[RagContext]:
-            context, _ = self._retrieve_rag_context(text, rag_service)
+            context, retrieval_result = self._retrieve_rag_context(
+                text, rag_service
+            )
             context_holder["context"] = context
+            # V2-P11: safe status enum only (disabled/ok/empty/...); never
+            # the query, retrieved reviews, or context text.
+            if retrieval_result is not None:
+                outcome["rag_status"] = retrieval_result.metadata.status
             return context
 
         def attempt_fn(text: str, target: ModelRef) -> ReviewAnalysis:
@@ -381,6 +439,20 @@ class AIAnalyzerService:
                 raise SkipTargetError(
                     f"Skipping remaining targets for provider '{target.provider}'."
                 )
+            # V2-P11: record the target being attempted (overwritten per
+            # attempt, so the holder ends as the last target tried). Retry/
+            # latency fields reset with each new target so a gateway-raised
+            # failure can never inherit the previous target's numbers.
+            outcome.update(
+                {
+                    "provider": target.provider,
+                    "model": target.model,
+                    "fallback": target != first_target,
+                    "retry_attempts": None,
+                    "retry_count": None,
+                    "provider_latency_ms": None,
+                }
+            )
             prompt, system_instruction = build_analysis_prompt(
                 text, context_holder.get("context"), SYSTEM_INSTRUCTION
             )
@@ -413,6 +485,15 @@ class AIAnalyzerService:
                 if skips_remaining_provider_models(err.error_type):
                     skipped_providers.add(target.provider)
                 raise
+            # V2-P11: retry metadata + measured provider latency from the
+            # normalized response (both success and returned-failure paths).
+            retry_meta = getattr(response, "metadata", None)
+            if isinstance(retry_meta, dict):
+                outcome["retry_attempts"] = retry_meta.get("retry_attempts")
+                outcome["retry_count"] = retry_meta.get("retry_count")
+            outcome["provider_latency_ms"] = getattr(
+                response, "latency_ms", None
+            )
             if not response.success:
                 if skips_remaining_provider_models(response.error_type):
                     skipped_providers.add(target.provider)

@@ -1,5 +1,6 @@
 import os
 import logging
+import uuid
 from dotenv import load_dotenv
 
 # Load environment variables early
@@ -17,12 +18,19 @@ from routes.products import router as products_router
 from routes.reviews import router as reviews_router
 from routes.retrieval import router as retrieval_router
 from services.ai_analyzer import analyzer_service
+from services.observability import RequestIdFilter, request_id_var
 
-# Setup logging
+# Setup logging (V2-P11: every line carries the request correlation ID).
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s [rid=%(request_id)s]: %(message)s"
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    format=LOG_FORMAT,
 )
+# The filter defaults missing IDs to "-", so records logged outside any
+# request (startup, background) still format safely.
+for _handler in logging.getLogger().handlers:
+    if not any(isinstance(f, RequestIdFilter) for f in _handler.filters):
+        _handler.addFilter(RequestIdFilter())
 logger = logging.getLogger("product_review_analyzer")
 
 app = FastAPI(
@@ -44,6 +52,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class RequestCorrelationMiddleware:
+    """Pure-ASGI middleware assigning one correlation ID per HTTP request.
+
+    V2-P11: sets ``request_id_var`` to a ``uuid4().hex`` for the duration of
+    the request and resets it in ``finally`` (async/await-safe: the ContextVar
+    is set and reset inside the request task's context, so concurrent
+    requests never see each other's IDs). The ID appears only in server log
+    lines — never in the response body or headers (no ``X-Request-ID``).
+    Non-HTTP scopes (lifespan) pass through untouched.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        token = request_id_var.set(uuid.uuid4().hex)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            request_id_var.reset(token)
+
+
+app.add_middleware(RequestCorrelationMiddleware)
 
 # Include routers
 app.include_router(products_router)

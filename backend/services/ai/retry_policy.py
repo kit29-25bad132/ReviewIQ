@@ -348,6 +348,20 @@ def generate_with_retry(
         retryable = policy.is_retryable(response.error_type)
         if attempt >= policy.max_attempts or not retryable:
             _attach_retry_metadata(response, attempt, last_delay, retryable=retryable)
+            if retryable and attempt >= policy.max_attempts:
+                # V2-P11 log-only event (ADR-012): retries for this target
+                # are exhausted; the caller's fallback loop takes over.
+                # Fixed fields only — never the prompt, response body or
+                # raw Retry-After.
+                logger.info(
+                    "ai_retry_exhausted provider=%s model=%s error_type=%s "
+                    "attempt=%d max_attempts=%d",
+                    response.provider,
+                    response.model,
+                    response.error_type.value if response.error_type else "unknown",
+                    attempt,
+                    policy.max_attempts,
+                )
             return response
 
         delay = compute_delay(

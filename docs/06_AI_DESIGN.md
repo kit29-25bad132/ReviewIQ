@@ -74,5 +74,13 @@ Input normalization → prompt construction → provider request (Gemini → Gro
 - Safe external error mapping (provider-neutral messages; raw provider text never reaches clients).
 - Logging without secrets or sensitive payload leakage.
 
+## Observability and Reliability Logging (V2-P11)
+- **Request correlation:** every HTTP request gets a `uuid4().hex` correlation ID (pure-ASGI middleware), rendered as `[rid=...]` on every server log line; background/internal execution logs `-`. The ID is server-side only - never in response bodies or headers (ADR-012).
+- **Consolidated outcome event:** exactly one `ai_request_outcome` INFO line per analysis or summary pipeline run (success AND final failure), with a fixed field set only: `request_id, task, outcome, provider, model, fallback, retry_attempts, retry_count, cache, rag_status, provider_latency_ms, total_ms`. Unavailable values are `None` - never guessed.
+- **Fallback transitions (analysis path)** are logged at INFO with `from_provider/from_model/to_provider/to_model/error_type` - fixed categories only, never raw exception text. Terminal failure of the last target is covered by the outcome event.
+- **Retry exhaustion:** `ai_retry_exhausted provider/model/error_type/attempt/max_attempts` is logged when a retryable target hits `max_attempts`; non-retryable terminal failures are not "exhaustion."
+- **Never logged:** API keys, DSNs, Authorization headers, prompts, review text, RAG context, provider response bodies, raw `Retry-After`, PII, or cost/billing/token-cost data.
+- **Deliberately not added:** metrics endpoints, aggregation, persistent event storage, dashboards, and any user-facing cost/usage surfaces (ADR-012).
+
 ## Fine-Tuning
 Fine-tuning is not required for V1. Establish a measured baseline first. Consider fine-tuning only if systematic failures are identified and a controlled comparison demonstrates meaningful improvement.

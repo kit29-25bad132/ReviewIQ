@@ -2,7 +2,8 @@ import json
 import logging
 import os
 import re
-from typing import List, Optional
+import time
+from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 
 from models.ecommerce import AISummaryResponse
@@ -26,6 +27,7 @@ from services.ai.retry_policy import (
 )
 from services.ai_analyzer import analyzer_service
 from services.cache.llm_cache import LLMCache
+from services.observability import emit_ai_outcome
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -115,10 +117,53 @@ Synthesize these dataset reviews according to your system instructions into stru
             )
 
     def _generate_summary(self, prompt: str) -> AISummaryResponse:
+        """V2-P11 wrapper: one consolidated ``ai_request_outcome`` event per
+        pipeline run (success AND final failure) in ``finally``, with fixed
+        safe metadata only (ADR-012). Emission failures never break the
+        request. Configuration/empty-input early returns in
+        ``summarize_product_reviews`` run no AI pipeline and emit no event.
+        """
+        started = time.perf_counter()
+        outcome: Dict[str, Any] = {
+            "provider": None,
+            "model": None,
+            "fallback": None,
+            "retry_attempts": None,
+            "retry_count": None,
+            "provider_latency_ms": None,
+            "cache": None,
+        }
+        status = "failure"
+        try:
+            summary = self._summary_pipeline(prompt, outcome)
+            status = "success"
+            return summary
+        finally:
+            emit_ai_outcome(
+                # Event task name is "product_summary" (ADR-012); the
+                # internal cache/routing task id stays TASK_DATASET_SUMMARY.
+                task="product_summary",
+                outcome=status,
+                provider=outcome["provider"],
+                model=outcome["model"],
+                fallback=outcome["fallback"],
+                retry_attempts=outcome["retry_attempts"],
+                retry_count=outcome["retry_count"],
+                cache=outcome["cache"],
+                rag_status=None,  # this path has no RAG stage (ADR-012)
+                provider_latency_ms=outcome["provider_latency_ms"],
+                total_ms=round((time.perf_counter() - started) * 1000),
+            )
+
+    def _summary_pipeline(
+        self, prompt: str, outcome: Dict[str, Any]
+    ) -> AISummaryResponse:
         # V2-P9: cache lookup happens BEFORE target-chain build, routing,
         # retry resolution and any provider call. A validated hit returns the
         # stored summary immediately; a miss runs the pipeline unchanged.
         llm_cache = self.llm_cache
+        # V2-P11: cache state up front — a hit returns before any later stage.
+        outcome["cache"] = "miss" if llm_cache.config.llm_enabled else "disabled"
         cached = llm_cache.get_summary(
             prompt=prompt,
             task=TASK_DATASET_SUMMARY,
@@ -126,6 +171,7 @@ Synthesize these dataset reviews according to your system instructions into stru
             temperature=SUMMARY_TEMPERATURE,
         )
         if cached is not None:
+            outcome["cache"] = "hit"
             logger.info(
                 "Dataset summary served from cache; routing/retry/provider "
                 "bypassed (task=%s).",
@@ -183,6 +229,20 @@ Synthesize these dataset reviews according to your system instructions into stru
                 # Provider-level failure already recorded; skip its remaining
                 # models without another API call.
                 continue
+            # V2-P11: record the target being attempted (overwritten per
+            # attempt, so the holder ends as the last target tried). Retry/
+            # latency fields reset with each new target so a gateway-raised
+            # failure can never inherit the previous target's numbers.
+            outcome.update(
+                {
+                    "provider": target.provider,
+                    "model": target.model,
+                    "fallback": target != first_target,
+                    "retry_attempts": None,
+                    "retry_count": None,
+                    "provider_latency_ms": None,
+                }
+            )
             request = AIGenerationRequest(
                 prompt=prompt,
                 provider=target.provider,
@@ -226,6 +286,15 @@ Synthesize these dataset reviews according to your system instructions into stru
                 last_error = e
                 continue
 
+            # V2-P11: retry metadata + measured provider latency from the
+            # normalized response (both success and returned-failure paths).
+            retry_meta = getattr(response, "metadata", None)
+            if isinstance(retry_meta, dict):
+                outcome["retry_attempts"] = retry_meta.get("retry_attempts")
+                outcome["retry_count"] = retry_meta.get("retry_count")
+            outcome["provider_latency_ms"] = getattr(
+                response, "latency_ms", None
+            )
             if not response.success:
                 if skips_remaining_provider_models(response.error_type):
                     skipped_providers.add(target.provider)
