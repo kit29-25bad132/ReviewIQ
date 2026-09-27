@@ -588,6 +588,26 @@ Swagger: \`http\://localhost:8000/docs\`
 
 Health check: \`http\://localhost:8000/health\`
 
+### Review Dataset (Product Search, Insights)
+
+Product Search, Dataset Explorer, and Insights read gitignored data files in \`backend/data/\` (\`ecommerce_reviews.db\` and \`amazon_review.csv\`). Build them once before starting the backend:
+
+\`\`\`bash
+
+python scripts/seed_sample_data.py
+
+\`\`\`
+
+This seeded setup is self-contained. For full-scale product search, ingest the 4M-row Kaggle CSV (\`backend/data/ecommerce_product_reviews_dataset.csv\`, gitignored) instead:
+
+\`\`\`bash
+
+python scripts/ingest_dataset.py
+
+\`\`\`
+
+Without these files, the app still runs: Direct Review AI analysis continues to work, while dataset-backed endpoints return safe 503 responses until the dataset is built.
+
 **## Frontend**
 
 In a second terminal:
