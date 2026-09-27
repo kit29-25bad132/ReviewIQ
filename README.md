@@ -1042,12 +1042,17 @@ V2 is intentionally designed as a **cloud/API-first architecture**. It does not 
                 └─────────────┬─────────────┘
                               │
                 ┌─────────────▼─────────────┐
+                │  LLM Cache Check (opt.)   │
+                └─────────────┬─────────────┘
+                              │ miss
+                ┌─────────────▼─────────────┐
                 │       LangGraph           │
                 │      Orchestrator         │
                 └─────────────┬─────────────┘
                               │
                     ┌─────────▼─────────┐
-                    │   Cache Check     │
+                    │ Embedding Cache   │
+                    │     (opt.)        │
                     └─────────┬─────────┘
                               │
                     ┌─────────▼─────────┐
@@ -1095,6 +1100,8 @@ V2 is intentionally designed as a **cloud/API-first architecture**. It does not 
                     │ Final Intelligence│
                     └───────────────────┘
 ```
+
+The two `(opt.)` nodes are the V2-P9 caches: the **LLM response cache check** sits before the LangGraph orchestrator (a validated hit skips routing, retrieval, and every provider call), and the **embedding cache** sits after preprocessing, before the embedding provider (only cache misses reach the provider). Both are disabled by default, live in the existing Postgres/Supabase database (no new dependency), and any cache/database failure degrades to a normal cache miss.
 
 ## V2 Locked Feature Set
 
@@ -1232,7 +1239,7 @@ to select an appropriate model.
 
 ### LangGraph Orchestration
 
-LangGraph coordinates the V2 analysis workflow and conditional recovery paths.
+LangGraph coordinates the V2 analysis workflow and conditional recovery paths. The V2-P9 LLM cache check runs before the graph: a hit returns the validated result without entering orchestration at all (shown inline after input validation for readability).
 
 ```text
 START
@@ -1241,10 +1248,10 @@ START
 Validate Input
   │
   ▼
-Check Cache
-  │
+LLM Cache Check ── hit ──► return validated result
+  │ miss
   ▼
-Generate Embedding
+Generate Embedding (cache-first)
   │
   ▼
 Retrieve Context
@@ -1299,11 +1306,12 @@ LangGraph is used for orchestration and controlled branching, not for exposing o
 
 ### Caching and Efficiency
 
-- LLM response caching.
-- Embedding caching.
-- TTL/invalidation strategy.
-- Cache-hit/cache-miss tracking.
-- Reduced repeated provider calls.
+- Optional LLM response caching (validated results; disabled by default).
+- Optional embedding caching (post-preprocessing vectors; disabled by default).
+- TTL/invalidation strategy (7 days non-RAG, 1 hour RAG, 90 days document embeddings, 30 days query embeddings).
+- Server-side cache operation logging only: no cache metrics, dashboards, or API fields.
+- Reduced repeated provider calls on identical requests.
+- Cache/database failures degrade to a normal cache miss (fail-open).
 
 ### Evaluation and Quality
 
@@ -1373,7 +1381,7 @@ V2 is being implemented incrementally on the `v2-main` branch.
 | RAG pipeline | ⏳ |
 | Evidence grounding expansion | ⏳ |
 | Aspect-level intelligence | ⏳ |
-| Caching | ⏳ |
+| Caching | ✅ |
 | Reliability / rate-limit handling | ⏳ |
 | Evaluation / regression testing | ⏳ |
 | Observability / cost tracking | ⏳ |

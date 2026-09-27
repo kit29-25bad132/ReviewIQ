@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import re
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -42,9 +42,11 @@ from services.analysis_graph import (
     SkipTargetError,
     run_analysis_graph,
 )
+from services.cache.keys import sha256_hex
+from services.cache.llm_cache import LLMCache
 from services.grounding_service import ground_analysis
 from services.rag.config import RAGConfig
-from services.rag.context_builder import RagContext, build_rag_context
+from services.rag.context_builder import RagContext, build_rag_context, render_context_block
 from services.rag.prompting import build_analysis_prompt
 from services.rag.retrieval import RagRetrievalResult, RagRetrievalService
 
@@ -54,6 +56,10 @@ logger = logging.getLogger(__name__)
 # Model names live in the model registry (services/ai/registry.py) and are
 # imported here (re-exported) for backwards compatibility with existing
 # callers/tests: DEFAULT_MODEL_NAME, FALLBACK_MODEL_NAMES.
+
+# Sampling temperature for review analysis. Single source of truth: it is part
+# of the P9 cache key material AND the request, so they can never drift.
+ANALYSIS_TEMPERATURE = 0.2
 
 
 def _build_model_list(primary: Optional[str]) -> list:
@@ -125,6 +131,12 @@ class AIAnalyzerService:
     initial target from that chain (default ``gemini_first`` preserves P5
     order exactly; opt-in ``cost_aware`` only moves the chosen target to the
     head). Routing never replaces the fallback loop above.
+
+    V2-P9: an optional LLM response cache (disabled by default) sits ABOVE
+    routing, retry, grounding and the gateway. A validated hit returns before
+    any retrieval, routing, retry, or provider call; a miss runs the exact
+    P5/P6/P7 pipeline unchanged. Cache/DB failures degrade to a miss, except
+    RAG corpus-token verification, which fails closed to a miss.
     """
 
     def __init__(
@@ -134,11 +146,20 @@ class AIAnalyzerService:
         *,
         rag_config: Optional[RAGConfig] = None,
         rag_service: Optional[RagRetrievalService] = None,
+        llm_cache: Optional[LLMCache] = None,
     ):
         self._api_key = api_key
         self._gateway = gateway
         self._rag_config = rag_config
         self._rag_service = rag_service
+        self._llm_cache = llm_cache
+
+    @property
+    def llm_cache(self) -> LLMCache:
+        """V2-P9 LLM response cache (shared default instance unless injected)."""
+        if self._llm_cache is None:
+            self._llm_cache = LLMCache()
+        return self._llm_cache
 
     @property
     def api_key(self) -> str:
@@ -274,7 +295,36 @@ class AIAnalyzerService:
         and cannot bypass provider configuration checks. The retrieved RAG
         context (V2-P3) still runs once and is shared across every attempt;
         grounding and validation still run on every success.
+
+        V2-P9: the FIRST step is a cache lookup (before target-chain build,
+        routing, retry resolution, RAG retrieval, and any provider call). A
+        validated cache hit returns the stored analysis immediately — no
+        routing, no provider, no retry, no retrieval, no grounding call. On a
+        miss the pipeline above executes unchanged; after the graph produced a
+        fully validated and grounded analysis it is written to the cache.
+        Provider failures, timeouts, rate limits, auth errors, invalid JSON,
+        Pydantic failures, empty responses, and partial results are never
+        cached. Any cache/DB failure behaves as a miss (fail open); RAG cache
+        hits additionally require a matching LIVE corpus token (fail closed).
         """
+        # --- V2-P9: cache lookup, strictly before the P5/P6/P7 pipeline ----
+        rag_service = self._rag_service or RagRetrievalService(self.rag_config)
+        llm_cache = self.llm_cache
+        cached = llm_cache.get_analysis(
+            review_text=review_text,
+            task=TASK_REVIEW_ANALYSIS,
+            system_instruction=SYSTEM_INSTRUCTION,
+            temperature=ANALYSIS_TEMPERATURE,
+            rag_config=rag_service.config,
+        )
+        if cached is not None:
+            logger.info(
+                "Review analysis served from cache; routing/retry/provider "
+                "bypassed (task=%s).",
+                TASK_REVIEW_ANALYSIS,
+            )
+            return cached
+
         gemini_primary = os.getenv("GEMINI_MODEL") or None
         targets = build_target_chain(
             self.gateway,
@@ -307,7 +357,6 @@ class AIAnalyzerService:
         # are advanced past without API calls (error-aware provider skip).
         skipped_providers: set = set()
 
-        rag_service = self._rag_service or RagRetrievalService(self.rag_config)
         # V2-P7: the reliability layer is resolved once per request. Retry
         # re-attempts the SAME target below the target loop; the LangGraph
         # fallback loop and the single-shot gateway are unchanged.
@@ -316,6 +365,9 @@ class AIAnalyzerService:
         # Context is shared between the graph's retrieval node and attempt_fn
         # via a per-request holder; attempt_fn keeps its two-argument signature.
         context_holder: Dict[str, Optional[RagContext]] = {}
+        # V2-P9 internal provenance (server-side only): which target produced
+        # the validated result, recorded only on success for the cache row.
+        success_holder: Dict[str, Any] = {}
 
         def retrieve_fn(text: str) -> Optional[RagContext]:
             context, _ = self._retrieve_rag_context(text, rag_service)
@@ -337,7 +389,7 @@ class AIAnalyzerService:
                 provider=target.provider,
                 model=target.model,
                 system_instruction=system_instruction,
-                temperature=0.2,
+                temperature=ANALYSIS_TEMPERATURE,
                 response_schema=ReviewAnalysis,
                 timeout_seconds=request_timeout,
                 metadata={
@@ -384,7 +436,17 @@ class AIAnalyzerService:
             # before the analysis is returned. Grounding never raises: a
             # filtered-but-valid analysis is success. Grounding runs for every
             # provider — no provider can bypass it.
-            return ground_analysis(text, analysis)
+            grounded = ground_analysis(text, analysis)
+            # V2-P9 internal provenance: recorded only after every stage of
+            # the pipeline has succeeded (failures above never reach here).
+            success_holder.update(
+                {
+                    "provider": target.provider,
+                    "model": target.model,
+                    "fallback": target != first_target,
+                }
+            )
+            return grounded
 
         final_state = run_analysis_graph(
             review_text,
@@ -394,6 +456,27 @@ class AIAnalyzerService:
         )
         analysis = final_state.get("analysis")
         if analysis is not None:
+            # V2-P9: cache ONLY a fully successful result — provider success,
+            # JSON parse, Pydantic validation, grounding, and the P8 support
+            # computation have all completed by this point.
+            llm_cache.put_analysis(
+                review_text=review_text,
+                task=TASK_REVIEW_ANALYSIS,
+                system_instruction=SYSTEM_INSTRUCTION,
+                temperature=ANALYSIS_TEMPERATURE,
+                rag_config=rag_service.config,
+                analysis=analysis,
+                provider=success_holder.get("provider"),
+                model_name=success_holder.get("model"),
+                fallback=bool(success_holder.get("fallback")),
+                # Deterministic digest of the RAG context actually used
+                # (stored as metadata; the corpus token is the safety check).
+                rag_context_digest=(
+                    sha256_hex(render_context_block(final_state.get("rag_context")))
+                    if rag_service.config.enabled
+                    else None
+                ),
+            )
             return analysis
         last_error = final_state.get("last_error")
         if last_error:

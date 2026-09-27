@@ -4,17 +4,29 @@ Coordinates the provider-neutral embedding flow:
 
     validated text(s)
         -> optional preprocessing (injected)
-        -> embedding provider (batched)
+        -> embedding cache (V2-P9, optional; NEVER caches raw input)
+        -> embedding provider (batched; cache misses only)
         -> dimension-validated vectors
+        -> embedding cache write (validated vectors only)
 
 Returns clean Python vectors and normalizes every failure into an
 ``EmbeddingError``. Provider/model/dimension come from the registry so no magic
 values are scattered around.
+
+V2-P9: an optional content-addressed cache (disabled by default) sits between
+preprocessing and the provider. Partial batch hits are supported via ONE
+batched cache lookup per request: only the missed texts reach the provider
+and the result is reconstructed in the original order. The task type is part
+of the key, so RETRIEVAL_DOCUMENT and RETRIEVAL_QUERY never share an entry.
+Cache/DB failures degrade to a miss and the existing pipeline continues
+unchanged; existing validation (empty input, dimension, vector count) is
+untouched and re-applied to cached vectors.
 """
 
 import logging
 from typing import Callable, List, Optional, Sequence
 
+from services.cache.embedding_cache import EmbeddingCache
 from services.embeddings.contracts import EmbeddingRequest, EmbeddingTaskType
 from services.embeddings.errors import (
     EmbeddingError,
@@ -39,6 +51,7 @@ class EmbeddingService:
         *,
         batch_size: Optional[int] = None,
         text_preprocessor: Optional[TextPreprocessor] = None,
+        cache: Optional[EmbeddingCache] = None,
     ) -> None:
         self._provider = provider
         self._spec = spec or resolve_embedding_model_spec()
@@ -46,10 +59,18 @@ class EmbeddingService:
         # Injected so this module never imports the retrieval layer (keeps the
         # embeddings package dependency-free and prevents circular imports).
         self._text_preprocessor = text_preprocessor
+        # V2-P9 embedding cache: built by default but resolved lazily — a
+        # disabled cache (the default) never opens a database connection.
+        self._cache = cache if cache is not None else EmbeddingCache()
 
     @property
     def provider(self) -> EmbeddingProvider:
         return self._provider
+
+    @property
+    def cache(self) -> EmbeddingCache:
+        """V2-P9 post-preprocessing embedding cache."""
+        return self._cache
 
     @property
     def model(self) -> str:
@@ -82,7 +103,13 @@ class EmbeddingService:
         *,
         task_type: EmbeddingTaskType = EmbeddingTaskType.RETRIEVAL_DOCUMENT,
     ) -> List[List[float]]:
-        """Embed many texts, preserving order and respecting provider batch limits."""
+        """Embed many texts, preserving order and respecting provider batch limits.
+
+        V2-P9: the cache is consulted AFTER preprocessing (never on raw input).
+        Partial hits are supported — only the missed texts are sent to the
+        provider (existing batch/chunk behavior preserved) and the final result
+        is reconstructed in the original input order.
+        """
         if not texts:
             return []
 
@@ -109,11 +136,65 @@ class EmbeddingService:
                 )
             prepared.append(normalized)
 
-        vectors: List[List[float]] = []
-        for start in range(0, len(prepared), self._batch_size):
-            chunk = prepared[start : start + self._batch_size]
-            vectors.extend(self._embed_chunk(chunk, task_type))
-        return vectors
+        results: List[Optional[List[float]]] = [None] * len(prepared)
+        cache_enabled = self._cache.enabled
+        if cache_enabled:
+            # Partial-hit lookup: ONE batched cache read for the whole request
+            # (never one lookup per text); each position gets a validated
+            # cached vector or None (miss / expired / malformed / unavailable).
+            hits = self._cache.get_many(
+                prepared,
+                task_type=task_type,
+                provider=self._provider.name,
+                model=self._spec.model,
+                dimension=self._spec.dimension,
+            )
+            for index, hit in enumerate(hits):
+                if hit is not None:
+                    results[index] = hit
+
+        missing = [index for index, vector in enumerate(results) if vector is None]
+        if missing:
+            miss_texts = [prepared[index] for index in missing]
+            vectors: List[List[float]] = []
+            for start in range(0, len(miss_texts), self._batch_size):
+                chunk = miss_texts[start : start + self._batch_size]
+                vectors.extend(self._embed_chunk(chunk, task_type))
+            if len(vectors) != len(missing):
+                # Defensive: _embed_chunk already enforces the count contract.
+                raise EmbeddingError(
+                    f"Embedding provider returned {len(vectors)} vectors for "
+                    f"{len(miss_texts)} texts.",
+                    EmbeddingErrorType.INVALID_RESPONSE,
+                    provider=self._provider.name,
+                    model=self._spec.model,
+                )
+            if cache_enabled:
+                # Validated vectors only (re-checked by the cache before write).
+                self._cache.put_many(
+                    miss_texts,
+                    task_type=task_type,
+                    provider=self._provider.name,
+                    model=self._spec.model,
+                    dimension=self._spec.dimension,
+                    vectors=vectors,
+                )
+            for index, vector in zip(missing, vectors):
+                results[index] = vector
+
+        final: List[List[float]] = []
+        for vector in results:
+            if vector is None:
+                # Unreachable by construction (every miss is filled above);
+                # fail loudly rather than silently misaligning the result.
+                raise EmbeddingError(
+                    "Embedding result could not be assembled for every input.",
+                    EmbeddingErrorType.INVALID_RESPONSE,
+                    provider=self._provider.name,
+                    model=self._spec.model,
+                )
+            final.append(vector)
+        return final
 
     def _embed_chunk(
         self, chunk: Sequence[str], task_type: EmbeddingTaskType

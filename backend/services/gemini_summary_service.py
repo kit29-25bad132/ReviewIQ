@@ -25,9 +25,14 @@ from services.ai.retry_policy import (
     resolve_retry_policy,
 )
 from services.ai_analyzer import analyzer_service
+from services.cache.llm_cache import LLMCache
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+# Sampling temperature for dataset summaries. Single source of truth: it is
+# part of the P9 cache key material AND the request, so they can never drift.
+SUMMARY_TEMPERATURE = 0.2
 
 SUMMARY_SYSTEM_INSTRUCTION = """You are a strict Product Review Intelligence AI.
 Analyze ONLY the supplied real customer reviews from the product review dataset.
@@ -44,6 +49,25 @@ Strict Rules:
 
 
 class GeminiSummaryService:
+    """Dataset summary generation.
+
+    V2-P9: an optional LLM response cache (disabled by default) sits above
+    routing/retry/the gateway. A validated hit returns before any chain is
+    built; a miss runs the existing P5/P6/P7 pipeline unchanged, and only a
+    successfully generated + Pydantic-validated summary is cached. Cache/DB
+    failures degrade to a miss. No RAG is involved in this path.
+    """
+
+    def __init__(self, *, llm_cache: Optional[LLMCache] = None) -> None:
+        self._llm_cache = llm_cache
+
+    @property
+    def llm_cache(self) -> LLMCache:
+        """V2-P9 LLM response cache (shared default instance unless injected)."""
+        if self._llm_cache is None:
+            self._llm_cache = LLMCache()
+        return self._llm_cache
+
     def summarize_product_reviews(
         self, product_title: str, category: Optional[str], sample_reviews: List[str]
     ) -> AISummaryResponse:
@@ -91,6 +115,24 @@ Synthesize these dataset reviews according to your system instructions into stru
             )
 
     def _generate_summary(self, prompt: str) -> AISummaryResponse:
+        # V2-P9: cache lookup happens BEFORE target-chain build, routing,
+        # retry resolution and any provider call. A validated hit returns the
+        # stored summary immediately; a miss runs the pipeline unchanged.
+        llm_cache = self.llm_cache
+        cached = llm_cache.get_summary(
+            prompt=prompt,
+            task=TASK_DATASET_SUMMARY,
+            system_instruction=SUMMARY_SYSTEM_INSTRUCTION,
+            temperature=SUMMARY_TEMPERATURE,
+        )
+        if cached is not None:
+            logger.info(
+                "Dataset summary served from cache; routing/retry/provider "
+                "bypassed (task=%s).",
+                TASK_DATASET_SUMMARY,
+            )
+            return cached
+
         # Same provider-qualified pool as the analyzer (V2-P5): Gemini models
         # -> Groq models -> OpenRouter route, filtered to configured
         # providers; generation goes through the AI Gateway so no provider
@@ -146,7 +188,7 @@ Synthesize these dataset reviews according to your system instructions into stru
                 provider=target.provider,
                 model=target.model,
                 system_instruction=SUMMARY_SYSTEM_INSTRUCTION,
-                temperature=0.2,
+                temperature=SUMMARY_TEMPERATURE,
                 response_schema=AISummaryResponse,
                 timeout_seconds=request_timeout,
                 metadata={
@@ -197,7 +239,21 @@ Synthesize these dataset reviews according to your system instructions into stru
 
             text = (response.content or "").strip()
             if text:
-                return self._parse_json(text)
+                summary = self._parse_json(text)
+                # V2-P9: only a successfully generated AND Pydantic-validated
+                # summary is cached (parse/validation failures raise above and
+                # never reach this write).
+                llm_cache.put_summary(
+                    prompt=prompt,
+                    task=TASK_DATASET_SUMMARY,
+                    system_instruction=SUMMARY_SYSTEM_INSTRUCTION,
+                    temperature=SUMMARY_TEMPERATURE,
+                    summary=summary,
+                    provider=target.provider,
+                    model_name=target.model,
+                    fallback=target != first_target,
+                )
+                return summary
 
         if last_error:
             raise last_error

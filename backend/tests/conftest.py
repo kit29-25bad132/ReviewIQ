@@ -30,6 +30,13 @@ def hermetic_provider_env(monkeypatch):
     fallback alone, just as before retry existed. New retry tests opt in by
     setting RETRY_MAX_ATTEMPTS (and the delay/jitter vars) explicitly, and
     every delay is zero by default there, so no test ever waits.
+
+    V2-P9: LLM_CACHE_ENABLED / EMBEDDING_CACHE_ENABLED are forced off and the
+    Postgres DSN (DATABASE_URL / SUPABASE_DB_URL) plus every cache TTL override
+    is removed, so a developer .env can never silently activate a live cache or
+    a live database connection during the suite. Cache tests opt in by
+    injecting a fake store (and, where relevant, a disabled-by-default config
+    is resolved at call time, after this fixture has run).
     """
     monkeypatch.setattr("services.ai_analyzer.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
@@ -40,3 +47,12 @@ def hermetic_provider_env(monkeypatch):
     monkeypatch.delenv("RETRY_MAX_DELAY_SECONDS", raising=False)
     monkeypatch.delenv("RETRY_JITTER", raising=False)
     monkeypatch.delenv("AI_REQUEST_TIMEOUT_SECONDS", raising=False)
+    # V2-P9 cache isolation (see docstring above).
+    monkeypatch.setenv("LLM_CACHE_ENABLED", "false")
+    monkeypatch.setenv("EMBEDDING_CACHE_ENABLED", "false")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
+    monkeypatch.delenv("AI_CACHE_TTL_SECONDS", raising=False)
+    monkeypatch.delenv("AI_CACHE_TTL_RAG_SECONDS", raising=False)
+    monkeypatch.delenv("EMBEDDING_CACHE_TTL_SECONDS", raising=False)
+    monkeypatch.delenv("EMBEDDING_QUERY_CACHE_TTL_SECONDS", raising=False)

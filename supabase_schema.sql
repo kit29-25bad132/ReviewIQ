@@ -129,3 +129,82 @@ create index if not exists idx_review_embeddings_embedding_hnsw
 -- service/direct connection (which bypasses RLS) reads or writes embeddings;
 -- the frontend public key cannot access this table.
 alter table public.review_embeddings enable row level security;
+
+
+-- =========================================================
+-- V2-P9 — APPLICATION CACHE TABLES (LLM results + embeddings)
+-- =========================================================
+-- STATUS: NOT VERIFIED against a live Supabase project. Apply and validate
+-- manually before relying on it in production.
+--
+-- Additive only: no existing table, column, index, or policy is altered, and
+-- the `review_embeddings` fingerprint/dedup design above is untouched.
+--
+-- Both tables are BACKEND-ONLY caches with a TTL:
+--   - RLS enabled and NO anon/authenticated policies (same posture as
+--     review_embeddings): only the backend's service/direct Postgres
+--     connection can read or write them; the frontend public key cannot.
+--   - Rows are deleted lazily on read plus opportunistically on write
+--     (`DELETE ... WHERE expires_at < now()`), so no cron/pg_cron is needed.
+--     Manual flush (no admin endpoint is provided):
+--       delete from public.ai_response_cache where expires_at < now();
+--       delete from public.embedding_cache where expires_at < now();
+--       -- or, to drop everything:
+--       truncate public.ai_response_cache;
+--       truncate public.embedding_cache;
+--
+-- Payloads hold ONLY validated application results and deterministic cache
+-- metadata (digests/tokens/timestamps, plus internal provider/model
+-- provenance). They never contain credentials, DSNs, prompts, retrieved
+-- context, provider error text, token counts, or cost/billing data.
+--
+-- `ai_response_cache` TTLs: 7 days (non-RAG), 1 hour (RAG, guarded by
+-- `corpus_token`). `embedding_cache` hygiene TTL: 90 days (documents) /
+-- 30 days (queries, `RETRIEVAL_QUERY` namespace). Vectors are JSONB
+-- (not vector(768)) so future embedding dimensions need no schema change;
+-- the dimension is stored explicitly and validated on read.
+-- =========================================================
+
+create table if not exists public.ai_response_cache (
+    cache_key text primary key,
+    -- Validated ReviewAnalysis / AISummaryResponse result (+ envelope).
+    payload jsonb not null,
+    -- Internal-only provider/model provenance; never returned through the API.
+    provenance jsonb,
+    -- Digest of the RAG context block used (RAG entries only).
+    rag_context_digest text,
+    -- Live review_embeddings corpus token required for RAG cache hits.
+    corpus_token text,
+    created_at timestamptz not null,
+    expires_at timestamptz not null
+);
+
+comment on table public.ai_response_cache is
+    'V2-P9 backend-only LLM response cache (validated results, TTL, RLS with no public policies).';
+
+create index if not exists idx_ai_response_cache_expires_at
+    on public.ai_response_cache (expires_at);
+
+-- RLS enabled with NO policies: backend service/direct connection only.
+alter table public.ai_response_cache enable row level security;
+
+create table if not exists public.embedding_cache (
+    cache_key text primary key,
+    -- JSONB float vector (avoids hard-coding vector(768); dimension checked).
+    vector jsonb not null,
+    -- Key namespace: RETRIEVAL_DOCUMENT and RETRIEVAL_QUERY never collide.
+    task_type text not null,
+    model text not null,
+    dimension integer not null,
+    created_at timestamptz not null,
+    expires_at timestamptz not null
+);
+
+comment on table public.embedding_cache is
+    'V2-P9 backend-only embedding cache (post-preprocessing vectors, TTL, RLS with no public policies).';
+
+create index if not exists idx_embedding_cache_expires_at
+    on public.embedding_cache (expires_at);
+
+-- RLS enabled with NO policies: backend service/direct connection only.
+alter table public.embedding_cache enable row level security;
