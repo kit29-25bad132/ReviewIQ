@@ -16,7 +16,7 @@ Update this file after meaningful work. Use the status values `Not Started`, `In
 | 8 Integration | Shared | Done | | Frontend ↔ FastAPI ↔ Supabase persistence boundary; safe API error contracts |
 | 9 Testing & QA | Rishi/Shared | Done | 2026-09-24 | Offline suite: **187** backend pytest + **27** frontend vitest; `npm run build` PASS |
 | 10 Deployment | Sri/Alshifa | Not Started | | |
-| 11 Evaluation Preparation | Shared/Rishi | Not Started | | |
+| 11 Evaluation Preparation | Shared/Rishi | Done | 2026-09-27 | P10: fixed `evaluation_set.json` (40 records), pure `compute_metrics`, metric/dataset/baseline/adversarial test modules, retry→grounding ordering test, results dir gitignored, `14_AI_EVALUATION.md` rewritten; 632 → **687** backend tests green |
 
 ## Update Rules
 Record completed tasks, blockers, test evidence, decisions, and next actions. Keep this file synchronized with actual repository state.

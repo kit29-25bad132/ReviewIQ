@@ -1315,13 +1315,17 @@ LangGraph is used for orchestration and controlled branching, not for exposing o
 
 ### Evaluation and Quality
 
-- Fixed V2 evaluation dataset.
-- V1 versus V2 comparison.
-- RAG retrieval evaluation.
-- Evidence relevance checks.
+- Fixed offline evaluation dataset (`backend/data/evaluation_set.json`, 40 records; human star ratings with rule-derived sentiment).
+- Offline rating/sentiment metric computation (`compute_metrics`) with dedicated unit tests.
+- Dataset integrity tests for the fixed evaluation dataset.
+- Deterministic metric-regression baseline (proves the metric implementation is stable — not model accuracy).
+- Adversarial input regression tests (unicode/emoji, prompt-like text, unknown fields, duplicates, long inputs).
+- Retry → grounding ordering regression test.
 - Structured-output validity checks.
+- Evidence grounding checks.
 - Model/fallback behavior tests.
 - Regression testing.
+- Deferred (no genuine gold labels exist yet): aspect/evidence quantitative evaluation, RAG retrieval metrics (Recall@K/MRR), V1 versus V2 comparison, live model-quality evaluation.
 
 ### Observability and Cost Tracking
 
@@ -1383,7 +1387,7 @@ V2 is being implemented incrementally on the `v2-main` branch.
 | Aspect-level intelligence | ⏳ |
 | Caching | ✅ |
 | Reliability / rate-limit handling | ⏳ |
-| Evaluation / regression testing | ⏳ |
+| Evaluation / regression testing | ✅ |
 | Observability / cost tracking | ⏳ |
 | End-to-end V2 integration | ⏳ |
 | V2 production readiness | ⏳ |

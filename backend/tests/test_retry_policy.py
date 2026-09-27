@@ -559,6 +559,62 @@ def test_rag_retrieval_runs_once_across_retries(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# S2 (V2-P10). Retry -> generation -> parse/validate -> grounding ordering
+# ---------------------------------------------------------------------------
+
+def test_retry_then_grounding_removes_unsupported_evidence(monkeypatch):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    _enable_retry(monkeypatch, max_attempts=2)
+    payload = json.dumps(
+        {
+            "sentiment": "positive",
+            "rating": 5,
+            "rating_source": "inferred",
+            "summary": "Great battery life, razor-sharp screen.",
+            "aspects": [
+                {
+                    "aspect": "battery",
+                    "sentiment": "positive",
+                    "evidence": "The battery lasts all day",
+                },
+                {
+                    "aspect": "screen",
+                    "sentiment": "positive",
+                    "evidence": "screen is razor sharp",
+                },
+            ],
+            "pros": [
+                {"point": "All-day battery", "evidence": "The battery lasts all day"},
+                {"point": "Sharp screen", "evidence": "screen is razor sharp"},
+            ],
+            "cons": [],
+        }
+    )
+    # First attempt: retryable rate limit. Second attempt (same target):
+    # a schema-valid response mixing supported and fabricated evidence.
+    gemini = FakeProvider(
+        [RuntimeError("429 Quota exceeded for generateContent"), payload],
+        name="gemini",
+    )
+    groq = FakeProvider([VALID_JSON], name="groq")
+    analyzer = _analyzer({"gemini": gemini, "groq": groq})
+
+    analysis = analyzer.analyze_review(REVIEW)
+
+    # Retry happened on the same target; no provider fallback was needed.
+    assert len(gemini.requests) == 2
+    assert groq.requests == []
+    # Parse + Pydantic validation succeeded (an invalid payload would have
+    # raised before grounding), then grounding removed unsupported evidence.
+    assert [p.point for p in analysis.pros] == ["All-day battery"]
+    assert [a.aspect for a in analysis.aspects] == ["battery"]
+    assert "razor sharp" not in analysis.model_dump_json()
+    # Final result is grounded: surviving aspect carries computed support.
+    assert analysis.aspects[0].support == "strong"
+    assert analysis.pros[0].evidence == "The battery lasts all day"
+
+
+# ---------------------------------------------------------------------------
 # T. Product summary retry
 # ---------------------------------------------------------------------------
 

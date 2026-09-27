@@ -1,0 +1,249 @@
+{
+  "schema_version": "1.0",
+  "source": "amazon_review.csv",
+  "record_count": 40,
+  "label_methodology": "expected_rating is the human star rating (overall) copied verbatim from the source CSV row; review_text is the cleaned original review text (whitespace collapsed, never rewritten). expected_sentiment is RULE-DERIVED from expected_rating using dataset_service.sentiment_from_rating (1-2 negative, 3 neutral, 4-5 positive). It is NOT an independently human-annotated sentiment label. No aspect, evidence, pros/cons, or summary labels exist in this dataset.",
+  "selection": "Deterministic: eligible source records (40-1200 chars, deduplicated by normalized text) grouped by rating, sorted by id, stride-sampled to fixed quotas {1:8, 2:6, 3:8, 4:9, 5:9}, emitted in ascending rating order.",
+  "records": [
+    {
+      "id": "00892545152966a7b33e",
+      "review_text": "Performance and capacity were not in line with cost and expectations. These are most likely counterfeit or back door sales in my opinion. Very unsatisfied.",
+      "expected_rating": 1,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "240e274985a6132b520b",
+      "review_text": "Got this for my Samsung 3. After 4 months, was no longer accessible - first message I got on the phone was that there was an unformatted Sd card installed. Next, it wouldn't even recognize the card was in there. I inserted a different card, and the phone was able to recognize it and play music off it - - so, not the phone. I also tried having my desktop read the card - - no go there either....",
+      "expected_rating": 1,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "424e087fe09a993905a6",
+      "review_text": "This was the fastest microSD card I have tested, unfortunately it died after about four months of use in my Android phone. At first my phone would randomly say the card had been removed, then eventually neither the phone nor any reader I had could access it.The test results from my older but still functional 32gb class 4 sandisk:Sequential Read : 23.022 MB/sSequential Write : 4.460 MB/sRandom Read 512KB : 22.387 MB/sRandom Write 512KB : 3.144 MB/sRandom Read 4KB (QD=1) : 3.414 MB/s [ 833.5 IOPS]Random Write 4KB (QD=1) : 1.231 MB/s [ 300.5 IOPS]Random Read 4KB (QD=32) : 3.309 MB/s [ 807.8 IOPS]Random Write 4KB (QD=32) : 0.993 MB/s [ 242.4 IOPS]Compared to this product, 32gb class 10 sandisk:Sequential Read : 41.492 MB/sSequential Write : 15.653 MB/sRandom Read 512KB : 43.380 MB/sRandom Write 512KB : 17.685 MB/sRandom Read 4KB (QD=1) : 4.696 MB/s [ 1146.5 IOPS]Random Write 4KB (QD=1) : 1.595 MB/s [ 389.4 IOPS]Random Read 4KB (QD=32) : 4.859 MB/s [ 1186.2 IOPS]Random Write 4KB (QD=32) : 1.334 MB/s [ 325.6 IOPS]",
+      "expected_rating": 1,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "5fb301fff08708c423c5",
+      "review_text": "I would not recommend this card if your looking for REAL class 10 write speeds. The most I could get is 9mb/s from this card but for the most part it was about 7-8mb/s. I even did a slow format to exfat in windows 7 with no improvements. I copied over music, pics and movies to test it out ranging from a couple of mb to over a gb. The read speeds were pretty good at around 21mb/s though. I popped in a 32gb class 10 transcend SD card and it consistently got 16-18mb/s write speeds and 24mb/s read speeds. So in conclusion I think this card is not really a class 10. Too bad I read all the negative 1 star reviews after the fact but I will be sending this one back.",
+      "expected_rating": 1,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "8166b99f23aec4673509",
+      "review_text": "I bought this on August of 2013. As of April 2014 the card stopped functioning. It can still be read, but the writing capability is gone. That's less than one year. I'm extremely disappointed in the longevity of this card. My usage of it has been on my Galaxy S4. I have about 40Gb of data in it. Guess I'm going to have to look for another card that has a longer lifespan than this one.",
+      "expected_rating": 1,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "a3f67cafcb34c4a4bea1",
+      "review_text": "I bought this Sandisk 16GB Class 10 to use with my HTC Inspire, after 3 months, I am getting constant error saying SD Card unmounted unexpectedly.Then today, the dang fkang card won't even read in the card reader, I have 10GB worth of videos and pictures, memories that I will never be able to get back. I am very upset.",
+      "expected_rating": 1,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "bfe5caf57a5039316143",
+      "review_text": "I dunno if it's a bad copy or what but When I try to transfer files like 2GB or 3GB it doesn't copy! It ejects itself and then mounts itself again. I had to transfer all my songs from my PC through Airdroid which was a pain in the a$$ I can't transfer movies from my PC and by the way I tried formatting it and checking for some errors but same issue but I can move smaller files like 20MB or soVery disappointing especially for such price!UPDATE: Now I have more problems! My phone tells me every now and then that the \"SD card was unexpectedly removed\" and I tried on other phones with the same problem",
+      "expected_rating": 1,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "dfd226cf46af15c4f338",
+      "review_text": "never looked to verify the capacity of this card, it is clearly labeled 64gb but when installed it clearly is not. When installed into any computer it shows 27.4gb available with 1.68 used. So beware if you order one to make sure you are getting what you pay for.",
+      "expected_rating": 1,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "0d400f350bebb904d912",
+      "review_text": "Bought this card for my Galaxy S4 and after installing it and loading my music, the card was randomly ejecting itself. After like the 3rd ejection of the morning, the phone reported that the card needed to be reformatted because it was damaged, so I reformatted. The random SDCard ejection and Damaged card kept coming up. After googling, I read that the Galaxy series phones are known to have compatibility issues with SanDisk cards and its a hit or miss, some phones have no issues. I have replaced this card already, which Amazon, shipped me a 2nd card within a few days, but the same problems arise. Not sure if I should switch to a different brand, but this card is definitely useless to me for the time being. Maybe I can give it away to a friend who doesn't have an S4. :/",
+      "expected_rating": 2,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "30c41a886a348460eb1d",
+      "review_text": "I bought this for my Samsung galaxy s4. I don't know if it is my phone or the card but my phone says it was unexpectedly removed from time to time. My wife's phone doesn't do it as often but still does it. Very fast but unreliable. I have had many sandisk before and this is the only one I have had problems with. I have read that there were some that were poorly made. Thinking I will send it back and give it another chance.",
+      "expected_rating": 2,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "512ab8be6de142caebc1",
+      "review_text": "I bought two of these Memory Cards for use with my Logitech Alert 750e Outdoor Master Security Camera's. So far, I have found them to be unreliable. I am not entirely certain if this is because of the Camera system or the Memory Card themselves. The camera frequently will report a memory card error that indicates the card has to be reformatted. This is problematic as if the camera had recorded something that was important, the failure of the SD card would be very troublesome indeed.",
+      "expected_rating": 2,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "80a24bf657d13e6843fe",
+      "review_text": "I have to assume that the brand new 64gb SanDisk Ultra Class 10 SDXC card is responsible for the occasional video recording stutter/pausing that has happened since I started using it today. Prior to that, never had an issue with my previous SanDisk SDHC card. But today on its maiden trip, it has led each video (only 3-5 minutes long each) to have several performance issues that by default I have to attribute to the card since nothing else has changed and I've never had an issue in the four months that I've had my Galaxy Note 2. No problems formatting this card though or installing/using it otherwise.",
+      "expected_rating": 2,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "a70e8fda501a86b5b556",
+      "review_text": "It works but the actual R/W speeds are 18/8 MB/s, not even Class 10. It should be marketed as \"Sandisk Basic\", not Sandisk Ultra\", unless they mean ultra slow. Now is 2014 and there is no excuse for such slow card from Sandisk.*** UPDATE ***I have redone the test with NotePro 12.2\" instead of using non UHS-I PC and the latest results are 32/8.6MB/s. Since the read speed hits 30, I believe the device is DHS-I ready. Still underwhelmed by the write speed though.",
+      "expected_rating": 2,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "c602ccbe321aa1cad084",
+      "review_text": "So this product is a large disappointment...bought it to use in my tablet but the card is forever getting corrupted....I've reformatted the card a few times but it's to the point now that even a reformat doesn't work.. Wasted money...don't recommend purchasing.",
+      "expected_rating": 2,
+      "expected_sentiment": "negative"
+    },
+    {
+      "id": "00886b97f75bab5de5a8",
+      "review_text": "im currently using it for my nokia lumia 810 and my camera, works very well and very fast! but expensiveEdit: I was really happy with the card until I had to record video on it. It seems that it doesnt write fast and my recordings end up being choppy and unwatchable. I was really disappointed in it, cuz I had to switch back to my phone's storage when recording video.",
+      "expected_rating": 3,
+      "expected_sentiment": "neutral"
+    },
+    {
+      "id": "30c257d6f3542f8fa2b2",
+      "review_text": "I have two of these and use them for my Galazy Note 2. It's great having the flexibility to keep extra storage with you for your 'phablet'.So far they have done what they are intended to do.",
+      "expected_rating": 3,
+      "expected_sentiment": "neutral"
+    },
+    {
+      "id": "4a8143a350179af6271f",
+      "review_text": "I bought this for my new samsung galaxy s 4, and the first one I ordered produced formatting issues on my phone every time I rebooted. I looked online and found a number of these got recalled (or something) at one point, and some didn't but just don't work.I returned it for a replacement and the replacement has worked fine in my phone with constant use. I'm on month 4 with no issues.",
+      "expected_rating": 3,
+      "expected_sentiment": "neutral"
+    },
+    {
+      "id": "6a8cc451b5276d8df9b1",
+      "review_text": "My SD card showed only a little more than 29 GB available for my 32 GB card. That's the bare minimum I'll accept without sending it back. I'm normally happy with the brand name SD cards I buy on Amazon, though. For the price I paid for this particular card, my expectations were higher.",
+      "expected_rating": 3,
+      "expected_sentiment": "neutral"
+    },
+    {
+      "id": "8cdcc43782e1960f505d",
+      "review_text": "There is a known issue with a batch of these cards where they can completely die. This is known defect (affecting a lot of Galaxy S3 and Note users), so if your card dies, either exchange through Amazon or contact SanDisk for a replacement. Newer cards are supposedly fixed, but you might want to back up your data just in case. Mine were purchased in November 2012 and both have now failed in separate phones, unreadable by PCs or phones.",
+      "expected_rating": 3,
+      "expected_sentiment": "neutral"
+    },
+    {
+      "id": "abe45f85cc2c520199f0",
+      "review_text": "It works fine with my galaxy note 8.0... it is hard to review now for performance, but the price is good... I think.",
+      "expected_rating": 3,
+      "expected_sentiment": "neutral"
+    },
+    {
+      "id": "c0fcfd969abefca8ea05",
+      "review_text": "I've had this card for about a year and I've been very careful with it and it just broke when I popped it out of sd card slot on my phone but it was very reliable card when it wasn't broken",
+      "expected_rating": 3,
+      "expected_sentiment": "neutral"
+    },
+    {
+      "id": "ec195c04c3a568bc021f",
+      "review_text": "I chose this item because of the speed of the memory and also because of the SanDisk brand and I wasn't disappointed. The memory works fine in my Motorola Razor-M cell phone allowing me to store movies, pictures, and music that I can play on my phone. The adapter, on the other hand, feels flimsy and fragile. I had trouble inserting it into two different readers and even then it felt like like it was going to break. I have several other adapters and this adapter feels like the material is much thinner than the others. Having said that, I didn't purchase the memory for the adapter I purchased it for the speed rating and compatibility. All things being equal I would consider purchasing the memory again.",
+      "expected_rating": 3,
+      "expected_sentiment": "neutral"
+    },
+    {
+      "id": "0010b86f2be2518e2297",
+      "review_text": "been using it for about a year now with no issues. come on amazon, how much more can i put on this review? it's a memory card.",
+      "expected_rating": 4,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "1cc2d783692b416a921a",
+      "review_text": "I bought one for my GoPro last year and ended up putting it in my tablet last week. Ordered another one for the GoPro. After the trip next week it will go in my phone. Guess I'll need another one for the next trip.",
+      "expected_rating": 4,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "3d4d3c6a35d1fff77ab8",
+      "review_text": "After extensive review / research I wanted the best 64gb available to improve/increase memory for Samsung tab 3 7.0 many cards out there but this one loaded up quickly and appears to be ready for add on apps and preserving meory storage. The price was right, delivered quickly even with holiday, loaded and was quickly loaded/compatible with Samsung tab 3 7.0. Sandisk actually has a use chart that will show shopper what card to use for their device. Very helpful",
+      "expected_rating": 4,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "574d5cefa117e79a477b",
+      "review_text": "I bought this to use I'm my Galaxy note 10.1 tablet. So far so good. Simple put into microsd slot and began storing data on it",
+      "expected_rating": 4,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "71bc737dad8280d71eb6",
+      "review_text": "Over the years, I've found SanDisk memory to be durable and reliable. This 16 GB Class 10 card appears to be no exception. So far, it's performed well. I especially appreciate the fast write speed. For the money, it's a good deal.",
+      "expected_rating": 4,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "8b785a103282e22a1678",
+      "review_text": "Works fine with photo shooting and video recording in EOS camera with the SD adapter. Perfect for tablet and phone memory.",
+      "expected_rating": 4,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "a5ded97cfd184e49f44f",
+      "review_text": "What can I say SanDisk has the micro SD figured out. Works with Asus Memo pad hd 7, movies for long trips.",
+      "expected_rating": 4,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "bf09bbce40c2aa946ab0",
+      "review_text": "Excellent product, High capacity, well made. Holds many pics, movies, and music...a gift to the camera buff. I've always wanted a hi-capacity item by SanDisk.",
+      "expected_rating": 4,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "df0e0b874dfa4709862c",
+      "review_text": "We bought this for our new camera when we were expecting our first child. We use the camera about once per week (the iphone is just easier and usually takes a better picture for some reason) and we transfer the photos to our PC. It has worked well and we have no complaints so far (7 months).",
+      "expected_rating": 4,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "002d71b71a3ddbb569ed",
+      "review_text": "haven't been able to use this in the capacity that I bought it, for a tablet pro, but I have used it in a usb adapter and it works well there.",
+      "expected_rating": 5,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "1ba1e3a9029eed1247c5",
+      "review_text": "I placed this memory card in my Bluetooth speaker, I then loaded it up with different genders of music and it plays beatifully.",
+      "expected_rating": 5,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "382d162aed391fc94b42",
+      "review_text": "the 64 gb class 10 memory will be useful and I think this was a good buy.I will be using it in my GoPro Hero 3 Black.",
+      "expected_rating": 5,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "574bb16544ca6c96e187",
+      "review_text": "I love this card. It provides a massive storage boost for my tablet, and has really fast access speeds. I have never run into loading problems, even with very large video files, and am happy with its performance.",
+      "expected_rating": 5,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "724cf9941902c891a217",
+      "review_text": "I have owned and used this in my Galaxy SIII for a few months now. I have never had any problems with it. It is fast. I never even think about running out of space on my phone now. It shows up as 29.71 GB total capacity and I still have 22.86 GB left.",
+      "expected_rating": 5,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "90dbc9b61b1bc09209d1",
+      "review_text": "I can't say that the applications are loading faster, but I can definitely say that videos and music load much faster in my phone now. I didn't have to reformat the card or anything, just transferred all DATA from old card to this one and popped it in. Considering the small price difference, I'd recommend getting a faster card for sure.",
+      "expected_rating": 5,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "aca8a6a8ceb4f62706e6",
+      "review_text": "Always happy with my Sandisk cards. Used this one for my new Contour Roam. Worked like a charm.....Awesome quality..Thanks Amazon!",
+      "expected_rating": 5,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "c99c7f5baefc1c835e42",
+      "review_text": "The card works in the above mentioned phones but I did have to format it using another program downloaded for Windows. Windows will not let you format the card for FAT32 which is the format you need to use for the phones to see the card. The also could not format the cards correctly on their own, but once I was able to format them properly, they worked perfectly.",
+      "expected_rating": 5,
+      "expected_sentiment": "positive"
+    },
+    {
+      "id": "e4cae577f4262c0f207d",
+      "review_text": "I've never had an issue with sandisk memory cards, and likewise. Great price for what you're getting, memory is getting cheaper, and speed isn't a huge issue for me for smartphone use, so this was ideal. Can never go wrong with sandisk.",
+      "expected_rating": 5,
+      "expected_sentiment": "positive"
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "schema_version": "1.0",
+  "purpose": "Offline metric-regression baseline. These predictions are hand-authored fixtures that exercise the metric machinery; they are NOT model outputs. This baseline proves the evaluation metric implementation remains stable; it does not measure or claim any model quality or accuracy.",
+  "predictions": [
+    {
+      "actual_rating": 5,
+      "predicted_rating": 5,
+      "predicted_rating_source": "explicit",
+      "actual_sentiment": "positive",
+      "predicted_sentiment": "positive"
+    },
+    {
+      "actual_rating": 4,
+      "predicted_rating": 5,
+      "predicted_rating_source": "inferred",
+      "actual_sentiment": "positive",
+      "predicted_sentiment": "positive"
+    },
+    {
+      "actual_rating": 1,
+      "predicted_rating": 1,
+      "predicted_rating_source": "explicit",
+      "actual_sentiment": "negative",
+      "predicted_sentiment": "negative"
+    },
+    {
+      "actual_rating": 2,
+      "predicted_rating": 3,
+      "predicted_rating_source": "inferred",
+      "actual_sentiment": "negative",
+      "predicted_sentiment": "positive"
+    },
+    {
+      "actual_rating": 3,
+      "predicted_rating": 3,
+      "predicted_rating_source": "explicit",
+      "actual_sentiment": "neutral",
+      "predicted_sentiment": "neutral"
+    },
+    {
+      "actual_rating": 5,
+      "predicted_rating": 4,
+      "predicted_rating_source": "inferred",
+      "actual_sentiment": "positive",
+      "predicted_sentiment": "positive"
+    },
+    {
+      "actual_rating": 1,
+      "predicted_rating": 2,
+      "predicted_rating_source": "inferred",
+      "actual_sentiment": "negative",
+      "predicted_sentiment": "negative"
+    },
+    {
+      "actual_rating": 4,
+      "predicted_rating": null,
+      "predicted_rating_source": "not_found",
+      "actual_sentiment": "positive",
+      "predicted_sentiment": "positive"
+    },
+    {
+      "actual_rating": 5,
+      "predicted_rating": 5,
+      "predicted_rating_source": "explicit",
+      "actual_sentiment": "positive",
+      "predicted_sentiment": "negative"
+    },
+    {
+      "actual_rating": 2,
+      "predicted_rating": 1,
+      "predicted_rating_source": "inferred",
+      "actual_sentiment": "negative",
+      "predicted_sentiment": "negative"
+    }
+  ],
+  "expected_metrics": {
+    "evaluated_reviews": 10,
+    "rating_accuracy": 0.4444,
+    "rating_mae": 0.5556,
+    "sentiment_accuracy": 0.8,
+    "confusion_matrix": [
+      [
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        2
+      ]
+    ],
+    "methodology": "Actual sentiment is derived from ratings: 1–2 negative, 3 neutral, 4–5 positive. Reviews with rating_source 'not_found' (null predicted rating) are excluded from rating accuracy/MAE."
+  }
+}
