@@ -110,6 +110,15 @@ export async function getProductAnalysis(productId: string): Promise<ProductAnal
 }
 
 /**
+ * Explicitly requests complete grounded Gemini AI analysis and factual dataset metrics for a product.
+ */
+export async function analyzeProduct(productId: string): Promise<ProductAnalysisResponse> {
+  const response = await apiClient.post<ProductAnalysisResponse>(`/api/products/${productId}/analyze`);
+  return response.data;
+}
+
+
+/**
  * Retrieves dynamic Pros & Cons with statistical review counts and percentages.
  */
 export async function getProductProsCons(productId: string): Promise<ProsConsAnalysisResponse> {

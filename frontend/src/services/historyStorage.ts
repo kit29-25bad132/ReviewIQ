@@ -14,6 +14,25 @@ import {
 
 const LOCAL_STORAGE_KEY = 'product_review_analyzer_history_v1';
 
+const getAuthenticatedUserId = async (): Promise<string | null> => {
+  if (!isSupabaseConfigured || !supabase) {
+    return null;
+  }
+
+  try {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+    if (error || !user?.id) {
+      return null;
+    }
+    return user.id;
+  } catch {
+    return null;
+  }
+};
+
 type SupabaseErrorFields = {
   code: string;
   message: string;
@@ -299,9 +318,15 @@ const formatReviewRow = (row: ReviewsTableRow): ReviewHistoryItem => ({
 export async function fetchAllReviews(): Promise<{ reviews: ReviewHistoryItem[]; source: 'supabase' | 'local' }> {
   if (isSupabaseConfigured && supabase) {
     try {
+      const userId = await getAuthenticatedUserId();
+      if (!userId) {
+        return { reviews: getLocalReviews(), source: 'local' };
+      }
+
       const { data, error } = await supabase
         .from('reviews')
         .select('*')
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -350,7 +375,21 @@ export async function saveReviewAnalysis(
   }
 
   try {
+    const userId = await getAuthenticatedUserId();
+    if (!userId) {
+      const localReview = createLocalReview(reviewText, analysis);
+      cacheReview(localReview);
+      console.warn('Supabase insert skipped because no authenticated user is present', {
+        code: 'SUPABASE_AUTH_REQUIRED',
+        message: 'Authentication is required to save review history to Supabase.',
+        details: null,
+        hint: 'Sign in before saving or continue in local-only mode.',
+      });
+      return localReview;
+    }
+
     const insertPayload = {
+      user_id: userId,
       review_text: reviewText,
       sentiment: analysis.sentiment,
       rating: analysis.rating,
@@ -365,7 +404,7 @@ export async function saveReviewAnalysis(
       .from('reviews')
       .insert(insertPayload)
       .select(
-        'id, review_text, sentiment, rating, rating_source, pros, cons, aspects, summary, created_at'
+        'id, user_id, review_text, sentiment, rating, rating_source, pros, cons, aspects, summary, created_at'
       )
       .single();
 
@@ -436,7 +475,40 @@ export async function saveReviewAnalysis(
 export async function deleteReviewById(id: string): Promise<void> {
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase.from('reviews').delete().eq('id', id);
+      const userId = await getAuthenticatedUserId();
+      if (!userId) {
+        throw createSupabasePersistenceError('delete', {
+          code: '401',
+          message: 'Authentication is required to delete review history.',
+          details: 'No authenticated Supabase user was found for this session.',
+          hint: 'Sign in to continue, or delete the local cached item only after authenticating.',
+        });
+      }
+
+      const { data: existingRow, error: existingError } = await supabase
+        .from('reviews')
+        .select('id, user_id')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (existingError && existingError.code !== 'PGRST116') {
+        throw createSupabasePersistenceError('delete ownership check', existingError);
+      }
+
+      if (existingRow && existingRow.user_id && existingRow.user_id !== userId) {
+        throw createSupabasePersistenceError('delete', {
+          code: '403',
+          message: 'You do not have permission to delete this review.',
+          details: 'The review belongs to a different authenticated user.',
+          hint: 'Only the owner of a review can delete it from Supabase.',
+        });
+      }
+
+      const { error } = await supabase
+        .from('reviews')
+        .delete()
+        .eq('user_id', userId)
+        .eq('id', id);
       if (error) {
         throw createSupabasePersistenceError('delete', error);
       }
@@ -461,10 +533,20 @@ export async function deleteReviewById(id: string): Promise<void> {
 export async function clearAllReviews(): Promise<void> {
   if (isSupabaseConfigured && supabase) {
     try {
+      const userId = await getAuthenticatedUserId();
+      if (!userId) {
+        throw createSupabasePersistenceError('clear', {
+          code: '401',
+          message: 'Authentication is required to clear review history.',
+          details: 'No authenticated Supabase user was found for this session.',
+          hint: 'Sign in to clear your saved review history.',
+        });
+      }
+
       const { error } = await supabase
         .from('reviews')
         .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
+        .eq('user_id', userId);
       if (error) {
         throw createSupabasePersistenceError('clear', error);
       }

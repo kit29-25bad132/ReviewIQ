@@ -92,6 +92,7 @@ app.include_router(retrieval_router)
 
 
 @app.get("/health", tags=["Health"])
+@app.get("/api/health", tags=["Health"])
 async def health_check():
     """
     Health check endpoint returning service and AI provider status.

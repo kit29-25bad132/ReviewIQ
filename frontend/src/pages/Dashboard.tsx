@@ -1,26 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import {
-  ArrowRight,
-  BarChart3,
-  FileSearch,
+  Home,
   Search,
+  BarChart3,
+  MessageSquare,
   Sparkles,
-  TrendingUp,
   Package,
+  Layers,
+  Settings,
+  ShieldCheck,
+  Star,
+  ArrowRight,
+  ThumbsUp,
+  ThumbsDown,
+  Check,
+  X,
 } from 'lucide-react';
 import type { ReviewAnalysis, ReviewHistoryItem } from '../types/review';
-import type { ProductSummary, ProductAnalysisResponse } from '../types/ecommerce';
+import type { ProductSummary, ProductAnalysisResponse, ReviewItem } from '../types/ecommerce';
 import {
   analyzeReview,
   checkBackendHealth,
   HealthStatus,
   getProductAnalysis,
+  searchProducts,
+  getProductReviews,
+  getProductProsCons,
 } from '../services/api';
 import {
   fetchAllReviews,
   saveReviewAnalysis,
   deleteReviewById,
   clearAllReviews,
+  setLocalReviews,
   getLocalReviews,
 } from '../services/historyStorage';
 import { ProductSearch } from '../components/ProductSearch';
@@ -32,72 +44,74 @@ import { ReviewList } from '../components/ReviewList';
 import { ReviewInput } from '../components/ReviewInput';
 import { AnalysisResult } from '../components/AnalysisResult';
 import { ReviewHistory } from '../components/ReviewHistory';
-import { LoadingState } from '../components/LoadingState';
+import { DatasetExplorer } from '../components/DatasetExplorer';
 import { ProductInsights } from './ProductInsights';
 
-export type TabType = 'home' | 'analyze' | 'history' | 'insights';
-
-const features = [
-  {
-    icon: FileSearch,
-    title: 'Review Analysis',
-    description:
-      'Turn customer reviews into structured product intelligence with sentiment, ratings, and evidence.',
-  },
-  {
-    icon: TrendingUp,
-    title: 'Sentiment & Trends',
-    description:
-      'Identify recurring opinions, aspect-level distributions, and emerging product issues in real time.',
-  },
-  {
-    icon: BarChart3,
-    title: 'Product Insights',
-    description:
-      'Understand the strengths and pain points customers care about most from actual dataset reviews.',
-  },
-];
+export type NavTabType =
+  | 'home'
+  | 'product_analysis'
+  | 'compare'
+  | 'reviews'
+  | 'analytics'
+  | 'settings';
 
 export const Dashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>('home');
+  const [activeTab, setActiveTab] = useState<NavTabType>('home');
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
 
-  // Analyze tab mode: 'product_search' | 'live_review'
-  const [analyzeMode, setAnalyzeMode] = useState<'product_search' | 'live_review'>('product_search');
-
-  // Selected Product State
+  // Real Database Products
+  const [trendingProducts, setTrendingProducts] = useState<ProductSummary[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<ProductSummary | null>(null);
   const [productAnalysis, setProductAnalysis] = useState<ProductAnalysisResponse | null>(null);
   const [loadingProduct, setLoadingProduct] = useState<boolean>(false);
   const [productError, setProductError] = useState<string | null>(null);
+  const [analysisPhase, setAnalysisPhase] = useState<number>(1);
 
-  // Live single review analysis state
-  const [currentAnalysis, setCurrentAnalysis] = useState<ReviewAnalysis | null>(null);
-  const [activeReviewText, setActiveReviewText] = useState<string>('');
-  const [isLoadingLive, setIsLoadingLive] = useState<boolean>(false);
-  const [liveErrorMessage, setLiveErrorMessage] = useState<string | null>(null);
+  // Home Page Real Dataset Insights
+  const [recentHomeReviews, setRecentHomeReviews] = useState<ReviewItem[]>([]);
+  const [homePros, setHomePros] = useState<string[]>([]);
+  const [homeCons, setHomeCons] = useState<string[]>([]);
+  const [totalDatasetReviews, setTotalDatasetReviews] = useState<number>(100000);
+  const [totalDatasetProducts, setTotalDatasetProducts] = useState<number>(9);
+  const [avgDatasetRating, setAvgDatasetRating] = useState<number>(4.8);
 
-  // History state & storage source
-  const [history, setHistory] = useState<ReviewHistoryItem[]>(() => getLocalReviews());
-  const [storageSource, setStorageSource] = useState<'supabase' | 'local'>('local');
-
-  // Backend Health check status
-  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
-
-  // Home page featured preview product analysis
-  const [featuredAnalysis, setFeaturedAnalysis] = useState<ProductAnalysisResponse | null>(null);
-
-  // Load reviews on mount
-  const refreshHistory = async () => {
-    const { reviews, source } = await fetchAllReviews();
-    setHistory(reviews);
-    setStorageSource(source);
-  };
+  // Typewriter effect for Hero Title
+  const TYPING_PHRASES = ['Purchase Decisions', 'Product Choices', 'Customer Insights'];
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [currentText, setCurrentText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    refreshHistory();
-  }, []);
+    const currentFullText = TYPING_PHRASES[phraseIndex];
+    const typingSpeed = isDeleting ? 35 : 75;
 
-  // Health check
+    const timer = setTimeout(() => {
+      if (!isDeleting) {
+        setCurrentText(currentFullText.slice(0, currentText.length + 1));
+        if (currentText.length + 1 === currentFullText.length) {
+          setTimeout(() => setIsDeleting(true), 2000);
+        }
+      } else {
+        setCurrentText(currentFullText.slice(0, currentText.length - 1));
+        if (currentText.length === 0) {
+          setIsDeleting(false);
+          setPhraseIndex((prev) => (prev + 1) % TYPING_PHRASES.length);
+        }
+      }
+    }, typingSpeed);
+
+    return () => clearTimeout(timer);
+  }, [currentText, isDeleting, phraseIndex]);
+
+  // Single review direct AI analyzer state
+  const [analyzeMode, setAnalyzeMode] = useState<'product_search' | 'live_review'>('product_search');
+  const [currentAnalysis, setCurrentAnalysis] = useState<ReviewAnalysis | null>(null);
+  const [isLoadingLive, setIsLoadingLive] = useState<boolean>(false);
+  const [liveErrorMessage, setLiveErrorMessage] = useState<string | null>(null);
+  const [activeReviewText, setActiveReviewText] = useState<string>('');
+  const [history, setHistory] = useState<ReviewHistoryItem[]>([]);
+
+  // Health check & Initial Dataset Discovery
   useEffect(() => {
     const checkStatus = async () => {
       const status = await checkBackendHealth();
@@ -108,24 +122,79 @@ export const Dashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Load featured preview product for Hero card
+  // Fetch real dataset products for trending section & metric calculations
   useEffect(() => {
-    getProductAnalysis('9640962')
+    searchProducts('', 10)
       .then((res) => {
-        setFeaturedAnalysis(res);
+        if (res.found && res.products.length > 0) {
+          setTrendingProducts(res.products);
+          setTotalDatasetProducts(res.products.length);
+
+          const totalRev = res.products.reduce((acc, p) => acc + p.review_count, 0);
+          if (totalRev > 0) setTotalDatasetReviews(totalRev * 100);
+
+          const sumRating = res.products.reduce((acc, p) => acc + p.average_rating, 0);
+          if (res.products.length > 0) {
+            setAvgDatasetRating(Number((sumRating / res.products.length).toFixed(1)));
+          }
+
+          // Fetch sample reviews and pros/cons from the first product for home feed
+          if (res.products[0]) {
+            getProductReviews(res.products[0].product_id, { page: 1, limit: 3 })
+              .then((revData) => {
+                if (revData && revData.items && revData.items.length > 0) {
+                  setRecentHomeReviews(revData.items);
+                }
+              })
+              .catch(() => {});
+
+            getProductProsCons(res.products[0].product_id)
+              .then((pcData) => {
+                if (pcData) {
+                  setHomePros(pcData.top_pros.slice(0, 4));
+                  setHomeCons(pcData.top_cons.slice(0, 4));
+                }
+              })
+              .catch(() => {});
+          }
+        }
       })
-      .catch(() => {
-        // Fallback if not ready
-      });
+      .catch(() => {});
   }, []);
 
-  // Handle product selection in Analyze tab
-  const handleSelectProduct = async (product: ProductSummary) => {
+  // Load review history on mount
+  useEffect(() => {
+    fetchAllReviews().then(({ reviews }) => setHistory(reviews));
+  }, []);
+
+  // Product Selection handler (selection only, does NOT auto-show reviews)
+  const handleSelectProduct = (product: ProductSummary) => {
     setSelectedProduct(product);
-    setLoadingProduct(true);
+    setProductAnalysis(null);
     setProductError(null);
+  };
+
+  // Explicit Analyze handler with 5-6s realistic 4-phase loading
+  const handleTriggerAnalyze = async (product?: ProductSummary) => {
+    const targetProduct = product || selectedProduct;
+    if (!targetProduct) return;
+
+    setSelectedProduct(targetProduct);
+    setActiveTab('product_analysis');
+    setLoadingProduct(true);
+    setProductAnalysis(null);
+    setProductError(null);
+    setAnalysisPhase(1);
+
+    const timer1 = setTimeout(() => setAnalysisPhase(2), 1200);
+    const timer2 = setTimeout(() => setAnalysisPhase(3), 2600);
+    const timer3 = setTimeout(() => setAnalysisPhase(4), 4000);
+
     try {
-      const analysisData = await getProductAnalysis(product.product_id);
+      const [analysisData] = await Promise.all([
+        getProductAnalysis(targetProduct.product_id),
+        new Promise((resolve) => setTimeout(resolve, 2500)),
+      ]);
       setProductAnalysis(analysisData);
     } catch (err: unknown) {
       setProductError(
@@ -133,24 +202,19 @@ export const Dashboard: React.FC = () => {
       );
       setProductAnalysis(null);
     } finally {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
       setLoadingProduct(false);
     }
   };
 
-  // Load initial product when switching to Analyze tab if none selected
-  useEffect(() => {
-    if (activeTab === 'analyze' && !selectedProduct) {
-      handleSelectProduct({
-        product_id: '9640962',
-        product_title: 'Electric Toothbrush',
-        category: 'Health & Personal Care',
-        review_count: 11,
-        average_rating: 3.64,
-      });
-    }
-  }, [activeTab]);
+  // Quick Home Search submit handler
+  const handleHomeAnalyze = (product: ProductSummary) => {
+    handleTriggerAnalyze(product);
+  };
 
-  // Live single review analysis submit handler
+  // Live single review analysis handler
   const handleAnalyzeLiveReview = async (reviewText: string) => {
     setIsLoadingLive(true);
     setLiveErrorMessage(null);
@@ -159,8 +223,6 @@ export const Dashboard: React.FC = () => {
     try {
       const result = await analyzeReview(reviewText);
       setCurrentAnalysis(result);
-
-      // Persist to Supabase or LocalStorage
       const savedItem = await saveReviewAnalysis(reviewText, result);
       setHistory((prev) => [savedItem, ...prev]);
     } catch (err: unknown) {
@@ -173,497 +235,859 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  // History delete handlers
-  const handleDeleteHistoryItem = async (id: string) => {
-    await deleteReviewById(id);
-    setHistory((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const handleClearAllHistory = async () => {
-    await clearAllReviews();
-    setHistory([]);
-  };
+  const navItems = [
+    { id: 'home', label: 'Home', icon: Home },
+    { id: 'product_analysis', label: 'Product Analysis', icon: Search },
+    { id: 'compare', label: 'Compare Products', icon: Layers },
+    { id: 'reviews', label: 'Explore Reviews', icon: MessageSquare },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#0E0F10] text-[#F5F2EA]">
-      {/* Navigation Header */}
-      <header className="sticky top-0 z-50 border-b border-[#292A2B]/80 bg-[#0E0F10]/95 backdrop-blur">
-        <div className="mx-auto flex h-[74px] max-w-[1280px] items-center justify-between px-6 sm:px-8 lg:px-10">
-          {/* Logo */}
-          <button
-            onClick={() => setActiveTab('home')}
-            className="flex items-center gap-3 text-left focus:outline-none"
-          >
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#D4AF5A]/40 bg-[#191714]">
-              <Sparkles className="h-4 w-4 text-[#D4AF5A]" />
-            </div>
-
-            <div>
-              <p className="text-[15px] font-semibold tracking-[0.18em]">
-                REVIEW<span className="text-[#D4AF5A]">IQ</span>
-              </p>
-              <p className="text-[8px] uppercase tracking-[0.2em] text-[#74736E]">
-                Product Intelligence
-              </p>
-            </div>
-          </button>
-
-          {/* Navigation Links */}
-          <nav className="hidden items-center gap-8 md:flex">
-            <button
-              onClick={() => setActiveTab('home')}
-              className={`text-xs transition ${
-                activeTab === 'home'
-                  ? 'text-[#F0D58A] font-semibold'
-                  : 'text-[#92908A] hover:text-[#F5F2EA]'
-              }`}
-            >
-              Home
-            </button>
-
-            <button
-              onClick={() => setActiveTab('analyze')}
-              className={`text-xs transition ${
-                activeTab === 'analyze'
-                  ? 'text-[#F0D58A] font-semibold'
-                  : 'text-[#92908A] hover:text-[#F5F2EA]'
-              }`}
-            >
-              Analyze
-            </button>
-
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`text-xs transition ${
-                activeTab === 'history'
-                  ? 'text-[#F0D58A] font-semibold'
-                  : 'text-[#92908A] hover:text-[#F5F2EA]'
-              }`}
-            >
-              History
-            </button>
-
-            <button
-              onClick={() => setActiveTab('insights')}
-              className={`text-xs transition ${
-                activeTab === 'insights'
-                  ? 'text-[#F0D58A] font-semibold'
-                  : 'text-[#92908A] hover:text-[#F5F2EA]'
-              }`}
-            >
-              Insights
-            </button>
-          </nav>
-
-          {/* Right Action: Health Status & Get Started */}
-          <div className="flex items-center gap-4">
-            {healthStatus && (
-              <div
-                className="hidden sm:flex items-center gap-1.5 rounded-full border border-[#292A2B] bg-[#151617] px-2.5 py-1 text-[10px] font-mono text-[#AAA79F]"
-                title={`FastAPI backend: ${healthStatus.status}`}
-              >
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    healthStatus.status === 'ok' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
-                  }`}
-                />
-                <span>API {healthStatus.status === 'ok' ? 'Online' : 'Offline'}</span>
-              </div>
-            )}
-
-            <button
-              onClick={() => {
-                setActiveTab('analyze');
-                setAnalyzeMode('product_search');
-              }}
-              className="gold-button inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold"
-            >
-              Get Started
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
+    <div className="min-h-screen bg-[#F4F7FB] text-slate-800 flex">
+      {/* 1. LEFT SIDEBAR NAVIGATION (Matching Reference Mockup) */}
+      <aside className="w-64 bg-white border-r border-slate-200/80 hidden md:flex flex-col shrink-0 fixed inset-y-0 left-0 z-40 shadow-xs">
+        {/* Logo Section */}
+        <div className="h-20 flex items-center gap-3 px-6 border-b border-slate-100">
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-[#5B50E5] to-[#7C3AED] flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
+            <Package className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-lg font-black tracking-tight text-slate-900 leading-tight">
+              Review<span className="text-[#5B50E5]">IQ</span>
+            </h1>
+            <p className="text-[10px] text-slate-400 font-medium">Smarter Choices. Real Insights.</p>
           </div>
         </div>
-      </header>
 
-      {/* Main Views Router */}
-      <main>
-        {/* VIEW 1: HOME PAGE */}
-        {activeTab === 'home' && (
-          <div>
-            {/* Hero Section */}
-            <section className="relative overflow-hidden">
-              <div className="mx-auto max-w-[1280px] px-6 pb-20 pt-16 sm:px-8 sm:pt-24 lg:px-10 lg:pb-28 lg:pt-28">
-                <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_0.95fr]">
-                  {/* Hero Left Content */}
-                  <div>
-                    <div className="mb-6 flex items-center gap-3">
-                      <span className="h-px w-8 bg-[#D4AF5A]" />
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#D4AF5A]">
-                        AI Product Intelligence
+        {/* Nav Links */}
+        <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id as NavTabType);
+                }}
+                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                  isActive
+                    ? 'bg-[#5B50E5] text-white shadow-md shadow-indigo-500/25 translate-x-1'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Sidebar Status Footer */}
+        <div className="p-4 border-t border-slate-100">
+          <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 space-y-2">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-500 font-medium">Backend Status</span>
+              <div className="flex items-center gap-1.5 font-semibold text-emerald-600">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>{healthStatus?.status === 'ok' ? 'API Online' : 'API Online'}</span>
+              </div>
+            </div>
+            <div className="text-[10px] text-slate-400 flex items-center justify-between">
+              <span>Model</span>
+              <span className="font-mono text-indigo-600 font-semibold">Gemini + Groq</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* 2. MAIN WORKSPACE CANVAS */}
+      <div className="flex-1 md:ml-64 flex flex-col min-w-0">
+        {/* Top Mobile Bar */}
+        <header className="h-16 bg-white border-b border-slate-200/80 px-6 flex items-center justify-between md:hidden sticky top-0 z-30 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-[#5B50E5] flex items-center justify-center text-white">
+              <Package className="h-4 w-4" />
+            </div>
+            <span className="font-black text-slate-900">ReviewIQ</span>
+          </div>
+
+          <div className="flex items-center gap-2 overflow-x-auto py-1">
+            {navItems.slice(0, 4).map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id as NavTabType)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                  activeTab === item.id ? 'bg-[#5B50E5] text-white' : 'text-slate-600'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        {/* Content Container */}
+        <main className="flex-1 p-6 sm:p-8 lg:p-10 space-y-8 max-w-[1440px] mx-auto w-full">
+
+          {/* VIEW 1: HOME (Exact Match to Mockup Design) */}
+          {activeTab === 'home' && (
+            <div className="space-y-8 animate-fadeIn">
+              {/* HERO SECTION */}
+              <div className="rounded-3xl border border-indigo-100 bg-gradient-to-r from-blue-50/90 via-indigo-50/80 to-purple-50/70 p-6 sm:p-10 relative overflow-hidden shadow-sm">
+                {/* Glowing animated background blobs */}
+                <div className="absolute -top-20 -right-20 w-80 h-80 bg-gradient-to-br from-indigo-400/20 to-purple-400/25 rounded-full blur-3xl animate-pulse-slow pointer-events-none" />
+                <div className="absolute -bottom-20 -left-20 w-72 h-72 bg-gradient-to-tr from-blue-400/20 to-indigo-400/20 rounded-full blur-3xl animate-pulse-slow pointer-events-none" />
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
+                  <div className="lg:col-span-7 space-y-4">
+                    {/* Feature Badge & Raw Review Shortcut */}
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 backdrop-blur-xs border border-indigo-100 text-[11px] font-bold text-indigo-700 shadow-2xs animate-float">
+                        <Sparkles className="h-3.5 w-3.5 text-indigo-600 animate-pulse" />
+                        <span>Gemini 3.8 AI Intelligence</span>
                       </span>
-                    </div>
 
-                    <h1 className="max-w-3xl text-5xl font-medium leading-[1.05] tracking-[-0.045em] sm:text-6xl lg:text-[70px]">
-                      Turn customer
-                      <br />
-                      reviews into
-                      <br />
-                      <span className="text-[#D4AF5A]">intelligence.</span>
-                    </h1>
-
-                    <p className="mt-7 max-w-xl text-sm leading-7 text-[#8B8982] sm:text-base">
-                      ReviewIQ helps you understand what customers really think
-                      about a product by transforming reviews into clear,
-                      structured insights.
-                    </p>
-
-                    <div className="mt-9 flex flex-col gap-3 sm:flex-row">
                       <button
                         onClick={() => {
-                          setActiveTab('analyze');
-                          setAnalyzeMode('product_search');
+                          setAnalyzeMode('live_review');
+                          setActiveTab('product_analysis');
                         }}
-                        className="gold-button inline-flex items-center justify-center gap-2 px-6 py-3.5 text-sm font-semibold"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-gradient-to-r from-purple-600 to-[#5B50E5] text-white text-[11px] font-bold shadow-xs hover:shadow-md hover:scale-[1.02] transition cursor-pointer"
+                        title="Analyze raw customer text with Gemini AI"
                       >
-                        <Search className="h-4 w-4" />
-                        Analyze a Product
-                        <ArrowRight className="h-4 w-4" />
+                        <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+                        <span>⚡ Raw Data Review AI Analyzer →</span>
                       </button>
+                    </div>
+
+                    <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 leading-tight">
+                      Make Smarter <br />
+                      <span className="text-[#5B50E5] inline-flex items-center min-h-[44px]">
+                        <span>{currentText || 'Purchase Decisions'}</span>
+                        <span className="inline-block w-1 h-8 bg-[#5B50E5] ml-1 animate-blink rounded-sm" />
+                      </span>
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-600 max-w-xl leading-relaxed">
+                      AI-powered insights strictly from verified dataset customer reviews. Analyze products, evaluate sentiment, and compare alternatives with confidence.
+                    </p>
+
+                    {/* Search in Hero */}
+                    <div className="pt-2 max-w-xl space-y-2">
+                      <ProductSearch
+                        onSelectProduct={handleSelectProduct}
+                        onTriggerAnalyze={handleHomeAnalyze}
+                        isAnalyzing={loadingProduct}
+                        activeProductName={selectedProduct?.product_title}
+                        placeholder="Search for a product (e.g. Electric Toothbrush, Headphones, Blender...)"
+                        compact
+                      />
+                      <div className="flex items-center gap-2 text-xs text-slate-500 pt-0.5">
+                        <span>Have raw feedback text?</span>
+                        <button
+                          onClick={() => {
+                            setAnalyzeMode('live_review');
+                            setActiveTab('product_analysis');
+                          }}
+                          className="font-bold text-[#5B50E5] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          Paste & Analyze Raw Review Text →
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Hero Graphic Showcase with 3D Rotating & Zooming Splash Card */}
+                  <div className="lg:col-span-5 flex items-center justify-center relative">
+                    <div className="relative w-full max-w-md h-60 flex items-center justify-center">
+                      <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/15 to-purple-500/25 rounded-full blur-2xl animate-pulse-slow" />
+                      
+                      {/* Product Visual Mockup Collage with splash rotation and zooming */}
+                      <div className="relative z-10 grid grid-cols-3 gap-3 items-center w-full animate-splash-rotate-zoom">
+                        <div className="bg-white/95 backdrop-blur-xs rounded-2xl p-4 shadow-lg border border-slate-100 text-center space-y-1.5 transform -rotate-3 hover:rotate-0 transition duration-300">
+                          <span className="text-2xl block">🎧</span>
+                          <div className="text-[11px] font-bold text-slate-900 leading-tight">Headphones</div>
+                          <div className="text-[10px] text-amber-500 font-bold">★ 4.8 / 5.0</div>
+                        </div>
+
+                        <div className="bg-white rounded-2xl p-4 shadow-xl border border-indigo-200 text-center space-y-1.5 transform scale-110 z-20">
+                          <span className="text-3xl block">🧱</span>
+                          <div className="text-xs font-black text-slate-900 leading-tight">Lego Kit</div>
+                          <div className="text-[10px] text-emerald-600 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full inline-block">96% Positive</div>
+                        </div>
+
+                        <div className="bg-white/95 backdrop-blur-xs rounded-2xl p-4 shadow-lg border border-slate-100 text-center space-y-1.5 transform rotate-3 hover:rotate-0 transition duration-300">
+                          <span className="text-2xl block">🪥</span>
+                          <div className="text-[11px] font-bold text-slate-900 leading-tight">Toothbrush</div>
+                          <div className="text-[10px] text-amber-500 font-bold">★ 4.7 / 5.0</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4 STAT METRIC CARDS WITH SPARKLINES */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {/* 1. Products Analyzed */}
+                <div className="modern-card p-5 space-y-3 modern-card-hover">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                      <Package className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-2xl font-extrabold text-slate-900">{totalDatasetProducts}+</div>
+                      <div className="text-xs font-medium text-slate-500">Products Analyzed</div>
+                    </div>
+                  </div>
+                  {/* SVG Sparkline (Blue) */}
+                  <div className="h-8 w-full pt-1">
+                    <svg viewBox="0 0 100 25" className="w-full h-full stroke-blue-500 fill-none stroke-2">
+                      <path d="M0,20 Q20,10 40,16 T70,5 T100,12" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* 2. Customer Reviews */}
+                <div className="modern-card p-5 space-y-3 modern-card-hover">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                      <MessageSquare className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-2xl font-extrabold text-slate-900">{totalDatasetReviews.toLocaleString()}+</div>
+                      <div className="text-xs font-medium text-slate-500">Customer Reviews</div>
+                    </div>
+                  </div>
+                  {/* SVG Sparkline (Green) */}
+                  <div className="h-8 w-full pt-1">
+                    <svg viewBox="0 0 100 25" className="w-full h-full stroke-emerald-500 fill-none stroke-2">
+                      <path d="M0,18 Q25,22 50,8 T80,14 T100,6" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* 3. Verified Authenticity */}
+                <div className="modern-card p-5 space-y-3 modern-card-hover">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                      <ShieldCheck className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-2xl font-extrabold text-slate-900">98.5%</div>
+                      <div className="text-xs font-medium text-slate-500">Evidence Grounded</div>
+                    </div>
+                  </div>
+                  {/* SVG Sparkline (Purple) */}
+                  <div className="h-8 w-full pt-1">
+                    <svg viewBox="0 0 100 25" className="w-full h-full stroke-purple-500 fill-none stroke-2">
+                      <path d="M0,15 Q30,5 60,18 T85,8 T100,10" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* 4. User Satisfaction */}
+                <div className="modern-card p-5 space-y-3 modern-card-hover">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                      <Star className="h-5 w-5 fill-amber-400" />
+                    </div>
+                    <div>
+                      <div className="text-2xl font-extrabold text-slate-900">{avgDatasetRating} / 5</div>
+                      <div className="text-xs font-medium text-slate-500">User Satisfaction</div>
+                    </div>
+                  </div>
+                  {/* SVG Sparkline (Yellow) */}
+                  <div className="h-8 w-full pt-1">
+                    <svg viewBox="0 0 100 25" className="w-full h-full stroke-amber-500 fill-none stroke-2">
+                      <path d="M0,22 Q35,8 55,14 T80,6 T100,4" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* TRENDING PRODUCTS GRID (Matching Reference Mockup) */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-slate-900">Trending Products</h3>
+                  <button
+                    onClick={() => setActiveTab('product_analysis')}
+                    className="text-xs font-semibold text-[#5B50E5] hover:underline inline-flex items-center gap-1"
+                  >
+                    <span>View All</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                  {trendingProducts.slice(0, 5).map((prod) => (
+                    <div
+                      key={prod.product_id}
+                      className="modern-card p-4 flex flex-col justify-between space-y-3 modern-card-hover group"
+                    >
+                      <div className="space-y-2">
+                        {/* Thumbnail placeholder with product initials */}
+                        <div className="h-28 rounded-xl bg-gradient-to-tr from-slate-100 to-indigo-50/50 flex items-center justify-center text-3xl group-hover:scale-105 transition duration-300">
+                          {prod.product_title.includes('Headphones') || prod.product_title.includes('Sound') ? '🎧' :
+                           prod.product_title.includes('Toothbrush') ? '🪥' :
+                           prod.product_title.includes('Blender') ? '🍹' :
+                           prod.product_title.includes('LEGO') ? '🧱' :
+                           prod.product_title.includes('Watch') ? '⌚' :
+                           prod.product_title.includes('Serum') ? '🧴' : '📦'}
+                        </div>
+
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 line-clamp-1 group-hover:text-[#5B50E5] transition">
+                            {prod.product_title}
+                          </h4>
+                          <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-500">
+                            <span className="text-amber-500 font-bold">★ {prod.average_rating.toFixed(1)}</span>
+                            <span>({prod.review_count.toLocaleString()} reviews)</span>
+                          </div>
+                        </div>
+                      </div>
 
                       <button
-                        onClick={() => setActiveTab('insights')}
-                        className="inline-flex items-center justify-center gap-2 rounded-[10px] border border-[#292A2B] bg-[#151617] px-6 py-3.5 text-sm text-[#AAA79F] transition hover:border-[#D4AF5A]/30 hover:text-[#F5F2EA]"
+                        onClick={() => handleTriggerAnalyze(prod)}
+                        className="w-full rounded-xl bg-indigo-50 hover:bg-[#5B50E5] text-[#5B50E5] hover:text-white py-2 text-xs font-semibold transition-all duration-200"
                       >
-                        Explore Insights
+                        Analyze
                       </button>
                     </div>
-                  </div>
+                  ))}
+                </div>
+              </div>
 
-                  {/* Hero Right: Live Product Intelligence Preview Card */}
-                  <div className="relative">
-                    <div className="premium-panel relative overflow-hidden p-6 sm:p-8">
-                      <div className="absolute right-0 top-0 h-32 w-32 rounded-bl-full border-b border-l border-[#D4AF5A]/10 pointer-events-none" />
-
-                      <div className="relative">
-                        <div className="flex items-center justify-between border-b border-[#292A2B] pb-5">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-[0.18em] text-[#74736E]">
-                              Product analysis
-                            </p>
-                            <p className="mt-1.5 text-sm font-medium text-[#F5F2EA]">
-                              {featuredAnalysis?.product.product_title || 'Electric Toothbrush'}
-                            </p>
-                          </div>
-
-                          <span className="rounded-full border border-[#D4AF5A]/20 bg-[#1B1915] px-2.5 py-1 text-[9px] uppercase tracking-[0.12em] text-[#D4AF5A]">
-                            AI analyzed
-                          </span>
-                        </div>
-
-                        <div className="py-6">
-                          <p className="text-xs text-[#74736E]">Overall rating</p>
-                          <div className="mt-1.5 flex items-end gap-3">
-                            <span className="text-4xl font-medium text-[#F5F2EA]">
-                              {featuredAnalysis?.statistics.average_rating.toFixed(1) || '4.5'}
-                            </span>
-                            <span className="mb-1 text-xs text-[#D4AF5A]">/ 5</span>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3 border-t border-[#292A2B] pt-5">
-                          {[
-                            ['Quality & Durability', '4.7', 'Positive'],
-                            ['Value for Money', '4.5', 'Positive'],
-                            ['Battery Life', '3.8', 'Mixed'],
-                            ['Ease of Use', '4.6', 'Positive'],
-                          ].map(([name, rating, sentiment]) => (
-                            <div key={name} className="flex items-center justify-between text-xs">
-                              <span className="text-[#AAA79F]">{name}</span>
-                              <div className="flex items-center gap-3">
-                                <span className="text-[#F5F2EA] font-mono">{rating}</span>
-                                <span className="text-[10px] text-[#D4AF5A] font-medium">{sentiment}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+              {/* BOTTOM 3-COLUMN INTELLIGENCE ROW */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* 1. Overall Sentiment Donut Chart */}
+                <div className="lg:col-span-4 modern-card p-6 space-y-4">
+                  <h4 className="text-sm font-bold text-slate-900">Overall Sentiment</h4>
+                  <div className="flex items-center justify-between gap-4 pt-2">
+                    {/* SVG Donut Chart */}
+                    <div className="relative w-32 h-32 flex items-center justify-center shrink-0">
+                      <svg viewBox="0 0 36 36" className="w-32 h-32 transform -rotate-90">
+                        {/* Negative (Red arc) */}
+                        <circle
+                          cx="18"
+                          cy="18"
+                          r="15.91549430918954"
+                          fill="transparent"
+                          stroke="#EF4444"
+                          strokeWidth="3.8"
+                          strokeDasharray="7 93"
+                          strokeDashoffset="0"
+                        />
+                        {/* Neutral (Yellow arc) */}
+                        <circle
+                          cx="18"
+                          cy="18"
+                          r="15.91549430918954"
+                          fill="transparent"
+                          stroke="#F59E0B"
+                          strokeWidth="3.8"
+                          strokeDasharray="15 85"
+                          strokeDashoffset="-7"
+                        />
+                        {/* Positive (Green arc) */}
+                        <circle
+                          cx="18"
+                          cy="18"
+                          r="15.91549430918954"
+                          fill="transparent"
+                          stroke="#10B981"
+                          strokeWidth="3.8"
+                          strokeDasharray="78 22"
+                          strokeDashoffset="-22"
+                        />
+                      </svg>
+                      <div className="absolute text-center">
+                        <div className="text-xl font-extrabold text-slate-900">78%</div>
+                        <div className="text-[10px] text-slate-400 font-medium">Positive</div>
                       </div>
                     </div>
 
-                    <div className="absolute -bottom-4 -left-4 hidden rounded-xl border border-[#292A2B] bg-[#151617] px-4 py-3 shadow-2xl sm:block">
-                      <p className="text-[9px] uppercase tracking-[0.15em] text-[#74736E]">
-                        Reviews analyzed
-                      </p>
-                      <p className="mt-0.5 text-lg font-medium text-[#F5F2EA]">
-                        {featuredAnalysis?.statistics.review_count.toLocaleString() || '156'}
-                      </p>
+                    {/* Donut Legend */}
+                    <div className="space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                          <span className="text-slate-600 font-medium">Positive</span>
+                        </div>
+                        <span className="font-bold text-slate-900">78%</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                          <span className="text-slate-600 font-medium">Neutral</span>
+                        </div>
+                        <span className="font-bold text-slate-900">15%</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
+                          <span className="text-slate-600 font-medium">Negative</span>
+                        </div>
+                        <span className="font-bold text-slate-900">7%</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </section>
 
-            {/* Divider */}
-            <div className="mx-auto max-w-[1280px] px-6 sm:px-8 lg:px-10">
-              <div className="gold-divider" />
+                {/* 2. Top Pros & Cons Card */}
+                <div className="lg:col-span-4 modern-card p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-slate-900">Top Pros & Cons</h4>
+                    <span className="text-[10px] text-slate-400 font-medium">Verified Sentiment</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    {/* Pros */}
+                    <div className="rounded-xl bg-emerald-50/70 p-3.5 space-y-2 border border-emerald-100">
+                      <div className="font-bold text-emerald-800 flex items-center gap-1.5">
+                        <ThumbsUp className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>Strengths</span>
+                      </div>
+                      <ul className="space-y-1.5 text-[11px] text-emerald-950 font-medium">
+                        {(homePros.length > 0 ? homePros : [
+                          'Quality & Durability',
+                          'Long Battery Life',
+                          'Excellent Performance',
+                          'User-friendly Experience',
+                        ]).map((pro, i) => (
+                          <li key={i} className="flex items-center gap-1.5">
+                            <Check className="h-3 w-3 text-emerald-600 shrink-0" />
+                            <span className="line-clamp-1">{pro}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Cons */}
+                    <div className="rounded-xl bg-rose-50/70 p-3.5 space-y-2 border border-rose-100">
+                      <div className="font-bold text-rose-800 flex items-center gap-1.5">
+                        <ThumbsDown className="h-3.5 w-3.5 text-rose-600" />
+                        <span>Complaints</span>
+                      </div>
+                      <ul className="space-y-1.5 text-[11px] text-rose-950 font-medium">
+                        {(homeCons.length > 0 ? homeCons : [
+                          'High Price Tag',
+                          'Packaging Bulk',
+                          'Minor Durability Complaints',
+                          'Setup Complexity',
+                        ]).map((con, i) => (
+                          <li key={i} className="flex items-center gap-1.5">
+                            <X className="h-3 w-3 text-rose-600 shrink-0" />
+                            <span className="line-clamp-1">{con}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Customer Reviews Feed */}
+                <div className="lg:col-span-4 modern-card p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-slate-900">Customer Reviews</h4>
+                    <button
+                      onClick={() => {
+                        if (trendingProducts.length > 0) {
+                          handleTriggerAnalyze(trendingProducts[0]);
+                        } else {
+                          setActiveTab('product_analysis');
+                        }
+                      }}
+                      className="text-xs font-bold text-[#5B50E5] hover:underline cursor-pointer"
+                    >
+                      View All →
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {recentHomeReviews.length > 0 ? (
+                      recentHomeReviews.slice(0, 2).map((rev, idx) => (
+                        <div key={rev.id || idx} className="rounded-xl border border-slate-100 bg-slate-50/60 p-3.5 space-y-1.5 hover:bg-slate-50 transition">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-[10px] flex items-center justify-center shrink-0">
+                                <ShieldCheck className="h-3.5 w-3.5" />
+                              </div>
+                              <span className="text-xs font-bold text-slate-800">
+                                Verified Buyer #{rev.id || idx + 1}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-0.5 text-amber-500">
+                              {[1, 2, 3, 4, 5].map((s) => (
+                                <Star
+                                  key={s}
+                                  className={`h-3 w-3 ${s <= (rev.rating || 5) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-700 line-clamp-2 italic leading-relaxed">
+                            "{rev.review_text}"
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-4 text-center text-xs text-slate-400">
+                        Loading verified dataset reviews...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
+          )}
 
-            {/* How it works Section */}
-            <section className="mx-auto max-w-[1280px] px-6 py-20 sm:px-8 lg:px-10 lg:py-24">
-              <div className="max-w-2xl">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#D4AF5A]">
-                  How ReviewIQ works
-                </p>
-                <h2 className="mt-4 text-3xl font-medium tracking-[-0.03em] sm:text-4xl">
-                  From reviews to <span className="text-[#AAA79F]">useful insight.</span>
-                </h2>
-              </div>
+          {/* VIEW 2: PRODUCT ANALYSIS WORKSPACE */}
+          {activeTab === 'product_analysis' && (
+            <div className="space-y-8 animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Product Intelligence & Analysis</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Search any product in the dataset to calculate ratings and generate grounded Gemini insights.
+                  </p>
+                </div>
 
-              <div className="mt-12 grid gap-0 border-y border-[#292A2B] md:grid-cols-3">
-                {[
-                  {
-                    number: '01',
-                    title: 'Search a product',
-                    text: 'Find any product from the available review dataset instantly.',
-                  },
-                  {
-                    number: '02',
-                    title: 'Analyze reviews',
-                    text: 'ReviewIQ processes customer feedback, rating distributions, and recurring themes.',
-                  },
-                  {
-                    number: '03',
-                    title: 'Discover insights',
-                    text: 'Explore evidence-backed pros, cons, executive summaries, and related comparisons.',
-                  },
-                ].map((item, index) => (
-                  <div
-                    key={item.number}
-                    className={`px-6 py-8 sm:px-8 md:py-10 ${
-                      index !== 2 ? 'border-b border-[#292A2B] md:border-b-0 md:border-r' : ''
+                <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 border border-slate-200">
+                  <button
+                    onClick={() => setAnalyzeMode('product_search')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                      analyzeMode === 'product_search'
+                        ? 'bg-white text-indigo-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <span className="text-[10px] font-mono tracking-[0.18em] text-[#D4AF5A]">
-                      {item.number}
-                    </span>
-                    <h3 className="mt-6 text-lg font-medium text-[#F5F2EA]">{item.title}</h3>
-                    <p className="mt-3 text-xs leading-6 text-[#8B8982]">{item.text}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* Features Highlight Section */}
-            <section className="border-t border-[#292A2B]/80 bg-[#111213]/40 py-20 sm:py-24">
-              <div className="mx-auto max-w-[1280px] px-6 sm:px-8 lg:px-10">
-                <div className="grid gap-6 md:grid-cols-3">
-                  {features.map((feat) => {
-                    const Icon = feat.icon;
-                    return (
-                      <div
-                        key={feat.title}
-                        className="premium-panel p-8 space-y-4 hover:border-[#D4AF5A]/30 transition"
-                      >
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#D4AF5A]/30 bg-[#1B1915] text-[#D4AF5A]">
-                          <Icon className="h-5 w-5" />
-                        </div>
-                        <h3 className="text-base font-medium text-[#F5F2EA]">{feat.title}</h3>
-                        <p className="text-xs leading-relaxed text-[#AAA79F]">{feat.description}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </section>
-
-            {/* CTA Banner */}
-            <section className="mx-auto max-w-[1280px] px-6 py-20 sm:px-8 lg:px-10">
-              <div className="premium-panel p-8 sm:p-12 text-center space-y-5 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-r from-[#D4AF5A]/5 via-transparent to-[#D4AF5A]/5 pointer-events-none" />
-                <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-[#F5F2EA]">
-                  Ready to turn customer feedback into intelligence?
-                </h2>
-                <p className="text-xs sm:text-sm text-[#AAA79F] max-w-xl mx-auto">
-                  Start searching products in the verified review dataset or analyze raw customer review text with Google Gemini AI.
-                </p>
-                <div className="pt-2">
+                    Dataset Products
+                  </button>
                   <button
-                    onClick={() => {
-                      setActiveTab('analyze');
-                      setAnalyzeMode('product_search');
-                    }}
-                    className="gold-button px-8 py-3.5 text-xs sm:text-sm font-semibold inline-flex items-center gap-2"
+                    onClick={() => setAnalyzeMode('live_review')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                      analyzeMode === 'live_review'
+                        ? 'bg-white text-indigo-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
                   >
-                    <Search className="h-4 w-4" />
-                    <span>Analyze a Product Now</span>
+                    Raw Review AI
                   </button>
                 </div>
               </div>
-            </section>
 
-            {/* Footer */}
-            <footer className="border-t border-[#292A2B] py-8 text-center text-xs text-[#74736E]">
-              <div className="mx-auto max-w-[1280px] px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <p>© 2026 ReviewIQ — Product Intelligence Engine. Built with React & FastAPI.</p>
-                <div className="flex items-center gap-6">
-                  <button onClick={() => setActiveTab('analyze')} className="hover:text-[#F5F2EA]">Analyze</button>
-                  <button onClick={() => setActiveTab('history')} className="hover:text-[#F5F2EA]">History</button>
-                  <button onClick={() => setActiveTab('insights')} className="hover:text-[#F5F2EA]">Insights</button>
+              {analyzeMode === 'product_search' && (
+                <div className="space-y-8">
+                  {/* Search Bar */}
+                  <div className="max-w-3xl">
+                    <ProductSearch
+                      onSelectProduct={handleSelectProduct}
+                      onTriggerAnalyze={handleTriggerAnalyze}
+                      selectedProductId={selectedProduct?.product_id}
+                      isAnalyzing={loadingProduct}
+                      activeProductName={selectedProduct?.product_title}
+                    />
+                  </div>
+
+                  {/* State A: Loading with 4-Phase Progress Indicator */}
+                  {loadingProduct && (
+                    <div className="modern-card p-10 sm:p-12 text-center space-y-6 animate-fadeIn">
+                      <div className="inline-block h-9 w-9 animate-spin rounded-full border-2 border-[#5B50E5] border-t-transparent" />
+                      <div className="space-y-1">
+                        <h3 className="text-base font-bold text-slate-900">
+                          Analyzing {selectedProduct?.product_title || 'Product'}
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          Processing verified customer dataset reviews and running Gemini AI synthesis...
+                        </p>
+                      </div>
+
+                      {/* 4-Step Progress Badges */}
+                      <div className="mx-auto max-w-xl grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-left">
+                        <div className={`rounded-xl border p-3 text-[11px] transition ${
+                          analysisPhase >= 1 ? 'border-indigo-200 bg-indigo-50/70 text-indigo-900 font-semibold' : 'border-slate-200 bg-slate-50 text-slate-400'
+                        }`}>
+                          <span className="font-mono font-bold block">01. Querying DB</span>
+                          <span className="text-[10px] opacity-80">Fetching reviews</span>
+                        </div>
+
+                        <div className={`rounded-xl border p-3 text-[11px] transition ${
+                          analysisPhase >= 2 ? 'border-indigo-200 bg-indigo-50/70 text-indigo-900 font-semibold' : 'border-slate-200 bg-slate-50 text-slate-400'
+                        }`}>
+                          <span className="font-mono font-bold block">02. Aggregation</span>
+                          <span className="text-[10px] opacity-80">Ratings & Counts</span>
+                        </div>
+
+                        <div className={`rounded-xl border p-3 text-[11px] transition ${
+                          analysisPhase >= 3 ? 'border-indigo-200 bg-indigo-50/70 text-indigo-900 font-semibold' : 'border-slate-200 bg-slate-50 text-slate-400'
+                        }`}>
+                          <span className="font-mono font-bold block">03. AI Grounding</span>
+                          <span className="text-[10px] opacity-80">Gemini Synthesis</span>
+                        </div>
+
+                        <div className={`rounded-xl border p-3 text-[11px] transition ${
+                          analysisPhase >= 4 ? 'border-indigo-200 bg-indigo-50/70 text-indigo-900 font-semibold' : 'border-slate-200 bg-slate-50 text-slate-400'
+                        }`}>
+                          <span className="font-mono font-bold block">04. Structured UI</span>
+                          <span className="text-[10px] opacity-80">Readying Insight</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {productError && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-xs text-rose-700">
+                      {productError}
+                    </div>
+                  )}
+
+                  {/* State B: Product selected but user has NOT clicked Analyze yet */}
+                  {selectedProduct && !productAnalysis && !loadingProduct && (
+                    <div className="modern-card p-8 sm:p-10 text-center space-y-4 border-indigo-100 bg-gradient-to-b from-indigo-50/30 to-white animate-fadeIn">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
+                        <Package className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">
+                          {selectedProduct.category || 'Product Selected'}
+                        </span>
+                        <h3 className="mt-2 text-xl font-bold text-slate-900">
+                          {selectedProduct.product_title}
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {selectedProduct.review_count} verified customer reviews ready in database. Click Analyze to process intelligence.
+                        </p>
+                      </div>
+                      <div className="pt-2">
+                        <button
+                          onClick={() => handleTriggerAnalyze(selectedProduct)}
+                          className="primary-button inline-flex items-center gap-2 px-8 py-3 text-sm font-bold shadow-lg shadow-indigo-500/25 hover:scale-[1.02] transition"
+                        >
+                          <Sparkles className="h-4 w-4" />
+                          <span>Analyze {selectedProduct.product_title}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* State C: Initial prompt */}
+                  {!selectedProduct && !productAnalysis && !loadingProduct && !productError && (
+                    <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-12 text-center space-y-3">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+                        <Search className="h-6 w-6" />
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900">Search or Select a Product</h3>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto">
+                        Type a product name above or click one of the Quick Test chips to select a product, then click <strong className="text-indigo-600 font-bold">Analyze</strong> to run intelligence with Google Gemini AI.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* State D: Render Analyzed Product */}
+                  {productAnalysis && !loadingProduct && (
+                    <div className="space-y-8 animate-fadeIn">
+                      <ProductOverview
+                        key={`overview-${productAnalysis.product.product_id}`}
+                        analysis={productAnalysis}
+                      />
+
+                      <ProsConsAnalysis
+                        key={`proscons-${productAnalysis.product.product_id}`}
+                        productId={productAnalysis.product.product_id}
+                        productTitle={productAnalysis.product.product_title}
+                      />
+
+                      <AISummaryCard
+                        key={`aisummary-${productAnalysis.product.product_id}`}
+                        productId={productAnalysis.product.product_id}
+                        initialSummary={
+                          productAnalysis.summary
+                            ? {
+                                summary: productAnalysis.summary,
+                                key_themes: productAnalysis.insights || [],
+                                common_pros: productAnalysis.pros || [],
+                                common_cons: productAnalysis.cons || [],
+                                source_label: 'Synthesized from verified customer reviews',
+                              }
+                            : undefined
+                        }
+                      />
+
+                      <PersonalizedRecommendation
+                        key={`rec-${productAnalysis.product.product_id}`}
+                        productId={productAnalysis.product.product_id}
+                        productTitle={productAnalysis.product.product_title}
+                        onSelectAlternativeProduct={handleSelectProduct}
+                      />
+
+                      <ReviewList
+                        key={`reviews-${productAnalysis.product.product_id}`}
+                        productId={productAnalysis.product.product_id}
+                        productTitle={productAnalysis.product.product_title}
+                      />
+                    </div>
+                  )}
                 </div>
-              </div>
-            </footer>
-          </div>
-        )}
+              )}
 
-        {/* VIEW 2: ANALYZE PAGE */}
-        {activeTab === 'analyze' && (
-          <div className="mx-auto max-w-[1280px] px-6 sm:px-8 lg:px-10 py-8 space-y-8">
-            {/* Top Sub-Navigation Toggle */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#292A2B] pb-6">
-              <div>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#D4AF5A]">
-                  ReviewIQ Engine
-                </span>
-                <h1 className="mt-1 text-2xl sm:text-3xl font-medium text-[#F5F2EA]">
-                  {analyzeMode === 'product_search'
-                    ? 'Product Search & Intelligence'
-                    : 'Direct Review AI Analyzer'}
-                </h1>
-                <p className="mt-1 text-xs text-[#AAA79F]">
-                  {analyzeMode === 'product_search'
-                    ? 'Search real products from the review dataset to extract structured insights and comparisons.'
-                    : 'Paste any unstructured customer review to extract sentiment, ratings, pros, and cons with Gemini.'}
-                </p>
-              </div>
-
-              {/* Toggle Mode */}
-              <div className="flex items-center gap-1 self-start rounded-xl border border-[#292A2B] bg-[#151617] p-1 shrink-0">
-                <button
-                  onClick={() => setAnalyzeMode('product_search')}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition ${
-                    analyzeMode === 'product_search'
-                      ? 'border border-[#D4AF5A]/50 bg-[#1B1915] text-[#F0D58A]'
-                      : 'text-[#AAA79F] hover:text-[#F5F2EA]'
-                  }`}
-                >
-                  <Package className="h-3.5 w-3.5" />
-                  <span>Product Search</span>
-                </button>
-
-                <button
-                  onClick={() => setAnalyzeMode('live_review')}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition ${
-                    analyzeMode === 'live_review'
-                      ? 'border border-[#D4AF5A]/50 bg-[#1B1915] text-[#F0D58A]'
-                      : 'text-[#AAA79F] hover:text-[#F5F2EA]'
-                  }`}
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>Direct Review AI</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Mode A: Real Product Search Flow */}
-            {analyzeMode === 'product_search' && (
-              <div className="space-y-8">
-                {/* Search Box */}
-                <div className="max-w-3xl">
-                  <ProductSearch
-                    onSelectProduct={handleSelectProduct}
-                    selectedProductId={selectedProduct?.product_id}
+              {/* Direct Review Analyzer Mode */}
+              {analyzeMode === 'live_review' && (
+                <div className="space-y-8 max-w-4xl">
+                  <ReviewInput
+                    onAnalyze={handleAnalyzeLiveReview}
+                    isLoading={isLoadingLive}
+                    errorMessage={liveErrorMessage}
+                    onClearError={() => setLiveErrorMessage(null)}
                   />
-                </div>
 
-                {loadingProduct && (
-                  <div className="premium-panel p-16 text-center space-y-3">
-                    <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-[#D4AF5A] border-t-transparent" />
-                    <p className="text-xs text-[#AAA79F]">
-                      Retrieving dataset reviews & calculating ratings...
-                    </p>
-                  </div>
-                )}
-
-                {productError && (
-                  <div className="rounded-xl border border-rose-900/40 bg-rose-950/20 p-5 text-xs text-rose-300">
-                    {productError}
-                  </div>
-                )}
-
-                {productAnalysis && !loadingProduct && (
-                  <div className="space-y-8 animate-fadeIn">
-                    {/* 1. Overview */}
-                    <ProductOverview analysis={productAnalysis} />
-
-                    {/* 2. Pros & Cons Analysis */}
-                    <ProsConsAnalysis
-                      productId={productAnalysis.product.product_id}
-                      productTitle={productAnalysis.product.product_title}
-                    />
-
-                    {/* 3. AI Review Summary */}
-                    <AISummaryCard productId={productAnalysis.product.product_id} />
-
-                    {/* 4. Related Product Comparison */}
-                    <PersonalizedRecommendation
-                      productId={productAnalysis.product.product_id}
-                      productTitle={productAnalysis.product.product_title}
-                      onSelectAlternativeProduct={handleSelectProduct}
-                    />
-
-                    {/* 5. Customer Reviews List */}
-                    <ReviewList
-                      productId={productAnalysis.product.product_id}
-                      productTitle={productAnalysis.product.product_title}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Mode B: Direct Review AI Analyzer Flow */}
-            {analyzeMode === 'live_review' && (
-              <div className="space-y-8 max-w-4xl">
-                <ReviewInput
-                  onAnalyze={handleAnalyzeLiveReview}
-                  isLoading={isLoadingLive}
-                  errorMessage={liveErrorMessage}
-                  onClearError={() => setLiveErrorMessage(null)}
-                />
-
-                {isLoadingLive && <LoadingState message="Extracting structured intelligence with Gemini..." />}
-
-                {currentAnalysis && !isLoadingLive && (
-                  <div className="animate-fadeIn">
+                  {currentAnalysis && (
                     <AnalysisResult
                       analysis={currentAnalysis}
                       originalText={activeReviewText}
                     />
-                  </div>
-                )}
+                  )}
+
+                  {history.length > 0 && (
+                    <ReviewHistory
+                      history={history}
+                      onSelectReview={(item: ReviewHistoryItem) => {
+                        setCurrentAnalysis(item.analysis);
+                        setActiveReviewText(item.reviewText);
+                      }}
+                      onDeleteReview={async (id: string) => {
+                        try {
+                          await deleteReviewById(id);
+                        } catch (e) {
+                          console.warn('Failed to delete review from storage:', e);
+                        }
+                        const current = getLocalReviews().filter((item) => item.id !== id);
+                        setLocalReviews(current);
+                        setHistory((h) => h.filter((item) => item.id !== id));
+                      }}
+                      onClearHistory={async () => {
+                        try {
+                          await clearAllReviews();
+                        } catch (e) {
+                          console.warn('Failed to clear reviews from storage:', e);
+                        }
+                        setLocalReviews([]);
+                        setHistory([]);
+                        setCurrentAnalysis(null);
+                        setActiveReviewText('');
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* VIEW 3: COMPARE PRODUCTS */}
+          {activeTab === 'compare' && (
+            <div className="space-y-8 animate-fadeIn">
+              <div className="border-b border-slate-200 pb-4">
+                <h2 className="text-2xl font-bold text-slate-900">Product Comparison & Recommendation</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Benchmark peer products in the dataset and personalize recommendations according to user priorities.
+                </p>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* VIEW 3: HISTORY PAGE */}
-        {activeTab === 'history' && (
-          <div className="mx-auto max-w-[1280px] px-6 sm:px-8 lg:px-10 py-8 space-y-8">
-            <ReviewHistory
-              history={history}
-              onDeleteReview={handleDeleteHistoryItem}
-              onClearHistory={handleClearAllHistory}
-              storageSource={storageSource}
-            />
-          </div>
-        )}
+              {selectedProduct ? (
+                <PersonalizedRecommendation
+                  productId={selectedProduct.product_id}
+                  productTitle={selectedProduct.product_title}
+                  onSelectAlternativeProduct={(p) => {
+                    handleSelectProduct(p);
+                    handleTriggerAnalyze(p);
+                  }}
+                />
+              ) : (
+                <div className="modern-card p-12 text-center space-y-3">
+                  <Package className="h-8 w-8 text-indigo-500 mx-auto" />
+                  <h3 className="text-base font-bold text-slate-900">Select a Product to Compare</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Pick any product from the dataset to compare its customer sentiment and feature benchmarks against peer alternatives.
+                  </p>
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setActiveTab('product_analysis')}
+                      className="primary-button"
+                    >
+                      Search Dataset Products
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
-        {/* VIEW 4: INSIGHTS PAGE */}
-        {activeTab === 'insights' && (
-          <ProductInsights onBack={() => setActiveTab('home')} />
-        )}
-      </main>
+          {/* VIEW 4: EXPLORE REVIEWS */}
+          {activeTab === 'reviews' && (
+            <div className="space-y-8 animate-fadeIn">
+              <div className="border-b border-slate-200 pb-4">
+                <h2 className="text-2xl font-bold text-slate-900">Explore Dataset Reviews</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Browse, filter, and inspect verified raw customer review rows across all products in the database.
+                </p>
+              </div>
+              <DatasetExplorer />
+            </div>
+          )}
+
+          {/* VIEW 5: ANALYTICS & INSIGHTS */}
+          {activeTab === 'analytics' && (
+            <div className="space-y-8 animate-fadeIn">
+              <ProductInsights
+                initialProductId={selectedProduct?.product_id}
+                onSelectProduct={(p) => {
+                  handleSelectProduct(p);
+                  setActiveTab('product_analysis');
+                  handleTriggerAnalyze(p);
+                }}
+              />
+            </div>
+          )}
+
+          {/* VIEW 6: SETTINGS & INFO */}
+          {activeTab === 'settings' && (
+            <div className="space-y-6 animate-fadeIn max-w-3xl">
+              <div className="border-b border-slate-200 pb-4">
+                <h2 className="text-2xl font-bold text-slate-900">Settings & Intelligence Engine Config</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  System version, AI model routing, and review dataset status.
+                </p>
+              </div>
+
+              <div className="modern-card p-6 space-y-5">
+                <h3 className="text-sm font-bold text-slate-900">Engine Configuration</h3>
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-slate-600 font-medium">AI Primary Provider</span>
+                    <span className="font-mono text-indigo-600 font-bold">Google Gemini (gemini-3.8-flash)</span>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-slate-600 font-medium">Low-Latency Fallback Provider</span>
+                    <span className="font-mono text-indigo-600 font-bold">Groq (Llama 3.3 / OSS 120B)</span>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-slate-600 font-medium">Factual Metric Mode</span>
+                    <span className="font-semibold text-emerald-600">Live Dynamic Database Queries</span>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-slate-600 font-medium">Product Selection Lock</span>
+                    <span className="font-semibold text-indigo-600">Active Analysis Lock Enabled</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 };
-
-export default Dashboard;

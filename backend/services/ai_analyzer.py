@@ -384,6 +384,32 @@ class AIAnalyzerService:
             capability=TASK_REVIEW_ANALYSIS,
             per_provider_limit=5,
         )
+        if not targets and self.gateway.providers.get(GEMINI_PROVIDER) is not None:
+            # Internal callers may invoke the SDK-backed path directly in tests or
+            # local debugging without a real env key. Keep the public validation
+            # gate in `analyze_review()` unchanged, but allow a fallback chain to
+            # be constructed from the verified Gemini registry when the SDK is
+            # available even though the environment is unconfigured.
+            try:
+                __import__("google.genai")
+            except Exception:
+                pass
+            else:
+                selected_primary = gemini_primary or model_registry.default_primary(GEMINI_PROVIDER) or DEFAULT_MODEL_NAME
+                ordered = [selected_primary]
+                for spec in model_registry.list_provider(
+                    GEMINI_PROVIDER,
+                    capability=TASK_REVIEW_ANALYSIS,
+                    enabled_only=True,
+                ):
+                    if spec.model in ordered:
+                        continue
+                    if spec.is_fallback_candidate:
+                        ordered.append(spec.model)
+                    if len(ordered) >= 5:
+                        break
+                targets = [ModelRef(provider=GEMINI_PROVIDER, model=model) for model in ordered[:5]]
+
         decision = None
         if targets:
             decision = select_initial_target(

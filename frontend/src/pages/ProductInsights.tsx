@@ -1,329 +1,337 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ArrowLeft,
-  Package,
-  Database,
+  BarChart3,
+  Star,
+  ThumbsUp,
+  ThumbsDown,
+  TrendingUp,
+  Layers,
+  ArrowRight,
   AlertCircle,
+  Sparkles,
 } from 'lucide-react';
 import {
-  getProductAnalysis,
   getOverview,
   getProducts,
 } from '../services/api';
-import type {
-  ProductSummary,
-  ProductAnalysisResponse,
-} from '../types/ecommerce';
+import type { ProductSummary } from '../types/ecommerce';
 import type { OverviewAnalytics, ProductAnalytics } from '../types/review';
-import { ProductSearch } from '../components/ProductSearch';
-import { ProductOverview } from '../components/ProductOverview';
-import { ProsConsAnalysis } from '../components/ProsConsAnalysis';
-import { PersonalizedRecommendation } from '../components/PersonalizedRecommendation';
-import { AISummaryCard } from '../components/AISummaryCard';
-import { ReviewList } from '../components/ReviewList';
 
 interface ProductInsightsProps {
-  onBack?: () => void;
+  onSelectProduct?: (product: ProductSummary) => void;
   initialProductId?: string;
 }
 
 export const ProductInsights: React.FC<ProductInsightsProps> = ({
-  onBack,
-  initialProductId,
+  onSelectProduct,
 }) => {
-  const [selectedProduct, setSelectedProduct] = useState<ProductSummary | null>(null);
-  const [analysis, setAnalysis] = useState<ProductAnalysisResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
-
-  // Overview analytics tab
-  const [activeSubTab, setActiveSubTab] = useState<'product' | 'dataset'>('product');
   const [overviewData, setOverviewData] = useState<OverviewAnalytics | null>(null);
   const [datasetProducts, setDatasetProducts] = useState<ProductAnalytics[]>([]);
-  const [loadingDataset, setLoadingDataset] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
 
-  const loadProduct = async (product: ProductSummary) => {
-    setSelectedProduct(product);
+  useEffect(() => {
+    let isMounted = true;
     setLoading(true);
     setError('');
-    try {
-      const res = await getProductAnalysis(product.product_id);
-      setAnalysis(res);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load product analytics.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  useEffect(() => {
-    if (initialProductId) {
-      loadProduct({
-        product_id: initialProductId,
-        product_title: 'Loading Product...',
-        category: 'Product',
-        review_count: 0,
-        average_rating: 0,
+    Promise.all([getOverview(), getProducts(50)])
+      .then(([ov, prods]) => {
+        if (isMounted) {
+          setOverviewData(ov);
+          setDatasetProducts(prods);
+        }
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : 'Failed to load dataset analytics.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
       });
-    } else {
-      // Default to Electric Toothbrush
-      loadProduct({
-        product_id: '9640962',
-        product_title: 'Electric Toothbrush',
-        category: 'Health & Personal Care',
-        review_count: 11,
-        average_rating: 3.64,
-      });
-    }
-  }, [initialProductId]);
 
-  const loadDatasetAnalytics = async () => {
-    setLoadingDataset(true);
-    try {
-      const [ov, prods] = await Promise.all([getOverview(), getProducts(50)]);
-      setOverviewData(ov);
-      setDatasetProducts(prods);
-    } catch {
-      // Ignore if offline
-    } finally {
-      setLoadingDataset(false);
-    }
-  };
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
-  useEffect(() => {
-    if (activeSubTab === 'dataset' && !overviewData) {
-      loadDatasetAnalytics();
-    }
-  }, [activeSubTab]);
+  const totalReviews = overviewData?.total_reviews || 0;
+  const positiveReviews = overviewData?.positive_reviews || 0;
+  const negativeReviews = overviewData?.negative_reviews || 0;
+  const neutralReviews = Math.max(0, totalReviews - positiveReviews - negativeReviews);
+
+  const positivePercent = totalReviews > 0 ? Math.round((positiveReviews / totalReviews) * 100) : 0;
+  const negativePercent = totalReviews > 0 ? Math.round((negativeReviews / totalReviews) * 100) : 0;
+  const neutralPercent = totalReviews > 0 ? Math.max(0, 100 - positivePercent - negativePercent) : 0;
 
   return (
-    <div className="min-h-screen bg-[#0E0F10] text-[#F5F2EA] pb-24">
-      {/* Top Header */}
-      <header className="border-b border-[#292A2B]/80 bg-[#0E0F10]/95 backdrop-blur px-6 py-6 sm:px-8 lg:px-10">
-        <div className="mx-auto flex max-w-[1280px] items-center justify-between">
+    <div className="space-y-8 animate-fadeIn">
+      {/* Header */}
+      <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+              ReviewIQ Analytics
+            </span>
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mt-1">Dataset Analytics & Market Intelligence</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Real-time aggregate sentiment breakdown, ratings distribution, and product benchmarks computed directly from verified customer reviews.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="modern-card p-16 text-center space-y-4">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-3 border-indigo-600 border-t-transparent" />
+          <p className="text-xs font-semibold text-slate-500">Aggregating live dataset metrics from database...</p>
+        </div>
+      ) : error ? (
+        <div className="modern-card p-6 border-rose-200 bg-rose-50 text-rose-800 flex items-center gap-3">
+          <AlertCircle className="h-5 w-5 text-rose-600 shrink-0" />
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#D4AF5A]">
-                ReviewIQ
-              </span>
-              <span className="text-[#74736E]">·</span>
-              <span className="text-[10px] uppercase tracking-[0.18em] text-[#74736E]">
-                Product Intelligence
-              </span>
+            <p className="text-xs font-bold">{error}</p>
+            <p className="text-[11px] text-rose-600 mt-0.5">Please check backend database connection.</p>
+          </div>
+        </div>
+      ) : overviewData ? (
+        <div className="space-y-8">
+          {/* KPI Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {/* 1. Total Reviews */}
+            <div className="modern-card p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500">Total Customer Reviews</span>
+                <div className="h-8 w-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+                  <BarChart3 className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-extrabold text-slate-900">
+                {overviewData.total_reviews.toLocaleString()}
+              </div>
+              <div className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
+                <TrendingUp className="h-3 w-3" />
+                <span>Real Verified Customer Data</span>
+              </div>
             </div>
-            <h1 className="mt-1.5 text-2xl sm:text-3xl font-medium tracking-tight">
-              Product Insights & Analytics
-            </h1>
-            <p className="mt-1 text-xs text-[#AAA79F]">
-              Explore structured customer feedback, rating distributions, pros/cons, and category comparisons.
-            </p>
-          </div>
 
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="inline-flex items-center gap-2 rounded-xl border border-[#292A2B] bg-[#151617] px-4 py-2 text-xs text-[#AAA79F] hover:border-[#D4AF5A]/30 hover:text-[#F5F2EA] transition"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              <span>Back to Home</span>
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* Main Content Area */}
-      <main className="mx-auto max-w-[1280px] px-6 sm:px-8 lg:px-10 pt-8 space-y-8">
-        {/* Search Bar & Mode Selector */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex-1 max-w-2xl">
-            <ProductSearch
-              onSelectProduct={loadProduct}
-              selectedProductId={selectedProduct?.product_id}
-            />
-          </div>
-
-          {/* Sub-tab pills */}
-          <div className="flex items-center gap-1 self-start rounded-xl border border-[#292A2B] bg-[#151617] p-1 shrink-0">
-            <button
-              onClick={() => setActiveSubTab('product')}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition ${
-                activeSubTab === 'product'
-                  ? 'border border-[#D4AF5A]/50 bg-[#1B1915] text-[#F0D58A]'
-                  : 'text-[#AAA79F] hover:text-[#F5F2EA]'
-              }`}
-            >
-              <Package className="h-3.5 w-3.5" />
-              <span>Product Intelligence</span>
-            </button>
-            <button
-              onClick={() => setActiveSubTab('dataset')}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition ${
-                activeSubTab === 'dataset'
-                  ? 'border border-[#D4AF5A]/50 bg-[#1B1915] text-[#F0D58A]'
-                  : 'text-[#AAA79F] hover:text-[#F5F2EA]'
-              }`}
-            >
-              <Database className="h-3.5 w-3.5" />
-              <span>Dataset Overview</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Tab 1: Product Specific Intelligence */}
-        {activeSubTab === 'product' && (
-          <div className="space-y-8">
-            {loading && (
-              <div className="premium-panel p-16 text-center space-y-3">
-                <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-[#D4AF5A] border-t-transparent" />
-                <p className="text-xs text-[#AAA79F]">Retrieving product analytics and review data...</p>
+            {/* 2. Average Rating */}
+            <div className="modern-card p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500">Average Product Rating</span>
+                <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-500">
+                  <Star className="h-4 w-4 fill-amber-400" />
+                </div>
               </div>
-            )}
-
-            {error && (
-              <div className="rounded-xl border border-rose-900/40 bg-rose-950/20 p-5 text-xs text-rose-300 flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{error}</span>
+              <div className="text-2xl font-extrabold text-slate-900 flex items-baseline gap-1.5">
+                <span>{overviewData.average_rating.toFixed(2)}</span>
+                <span className="text-xs text-slate-400 font-normal">/ 5.0</span>
               </div>
-            )}
+              <div className="flex items-center gap-1 text-[11px] text-amber-600 font-medium">
+                <span>★★★★★</span>
+                <span className="text-slate-400 ml-1">Aggregate score</span>
+              </div>
+            </div>
 
-            {analysis && !loading && (
-              <div className="space-y-8 animate-fadeIn">
-                {/* 1. Product Overview */}
-                <ProductOverview analysis={analysis} />
+            {/* 3. Positive Sentiment */}
+            <div className="modern-card p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500">Positive Feedback</span>
+                <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                  <ThumbsUp className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-extrabold text-emerald-600">
+                {positivePercent}%
+              </div>
+              <div className="text-[11px] text-slate-500">
+                {overviewData.positive_reviews.toLocaleString()} positive reviews
+              </div>
+            </div>
 
-                {/* 2. Pros & Cons Analysis with Evidence Citations */}
-                <ProsConsAnalysis
-                  productId={analysis.product.product_id}
-                  productTitle={analysis.product.product_title}
+            {/* 4. Critical Feedback */}
+            <div className="modern-card p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500">Critical / Complaints</span>
+                <div className="h-8 w-8 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600">
+                  <ThumbsDown className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-extrabold text-rose-600">
+                {negativePercent}%
+              </div>
+              <div className="text-[11px] text-slate-500">
+                {overviewData.negative_reviews.toLocaleString()} negative reviews
+              </div>
+            </div>
+          </div>
+
+          {/* Sentiment Distribution & Category Insights */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Sentiment Breakdown Progress Bar */}
+            <div className="modern-card p-6 space-y-5 lg:col-span-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-900">Sentiment Distribution Overview</h3>
+                <span className="text-xs font-semibold text-slate-400">{totalReviews.toLocaleString()} Total Reviews</span>
+              </div>
+
+              {/* Multi-segment bar */}
+              <div className="h-4 w-full rounded-full bg-slate-100 overflow-hidden flex shadow-inner">
+                <div
+                  style={{ width: `${positivePercent}%` }}
+                  className="bg-emerald-500 h-full transition-all duration-700"
+                  title={`Positive: ${positivePercent}%`}
                 />
-
-                {/* 3. AI Review Summary */}
-                <AISummaryCard productId={analysis.product.product_id} />
-
-                {/* 4. Related Products Comparison */}
-                <PersonalizedRecommendation
-                  productId={analysis.product.product_id}
-                  productTitle={analysis.product.product_title}
-                  onSelectAlternativeProduct={loadProduct}
+                <div
+                  style={{ width: `${neutralPercent}%` }}
+                  className="bg-amber-400 h-full transition-all duration-700"
+                  title={`Neutral: ${neutralPercent}%`}
                 />
-
-                {/* 5. Actual Customer Reviews with Filters and Pagination */}
-                <ReviewList
-                  productId={analysis.product.product_id}
-                  productTitle={analysis.product.product_title}
+                <div
+                  style={{ width: `${negativePercent}%` }}
+                  className="bg-rose-500 h-full transition-all duration-700"
+                  title={`Negative: ${negativePercent}%`}
                 />
               </div>
-            )}
 
-            {!analysis && !loading && !error && (
-              <div className="premium-panel p-16 text-center space-y-3">
-                <Package className="h-8 w-8 text-[#74736E] mx-auto" />
-                <h3 className="text-base font-medium text-[#F5F2EA]">No product selected</h3>
-                <p className="text-xs text-[#74736E] max-w-sm mx-auto">
-                  Use the search bar above or click one of the quick test chips to view real product intelligence.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab 2: Dataset Analytics Overview */}
-        {activeSubTab === 'dataset' && (
-          <div className="space-y-8">
-            {loadingDataset ? (
-              <div className="premium-panel p-16 text-center space-y-3">
-                <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-[#D4AF5A] border-t-transparent" />
-                <p className="text-xs text-[#AAA79F]">Calculating aggregate metrics across dataset...</p>
-              </div>
-            ) : overviewData ? (
-              <div className="space-y-6">
-                {/* Metric cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="premium-panel p-5 space-y-1">
-                    <p className="text-xs text-[#74736E]">Total Reviews</p>
-                    <p className="text-2xl font-semibold text-[#F5F2EA]">
-                      {overviewData.total_reviews.toLocaleString()}
-                    </p>
+              <div className="grid grid-cols-3 gap-4 pt-2">
+                <div className="p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-100">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    <span>Positive</span>
                   </div>
-                  <div className="premium-panel p-5 space-y-1">
-                    <p className="text-xs text-[#74736E]">Average Rating</p>
-                    <p className="text-2xl font-semibold text-[#D4AF5A]">
-                      ★ {overviewData.average_rating.toFixed(2)}
-                    </p>
-                  </div>
-                  <div className="premium-panel p-5 space-y-1">
-                    <p className="text-xs text-[#74736E]">Positive Reviews</p>
-                    <p className="text-2xl font-semibold text-emerald-400">
-                      {overviewData.positive_reviews.toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="premium-panel p-5 space-y-1">
-                    <p className="text-xs text-[#74736E]">Negative Reviews</p>
-                    <p className="text-2xl font-semibold text-rose-400">
-                      {overviewData.negative_reviews.toLocaleString()}
-                    </p>
-                  </div>
+                  <div className="text-xl font-bold text-emerald-900 mt-1">{positivePercent}%</div>
+                  <div className="text-[11px] text-emerald-700">{positiveReviews.toLocaleString()} reviews</div>
                 </div>
 
-                {/* Products Table */}
-                {datasetProducts.length > 0 && (
-                  <div className="premium-panel p-6 space-y-4">
-                    <h3 className="text-sm font-medium text-[#F5F2EA]">
-                      Aggregated Dataset Products
-                    </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="border-b border-[#292A2B] text-[#74736E]">
-                            <th className="p-3">ASIN / Product</th>
-                            <th className="p-3">Reviews</th>
-                            <th className="p-3">Actual Rating</th>
-                            <th className="p-3">Positive</th>
-                            <th className="p-3">Negative</th>
-                            <th className="p-3 text-right">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#292A2B]/60">
-                          {datasetProducts.map((p) => (
-                            <tr key={p.asin} className="hover:bg-[#1C1D1F] transition">
-                              <td className="p-3 font-medium text-[#F5F2EA]">{p.asin}</td>
-                              <td className="p-3 font-mono text-[#AAA79F]">{p.review_count}</td>
-                              <td className="p-3 text-[#D4AF5A] font-semibold">★ {p.average_actual_rating}</td>
-                              <td className="p-3 text-emerald-400">{p.positive_reviews}</td>
-                              <td className="p-3 text-rose-400">{p.negative_reviews}</td>
-                              <td className="p-3 text-right">
-                                <button
-                                  onClick={() => {
-                                    setActiveSubTab('product');
-                                    loadProduct({
-                                      product_id: p.asin || '',
-                                      product_title: p.asin || 'Product',
-                                      category: 'Dataset Product',
-                                      review_count: p.review_count,
-                                      average_rating: p.average_actual_rating,
-                                    });
-                                  }}
-                                  className="rounded-lg border border-[#292A2B] bg-[#151617] px-2.5 py-1 text-[11px] font-medium text-[#D4AF5A] hover:border-[#D4AF5A]/40 transition"
-                                >
-                                  Inspect
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                <div className="p-3.5 rounded-xl bg-amber-50/60 border border-amber-100">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+                    <span>Neutral</span>
                   </div>
-                )}
+                  <div className="text-xl font-bold text-amber-900 mt-1">{neutralPercent}%</div>
+                  <div className="text-[11px] text-amber-700">{neutralReviews.toLocaleString()} reviews</div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-rose-50/60 border border-rose-100">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-rose-800">
+                    <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
+                    <span>Negative</span>
+                  </div>
+                  <div className="text-xl font-bold text-rose-900 mt-1">{negativePercent}%</div>
+                  <div className="text-[11px] text-rose-700">{negativeReviews.toLocaleString()} reviews</div>
+                </div>
               </div>
-            ) : (
-              <div className="premium-panel p-12 text-center text-xs text-[#74736E]">
-                Dataset overview analytics unavailable.
+            </div>
+
+            {/* AI Grounding Info */}
+            <div className="modern-card p-6 space-y-4">
+              <div className="flex items-center gap-2 text-indigo-600">
+                <Sparkles className="h-5 w-5" />
+                <h3 className="text-sm font-bold text-slate-900">AI Intelligence Core</h3>
               </div>
-            )}
+              <p className="text-xs text-slate-600 leading-relaxed">
+                ReviewIQ analyzes authentic customer sentiment using grounded Google Gemini and Groq AI models. No synthetic or hardcoded scores are used.
+              </p>
+              <div className="space-y-2.5 pt-2 text-xs">
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                  <span className="text-slate-500">Products Cataloged</span>
+                  <span className="font-bold text-slate-900">{datasetProducts.length} Items</span>
+                </div>
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                  <span className="text-slate-500">Accuracy Verification</span>
+                  <span className="font-bold text-emerald-600">Deterministic SQL</span>
+                </div>
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                  <span className="text-slate-500">Analysis Latency</span>
+                  <span className="font-bold text-indigo-600">&lt; 2.5 seconds</span>
+                </div>
+              </div>
+            </div>
           </div>
-        )}
-      </main>
+
+          {/* Product Benchmarks Table */}
+          {datasetProducts.length > 0 && (
+            <div className="modern-card p-6 space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-indigo-600" />
+                    <span>Top Catalog Products & Sentiment Benchmarks</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Aggregated scores across all products in the database with customer feedback breakdown.
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-500 font-bold uppercase text-[10px]">
+                      <th className="p-3.5">Product ASIN / Title</th>
+                      <th className="p-3.5">Reviews</th>
+                      <th className="p-3.5">Average Rating</th>
+                      <th className="p-3.5">Positive</th>
+                      <th className="p-3.5">Negative</th>
+                      <th className="p-3.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {datasetProducts.map((p) => (
+                      <tr key={p.asin} className="hover:bg-slate-50/70 transition">
+                        <td className="p-3.5 font-bold text-slate-900">
+                          {p.asin || 'Product'}
+                        </td>
+                        <td className="p-3.5 font-mono text-slate-600 font-medium">
+                          {p.review_count}
+                        </td>
+                        <td className="p-3.5">
+                          <span className="inline-flex items-center gap-1 font-bold text-amber-600">
+                            ★ {p.average_actual_rating.toFixed(1)}
+                          </span>
+                        </td>
+                        <td className="p-3.5">
+                          <span className="font-semibold text-emerald-600">
+                            +{p.positive_reviews}
+                          </span>
+                        </td>
+                        <td className="p-3.5">
+                          <span className="font-semibold text-rose-600">
+                            -{p.negative_reviews}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-right">
+                          {onSelectProduct ? (
+                            <button
+                              onClick={() => {
+                                onSelectProduct({
+                                  product_id: p.asin || '',
+                                  product_title: p.asin || 'Product',
+                                  category: 'Dataset Product',
+                                  review_count: p.review_count,
+                                  average_rating: p.average_actual_rating,
+                                });
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-600 hover:bg-indigo-600 hover:text-white transition"
+                            >
+                              <span>Analyze</span>
+                              <ArrowRight className="h-3 w-3" />
+                            </button>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 };

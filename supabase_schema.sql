@@ -7,6 +7,7 @@
 -- 1. Create the 'reviews' table
 create table if not exists public.reviews (
     id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references auth.users(id) on delete cascade,
     review_text text not null,
     sentiment text not null check (sentiment in ('positive', 'negative', 'neutral', 'mixed')),
     rating integer check (rating is null or (rating >= 1 and rating <= 5)),
@@ -20,39 +21,58 @@ create table if not exists public.reviews (
 
 -- 1b. Additive columns for existing deployments (no-op when already present)
 alter table public.reviews
+    add column if not exists user_id uuid;
+
+alter table public.reviews
+    add constraint if not exists reviews_user_id_fkey
+    foreign key (user_id) references auth.users(id) on delete cascade;
+
+alter table public.reviews
     add column if not exists rating_source text
     check (rating_source is null or rating_source in ('explicit', 'inferred', 'not_found'));
 
 alter table public.reviews
     add column if not exists aspects jsonb not null default '[]'::jsonb;
 
--- 2. Create index on created_at for fast descending queries
+-- 2. Create indexes for ownership-aware access
 create index if not exists idx_reviews_created_at on public.reviews (created_at desc);
+create index if not exists idx_reviews_user_id on public.reviews (user_id);
+create index if not exists idx_reviews_user_created_at on public.reviews (user_id, created_at desc);
 
 -- 3. Enable Row Level Security (RLS)
 alter table public.reviews enable row level security;
 
--- 4. Set RLS Policies for Anon / Public access
-drop policy if exists "Allow public read access" on public.reviews;
-create policy "Allow public read access"
+-- 4. Restrict all access to authenticated users' own rows only.
+drop policy if exists "Users can read own reviews" on public.reviews;
+create policy "Users can read own reviews"
 on public.reviews
 for select
-to anon, authenticated
-using (true);
+to authenticated
+using (auth.uid() = user_id);
 
-drop policy if exists "Allow public insert access" on public.reviews;
-create policy "Allow public insert access"
+drop policy if exists "Users can insert own reviews" on public.reviews;
+create policy "Users can insert own reviews"
 on public.reviews
 for insert
-to anon, authenticated
-with check (true);
+to authenticated
+with check (auth.uid() = user_id);
 
-drop policy if exists "Allow public delete access" on public.reviews;
-create policy "Allow public delete access"
+drop policy if exists "Users can update own reviews" on public.reviews;
+create policy "Users can update own reviews"
+on public.reviews
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own reviews" on public.reviews;
+create policy "Users can delete own reviews"
 on public.reviews
 for delete
-to anon, authenticated
-using (true);
+to authenticated
+using (auth.uid() = user_id);
+
+-- No anon/public access is granted. Anonymous users and unowned rows are blocked.
 
 
 -- =========================================================

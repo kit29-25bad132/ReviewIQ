@@ -35,6 +35,19 @@ PRODUCT = ProductSummary(
 )
 
 ANALYSIS = ProductAnalysisResponse(
+    product_id="9640962",
+    product_title="Electric Toothbrush",
+    category="Health & Personal Care",
+    total_reviews=100,
+    average_rating=4.2,
+    rating_distribution={"1": 0, "2": 0, "3": 10, "4": 40, "5": 50},
+    sentiment={"positive": 80, "neutral": 15, "negative": 5},
+    pros=["Solid cleaning", "Good battery"],
+    cons=["A bit noisy"],
+    summary="Mostly positive reviews praising performance.",
+    insights=["Durable motor", "Long-lasting battery"],
+    evidence=["Great cleaning quality", "Solid battery life"],
+    ai_available=True,
     product=PRODUCT,
     statistics=ProductStatistics(
         review_count=100,
@@ -44,6 +57,7 @@ ANALYSIS = ProductAnalysisResponse(
     ),
     recent_reviews=[],
 )
+
 
 PROS_CONS = ProsConsAnalysisResponse(
     product_id="9640962",

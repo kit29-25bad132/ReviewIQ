@@ -60,16 +60,19 @@ def search_products(
 @router.get(
     "/{product_id}/analysis",
     response_model=ProductAnalysisResponse,
-    summary="Get complete dataset analytics for a specific product",
+    summary="Get complete dataset analytics and AI synthesis for a specific product",
+)
+@router.post(
+    "/{product_id}/analyze",
+    response_model=ProductAnalysisResponse,
+    summary="Analyze a product from real database reviews with Gemini AI",
 )
 def get_product_analysis(product_id: str):
     """
-    Retrieves real dataset statistics for a product:
-    - Review count
-    - Average rating
-    - 1-5 star distributions
-    - Sentiment distributions
-    - Recent actual customer reviews
+    Retrieves real database statistics and grounded AI analysis for a product:
+    - Factual metrics calculated directly from database reviews
+    - Grounded Gemini AI synthesis strictly from retrieved reviews
+    - Returns 404 with clear message if product has insufficient review data
     """
     if not ecommerce_db_service.is_ready():
         raise HTTPException(
@@ -77,12 +80,41 @@ def get_product_analysis(product_id: str):
             detail="Review dataset is currently indexing. Please try again shortly.",
         )
 
-    analysis = ecommerce_db_service.get_product_analysis(product_id)
-    if not analysis:
+    clean_pid = str(product_id).strip()
+    analysis = ecommerce_db_service.get_product_analysis(clean_pid)
+    if not analysis or analysis.total_reviews == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Product not found in the available review dataset.",
+            detail="Insufficient review data for this product.",
         )
+
+    # Validate that product_id matches the requested product
+    if str(analysis.product_id) != clean_pid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Product ID mismatch in analysis response.",
+        )
+
+    # Attempt AI analysis grounded strictly in retrieved database reviews
+    sample_reviews = ecommerce_db_service.get_sample_reviews(clean_pid, limit=40)
+    if sample_reviews:
+        try:
+            ai_data = gemini_summary_service.generate_product_analysis(
+                product_id=clean_pid,
+                product_title=analysis.product_title,
+                category=analysis.category,
+                sample_reviews=sample_reviews,
+            )
+            if ai_data:
+                analysis.summary = ai_data.summary
+                analysis.pros = ai_data.pros
+                analysis.cons = ai_data.cons
+                analysis.insights = ai_data.insights
+                analysis.evidence = ai_data.evidence
+                analysis.ai_available = True
+        except Exception:
+            # If Gemini fails, keep factual database metrics and mark AI analysis unavailable
+            analysis.ai_available = False
 
     return analysis
 
@@ -106,11 +138,19 @@ def get_product_pros_cons(product_id: str):
             detail="Review dataset is currently indexing. Please try again shortly.",
         )
 
-    analysis = pros_cons_service.analyze_product_pros_cons(product_id)
-    if not analysis:
+    clean_pid = str(product_id).strip()
+    analysis = pros_cons_service.analyze_product_pros_cons(clean_pid)
+    if not analysis or analysis.total_analyzed_reviews == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Product not found in the available review dataset.",
+            detail="Insufficient review data for this product.",
+        )
+
+    # Validate that product_id matches
+    if str(analysis.product_id) != clean_pid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Product ID mismatch in pros/cons response.",
         )
 
     return analysis
@@ -136,8 +176,9 @@ def get_theme_supporting_reviews(
             detail="Review dataset is currently indexing. Please try again shortly.",
         )
 
+    clean_pid = str(product_id).strip()
     return pros_cons_service.get_theme_reviews(
-        product_id=product_id,
+        product_id=clean_pid,
         theme=theme,
         sentiment=sentiment,
         limit=limit,
@@ -162,7 +203,8 @@ def get_similar_products(
             detail="Review dataset is currently indexing. Please try again shortly.",
         )
 
-    return recommendation_service.get_similar_products(product_id, limit=limit)
+    clean_pid = str(product_id).strip()
+    return recommendation_service.get_similar_products(clean_pid, limit=limit)
 
 
 @router.post(
@@ -184,11 +226,12 @@ def get_personalized_recommendation(
             detail="Review dataset is currently indexing. Please try again shortly.",
         )
 
-    rec = recommendation_service.generate_recommendation(product_id, req)
+    clean_pid = str(product_id).strip()
+    rec = recommendation_service.generate_recommendation(clean_pid, req)
     if not rec:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Product not found in the available review dataset.",
+            detail="Insufficient review data for this product.",
         )
 
     return rec
@@ -210,16 +253,24 @@ def generate_ai_summary(product_id: str):
             detail="Review dataset is currently indexing. Please try again shortly.",
         )
 
-    analysis = ecommerce_db_service.get_product_analysis(product_id)
-    if not analysis:
+    clean_pid = str(product_id).strip()
+    analysis = ecommerce_db_service.get_product_analysis(clean_pid)
+    if not analysis or analysis.total_reviews == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Product not found in the available review dataset.",
+            detail="Insufficient review data for this product.",
         )
 
-    sample_reviews = ecommerce_db_service.get_sample_reviews(product_id, limit=40)
+    sample_reviews = ecommerce_db_service.get_sample_reviews(clean_pid, limit=40)
+    if not sample_reviews:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Insufficient review data for this product.",
+        )
+
     return gemini_summary_service.summarize_product_reviews(
-        product_title=analysis.product.product_title,
-        category=analysis.product.category,
+        product_title=analysis.product_title,
+        category=analysis.category,
         sample_reviews=sample_reviews,
     )
+

@@ -34,8 +34,21 @@ class ReviewItem(BaseModel):
 
 
 class ProductAnalysisResponse(BaseModel):
-    product: ProductSummary
-    statistics: ProductStatistics
+    product_id: str
+    product_title: str
+    category: Optional[str] = None
+    total_reviews: int = 0
+    average_rating: float = 0.0
+    rating_distribution: dict[str, int] = Field(default_factory=dict)
+    sentiment: dict[str, int] = Field(default_factory=dict)
+    pros: List[str] = Field(default_factory=list)
+    cons: List[str] = Field(default_factory=list)
+    summary: str = ""
+    insights: List[str] = Field(default_factory=list)
+    evidence: List[str] = Field(default_factory=list)
+    ai_available: bool = True
+    product: Optional[ProductSummary] = None
+    statistics: Optional[ProductStatistics] = None
     recent_reviews: List[ReviewItem] = Field(default_factory=list)
 
 

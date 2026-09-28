@@ -70,18 +70,31 @@ class ProsConsService:
         try:
             cursor = conn.cursor()
 
-            # 1. Fetch product record
-            cursor.execute("SELECT * FROM products WHERE product_id = ?;", (str(product_id),))
+            # 1. Fetch dynamic aggregate metrics directly from reviews table
+            cursor.execute("""
+                SELECT
+                    product_id,
+                    product_title,
+                    category,
+                    COUNT(*) AS review_count,
+                    ROUND(AVG(rating), 2) AS average_rating,
+                    SUM(CASE WHEN LOWER(sentiment) = 'positive' THEN 1 ELSE 0 END) AS positive_count,
+                    SUM(CASE WHEN LOWER(sentiment) = 'neutral' THEN 1 ELSE 0 END) AS neutral_count,
+                    SUM(CASE WHEN LOWER(sentiment) = 'negative' THEN 1 ELSE 0 END) AS negative_count
+                FROM reviews
+                WHERE product_id = ?
+                GROUP BY product_id;
+            """, (str(product_id),))
             p_row = cursor.fetchone()
-            if not p_row:
+            if not p_row or p_row["review_count"] == 0:
                 return None
 
             product_title = p_row["product_title"]
             total_reviews = p_row["review_count"]
-            avg_rating = p_row["average_rating"]
-            pos_count = p_row["positive_count"]
-            neu_count = p_row["neutral_count"]
-            neg_count = p_row["negative_count"]
+            avg_rating = p_row["average_rating"] or 0.0
+            pos_count = p_row["positive_count"] or 0
+            neu_count = p_row["neutral_count"] or 0
+            neg_count = p_row["negative_count"] or 0
 
             # Sample pool for deep keyword pattern extraction (up to 5,000 reviews for speed)
             cursor.execute("""
@@ -161,26 +174,32 @@ class ProsConsService:
             cons.sort(key=lambda x: x.review_count, reverse=True)
             cons = cons[:4]
 
-            # Fallback if no specific cons/pros found
+            # If no specific themed clusters matched, ground fallback in actual review text from database
             if not pros and pos_count > 0:
+                pos_reviews = [r for r in sample_rows if r["sentiment"].lower() == "positive" or r["rating"] >= 4]
+                real_examples = [r["review_text"] for r in pos_reviews[:2]]
+                real_ids = [r["id"] for r in pos_reviews[:5]]
                 pros.append(
                     ProConTheme(
-                        theme="Overall Customer Satisfaction",
+                        theme="Positive Customer Experience",
                         review_count=pos_count,
                         percentage=round((pos_count / total_reviews) * 100, 1),
-                        example_reviews=["Satisfied with the overall purchase."],
-                        evidence_review_ids=[],
+                        example_reviews=real_examples,
+                        evidence_review_ids=real_ids,
                     )
                 )
 
             if not cons and neg_count > 0:
+                neg_reviews = [r for r in sample_rows if r["sentiment"].lower() == "negative" or r["rating"] <= 2]
+                real_examples = [r["review_text"] for r in neg_reviews[:2]]
+                real_ids = [r["id"] for r in neg_reviews[:5]]
                 cons.append(
                     ProConTheme(
-                        theme="General Customer Dissatisfaction",
+                        theme="Customer Reported Issues",
                         review_count=neg_count,
                         percentage=round((neg_count / total_reviews) * 100, 1),
-                        example_reviews=["Did not meet customer expectations."],
-                        evidence_review_ids=[],
+                        example_reviews=real_examples,
+                        evidence_review_ids=real_ids,
                     )
                 )
 
@@ -190,24 +209,23 @@ class ProsConsService:
 
             # Sentiment percentages
             sentiment_percentages = {
-                "positive": round((pos_count / total_reviews) * 100, 1),
-                "neutral": round((neu_count / total_reviews) * 100, 1),
-                "negative": round((neg_count / total_reviews) * 100, 1),
+                "positive": round((pos_count / total_reviews) * 100, 1) if total_reviews else 0.0,
+                "neutral": round((neu_count / total_reviews) * 100, 1) if total_reviews else 0.0,
+                "negative": round((neg_count / total_reviews) * 100, 1) if total_reviews else 0.0,
             }
 
             # Authenticity signals
             authenticity_signals = [
                 f"Statistical sample analyzed across {total_reviews:,} verified dataset reviews.",
-                f"Rating spread spans all 5 tiers (Mean: {avg_rating} / 5.0).",
-                f"Sentiment correlates consistently with numerical ratings ({sentiment_percentages['positive']}% Positive).",
-                "Zero synthetic or external review injection detected.",
+                f"Mean customer rating: {avg_rating} / 5.0 stars ({sentiment_percentages['positive']}% positive feedback).",
+                f"Evidence gathered from {analyzed_pool_size:,} retrieved database reviews.",
             ]
 
             summary_text = (
-                f"Based on {total_reviews:,} customer reviews in the dataset, {product_title} has an average rating of "
+                f"Based on {total_reviews:,} customer reviews in the database, {product_title} has an average rating of "
                 f"{avg_rating} / 5.0 with {sentiment_percentages['positive']}% positive feedback. "
                 f"Customers most frequently praise {', '.join(top_pros) if top_pros else 'its performance'}, "
-                f"while negative feedback primarily focuses on {', '.join(top_cons) if top_cons else 'minor durability concerns'}."
+                f"while negative feedback focuses on {', '.join(top_cons) if top_cons else 'noted concerns'}."
             )
 
             return ProsConsAnalysisResponse(
@@ -227,6 +245,7 @@ class ProsConsService:
             )
         finally:
             conn.close()
+
 
     def get_theme_reviews(
         self, product_id: str, theme: str, sentiment: Optional[str] = None, limit: int = 50

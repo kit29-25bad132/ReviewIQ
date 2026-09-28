@@ -30,10 +30,24 @@ export interface ReviewItem {
 }
 
 export interface ProductAnalysisResponse {
+  product_id?: string;
+  product_title?: string;
+  category?: string | null;
+  total_reviews?: number;
+  average_rating?: number;
+  rating_distribution?: Record<string, number>;
+  sentiment?: Record<string, number>;
+  pros?: string[];
+  cons?: string[];
+  summary?: string;
+  insights?: string[];
+  evidence?: string[];
+  ai_available?: boolean;
   product: ProductSummary;
   statistics: ProductStatistics;
   recent_reviews: ReviewItem[];
 }
+
 
 export interface ReviewsPaginationResponse {
   items: ReviewItem[];

@@ -1,1269 +1,1469 @@
-# ReviewIQ
+**# ReviewIQ — AI-Powered Product Review Intelligence**
 
-> **AI-Powered Product Review Intelligence**
+\> **\*\*Turn unstructured customer feedback into evidence-backed product intelligence.\*\***
 
-ReviewIQ is a full-stack AI application that converts unstructured e-commerce reviews into **structured, evidence-grounded and actionable product intelligence**.
+**\*\*ReviewIQ\*\*** is a full-stack AI application that transforms raw product reviews into structured, explainable insights. Instead of returning free-form LLM text, ReviewIQ produces validated sentiment, rating information, aspect-level opinions, pros, cons, summaries, and—most importantly—evidence tied back to the original review.
 
-Instead of treating a review as only positive or negative, ReviewIQ combines LLM-based language understanding with embeddings, semantic retrieval, RAG, structured validation, evidence grounding, multi-provider AI orchestration, reliability mechanisms, caching, evaluation, and observability.
+**\*\*V1 is feature-complete, tested, live, and deployment-ready.\*\***
 
-**Core engineering principle:**  
-> **LLM for intelligence, deterministic software for control.**
+**---**
 
----
+**## 1. What ReviewIQ Solves**
 
-## 1. Problem
+Product reviews contain valuable information, but manually extracting consistent insights from them is slow and difficult to scale.
 
-Large e-commerce products can have thousands or millions of customer reviews. A simple average rating does not explain:
+ReviewIQ provides a structured analysis pipeline:
 
-- What customers like or dislike
-- Which product aspects drive those opinions
-- Whether sentiment is mixed
-- Whether a rating was explicit or inferred
-- What statements support an AI conclusion
-- What customers say across a larger review corpus
-- How the AI behaves when a provider fails or is rate-limited
+\`\`\`text
 
-ReviewIQ turns those unstructured reviews into structured product intelligence.
+Customer Review
 
-Example:
+      │
 
-```text
-"The display is excellent and the battery lasts all day,
-but the camera struggles at night."
+      ▼
 
-Overall sentiment: Mixed
+Request Validation
 
-Pros:
-- Excellent display
-- Good battery life
+      │
 
-Cons:
-- Poor low-light camera performance
+      ▼
 
-Aspects:
-- Display → Positive
-- Battery → Positive
-- Camera → Negative
-```
+Gemini AI Analysis
 
----
+      │
 
-## 2. Goals
+      ▼
 
-ReviewIQ demonstrates practical AI/LLM engineering through:
+Structured Output Validation
 
-1. LLM-based review understanding
-2. Structured AI output
-3. Evidence grounding
-4. Aspect-level review intelligence
-5. Embeddings
-6. Semantic vector search
-7. Retrieval-Augmented Generation (RAG)
-8. LangGraph orchestration
-9. AI provider abstraction
-10. Multi-model/multi-provider fallback
-11. Cost-aware routing
-12. Retry and rate-limit handling
-13. AI and embedding caching
-14. Evaluation and regression testing
-15. Safe AI observability
-16. Product-level review intelligence
+      │
 
----
+      ▼
 
-## 3. Scope
-
-### Included
-
-- Gemini-based review intelligence
-- Gemini embeddings
-- Vector retrieval
-- RAG
-- LangGraph
-- AI Gateway/provider abstraction
-- Gemini/Groq/OpenRouter providers
-- Retry and fallback
-- Cost-aware routing
-- Caching
-- Evaluation
-- Observability
-- Product/review intelligence
-
-### Explicitly excluded
-
-- Local LLM inference
-- Ollama
-- LM Studio
-- llama.cpp
-- GGUF models
-- Local GPU inference
-- Quantization
-- Multi-agent architecture
-- Exposed/stored chain-of-thought
-
----
-
-# 4. High-Level Architecture
-
-```text
-                         USER
-                           │
-                           ▼
-                 ┌───────────────────┐
-                 │   React Frontend  │
-                 │ TypeScript / Vite │
-                 └─────────┬─────────┘
-                           │ HTTP / JSON
-                           ▼
-                 ┌───────────────────┐
-                 │  FastAPI Backend  │
-                 │     Pydantic      │
-                 └─────────┬─────────┘
-                           ▼
-                 ┌───────────────────┐
-                 │   LangGraph Flow  │
-                 └─────────┬─────────┘
-                           │
-                  ┌────────┴────────┐
-                  │                 │
-                  ▼                 ▼
-             RAG Enabled       RAG Disabled
-                  │                 │
-                  ▼                 │
-             Embeddings             │
-                  │                 │
-                  ▼                 │
-          Vector Retrieval          │
-          pgvector + HNSW           │
-                  │                 │
-                  ▼                 │
-            RAG Context             │
-                  │                 │
-                  └────────┬────────┘
-                           ▼
-                  ┌───────────────────┐
-                  │    AI Gateway     │
-                  └─────────┬─────────┘
-                            ▼
-                   Provider Abstraction
-                            │
-             ┌──────────────┼──────────────┐
-             ▼              ▼              ▼
-          Gemini           Groq        OpenRouter
-             │              │              │
-             └──────────────┼──────────────┘
-                            ▼
-                     Retry / Fallback
-                            ▼
-                    Structured LLM Output
-                            ▼
-                    Pydantic Validation
-                            ▼
-                    Evidence Grounding
-                            ▼
-                      Aspect Support
-                            ▼
-                       Cache/Store
-                            ▼
-                      Observability
-                            ▼
-                       Final Result
-                            ▼
-                       React UI
-```
-
----
-
-# 5. Core AI Flow
-
-```text
-User Review
-    ↓
-Input Validation
-    ↓
-LangGraph Orchestration
-    ↓
-Optional RAG Retrieval
-    ↓
-AI Gateway
-    ↓
-Routing
-    ↓
-Provider / Model
-    ↓
-Retry if transient failure
-    ↓
-Fallback if necessary
-    ↓
-Structured LLM Output
-    ↓
-Pydantic Validation
-    ↓
 Evidence Grounding
-    ↓
-Aspect Support
-    ↓
-Cache / Persistence
-    ↓
-Observability
-    ↓
-Final Review Intelligence
-```
 
----
+      │
 
-# 6. LLM Responsibilities
+      ▼
 
-The LLM is used for tasks requiring language understanding/generation:
+Validated Review Intelligence
 
-- Review understanding
-- Sentiment
-- Rating analysis
-- Rating provenance
-- Pros
-- Cons
-- Summary
-- Aspect extraction
-- Aspect-level sentiment
-- Evidence generation/selection
-- RAG-based synthesis
+      │
 
-The LLM is **not treated as the final authority for correctness**. Deterministic application logic validates and controls generated output.
+      ├── Sentiment
 
----
+      ├── Rating + rating source
 
-# 7. Structured Output
+      ├── Pros + evidence
 
-Conceptually:
+      ├── Cons + evidence
 
-```text
-LLM
- ↓
-Structured response
- ↓
-Pydantic validation
- ↓
-Application model
-```
+      ├── Aspect sentiment + evidence
 
-The analysis contract includes fields such as:
+      └── Summary
 
-- sentiment
-- rating
-- rating source
-- pros
-- cons
-- summary
-- aspects
-- evidence
-- aspect support
+\`\`\`
 
-This prevents arbitrary model text from becoming trusted application data.
+The V1 architecture deliberately prioritizes **\*\*reliability, explainability, deterministic validation, and practical deployment\*\*** over unnecessary AI complexity.
 
----
+**---**
 
-# 8. Rating Provenance
+**# 2. V1 Feature Set**
 
-ReviewIQ distinguishes:
+**## Core AI Analysis**
 
-```text
-explicit
-inferred
-not_found
-```
+\- **\*\*Structured JSON analysis\*\*** validated with Pydantic.
 
-**Explicit:** customer directly supplied a rating.
+\- **\*\*Overall sentiment\*\***: \`positive | negative | neutral | mixed\`.
 
-**Inferred:** system estimated a rating from review text.
+\- **\*\*Rating extraction\*\*** on a 1–5 scale.
 
-**Not found:** insufficient information exists to determine one.
+\- **\*\*Rating honesty\*\*** with provenance:
 
-This prevents an inferred AI value from being presented as the customer's original rating.
+  - \`explicit\`
 
----
+  - \`inferred\`
 
-# 9. Evidence Grounding
+  - \`not_found\`
 
-LLMs can produce plausible statements that are not supported by the source review.
+\- **\*\*Aspect-Based Sentiment Analysis (ABSA)\*\***.
 
-ReviewIQ validates evidence against the original review:
+\- **\*\*Pros and cons extraction\*\***.
 
-```text
-Original Review
-      ↓
-LLM Analysis
-      ↓
-Evidence
-      ↓
-Normalization
-      ↓
-Containment Check
-      ↓
-Grounded Result
-```
+\- **\*\*Executive-style review summary\*\***.
 
-The implementation uses deterministic normalized containment and deterministic duplicate-evidence handling.
+\- **\*\*Evidence-backed insights\*\*** for pros, cons, and aspects.
 
-The system does not treat an arbitrary model confidence score as proof of support.
+\- **\*\*Evidence grounding validation\*\*** against the original review text.
 
----
+\- Unsupported evidence is automatically rejected instead of being presented as fact.
 
-# 10. Aspect-Level Intelligence
+**## AI Reliability**
 
-A review can contain different opinions about different aspects:
+\- **\*\*Gemini-first model strategy\*\***.
 
-```text
-"The display is excellent but the camera is poor at night."
+\- Deterministic **\*\*Gemini-only fallback pool\*\***.
 
-Display → Positive
-Camera  → Negative
-```
+\- Up to **\*\*5 verified Gemini models\*\*** in a controlled order.
 
-ReviewIQ can derive deterministic support levels:
+\- Automatic fallback when a model returns an empty or invalid response.
 
-```text
-Strong
-Moderate
-Weak
-```
+\- Every fallback attempt goes through the same generation → parsing → Pydantic validation → grounding pipeline.
 
-These are based on grounding/evidence rules rather than invented numeric confidence.
+\- Grounding-filtered but otherwise valid results are accepted without unnecessary fallback.
 
-Conceptually:
+**## Product Intelligence**
 
-```text
-Strong:
-grounded + evidence supported + evidence mentions aspect
+\- Product intelligence dashboard.
 
-Moderate:
-grounded + evidence mentions aspect
+\- Review history.
 
-Weak:
-grounded + evidence does not explicitly mention aspect
-```
+\- Search and sentiment filtering.
 
----
+\- Detailed review inspection.
 
-# 11. Embeddings
+\- Dataset analytics.
 
-Configured embedding model:
+\- Product analytics.
 
-```text
-gemini-embedding-001
-```
+\- Recommendation/comparison functionality retained in V1.
 
-Configured vector dimension:
+\- Responsive dashboard experience.
 
-```text
-768
-```
+**## Persistence**
 
-Flow:
+\- Supabase PostgreSQL persistence.
 
-```text
-Text
- ↓
-Embedding Model
- ↓
-Vector
- ↓
-Vector Store
-```
+\- \`localStorage\` fallback for demo/development resilience.
 
-Embeddings allow reviews and queries to be represented in a semantic vector space.
+\- Persistent rating source, aspects, evidence, sentiment, pros, cons, and summary.
 
----
+\- Delete and clear-history functionality.
 
-# 12. Vector Search
+\- V1 demo-oriented Supabase RLS posture documented below.
 
-The vector retrieval layer uses:
+**## Quality & Engineering**
 
-```text
-PostgreSQL
-+
-pgvector
-+
-HNSW
-+
-cosine similarity
-```
+\- FastAPI API layer.
 
-### Cosine similarity
+\- Pydantic contract validation.
 
-Measures directional similarity between vectors and is useful for semantic nearest-neighbor retrieval.
+\- LangGraph orchestration.
 
-### HNSW
+\- Automated backend test suite.
 
-An approximate nearest-neighbor indexing technique that makes vector search more efficient as the vector collection grows.
+\- Frontend tests with Vitest.
 
-Important distinction:
+\- Production frontend build verification.
 
-```text
-Cosine similarity → similarity measure
-HNSW              → efficient nearest-neighbor indexing/search
-```
+\- Safe API error handling.
 
----
+\- Environment-based secret management.
 
-# 13. Why Semantic Retrieval?
+\- CORS configuration.
 
-Keyword search depends heavily on lexical overlap.
+\- No backend dependency on Supabase for AI analysis.
+
+**---**
+
+**# 3. The V1 Differentiator: Evidence Grounding**
+
+ReviewIQ does not treat an LLM-generated explanation as automatically trustworthy.
+
+For every evidence-backed insight, the system verifies that the normalized evidence actually occurs in the original review.
 
 Example:
 
-```text
-Query:
-"battery life is poor"
+\`\`\`json
 
-Review:
-"I need to charge the phone twice every day."
-```
+{
 
-The wording differs, but the meaning is related.
+  "pros": [
 
-Embedding-based retrieval can capture that semantic relationship.
+    {
 
-Keyword search remains useful for exact matching and filtering; semantic retrieval is used because natural-language reviews express the same idea in many different ways.
+      "point": "Excellent battery life",
 
----
+      "evidence": "The battery easily lasts two full days."
 
-# 14. RAG — Retrieval-Augmented Generation
+    }
 
-RAG connects the LLM to ReviewIQ's review corpus.
+  ],
 
-Without RAG:
+  "cons": [
 
-```text
-Question
-   ↓
-LLM
-   ↓
-Answer
-```
+    {
 
-With RAG:
+      "point": "Expensive",
 
-```text
-Question
-   ↓
-Embedding
-   ↓
-Vector Retrieval
-   ↓
-Relevant Reviews
-   ↓
-Context
-   ↓
-LLM
-   ↓
-Answer
-```
+      "evidence": "The only downside is the high price."
 
-RAG is useful when an answer needs information from the application's actual review data.
+    }
 
----
+  ]
 
-# 15. RAG Retrieval States
+}
 
-The retrieval layer distinguishes:
+\`\`\`
 
-```text
-disabled
-ok
-empty
-unavailable
-invalid
-```
+The grounding layer normalizes text before comparison, including Unicode normalization, quote/apostrophe normalization, non-breaking-space normalization, case folding, punctuation normalization while preserving word boundaries, and whitespace normalization.
 
-**Empty:** retrieval worked but found no relevant results.
+The complete normalized evidence must be supported by the original review.
 
-**Unavailable:** retrieval infrastructure could not be used.
+**### Why this matters**
 
-**Invalid:** retrieval request or retrieved data failed validation.
+This turns ReviewIQ from a simple **\*\*"LLM says this"\*\*** application into an **\*\*evidence-backed analysis system\*\***.
 
-The system must not fabricate retrieved evidence when no supporting context exists.
+The model may generate an interpretation, but the application decides whether the supporting evidence is actually present in the source review.
 
----
+**---**
 
-# 16. LangGraph
+**# 4. Rating Honesty**
 
-LangGraph is used as the orchestration layer.
+ReviewIQ distinguishes between what the customer explicitly stated and what the model inferred.
 
-Ordinary Python could implement the workflow, but LangGraph provides an explicit graph-based representation for multi-step AI execution and conditional paths.
+\`\`\`json
 
-Conceptually:
+{
 
-```text
-Prepare
-  ↓
-Retrieve
-  ↓
-AI Gateway
-  ↓
-Validate
-  ↓
-Ground
-  ↓
-Finish
-```
+  "rating": 4,
 
-Failure paths can include:
+  "rating_source": "explicit"
 
-```text
-Model failure
-     ↓
-   Retry
-     ↓
-Fallback
-```
+}
 
-LangGraph is therefore used because ReviewIQ has a multi-stage AI workflow with retrieval, validation, grounding, retry and fallback paths.
-
----
-
-# 17. AI Gateway
-
-The application separates AI business logic from provider-specific SDK details:
-
-```text
-Application
-     ↓
-AI Gateway
-     ↓
-Provider Abstraction
-     ↓
-Provider Adapter
-```
-
-### Gemini
-
-```text
-gemini-3.8-flash
-gemini-flash-latest
-gemini-3.6-flash
-gemini-3.5-flash
-gemini-3.5-flash-lite
-```
-
-### Groq
-
-```text
-openai/gpt-oss-120b
-openai/gpt-oss-20b
-qwen/qwen3.8-27b
-```
-
-### OpenRouter
-
-```text
-openrouter/free
-```
-
-The gateway makes provider-specific behavior easier to isolate and supports routing, retry and fallback.
-
----
-
-# 18. Retry vs Fallback
-
-### Retry
-
-Retry means trying the **same target** again:
-
-```text
-Gemini Model A
-      ↓
-    429
-      ↓
-   Retry
-      ↓
-Gemini Model A
-```
-
-Retryable conditions include selected:
-
-- Rate-limit failures
-- Timeouts
-- Transient failures
-
-### Fallback
-
-Fallback means switching to a **different target**:
-
-```text
-Gemini Model A
-      ↓
-    failure
-      ↓
-Gemini Model B
-```
+\`\`\`
 
 or:
 
-```text
-Gemini
-  ↓
-failure
-  ↓
-Groq
-```
+\`\`\`json
 
-> **Retry = same target. Fallback = different target.**
-
----
-
-# 19. Cost-Effective Routing
-
-Supported routing strategies include:
-
-```text
-gemini_first
-cost_aware
-```
-
-The default is:
-
-```text
-gemini_first
-```
-
-The cost-aware policy considers:
-
-```text
-Free-tier status
-Verified total cost
-Quality tier
-Provider/model priority
-Configured chain order
-```
-
-Unknown/unverified cost is handled conservatively rather than inventing a price.
-
-No billing dashboard or cost API is exposed.
-
----
-
-# 20. Reliability
-
-AI providers can fail outside application control.
-
-ReviewIQ uses bounded retries and supports:
-
-- Rate-limit handling
-- Timeout handling
-- Transient failures
-- Retry-After
-- Exponential backoff
-- Jitter
-- Provider/model fallback
-
-The system avoids indefinite retries.
-
----
-
-# 21. Caching
-
-ReviewIQ supports caching for:
-
-- LLM responses
-- Document embeddings
-- Query embeddings
-
-Conceptually:
-
-```text
-Request
-  ↓
-Cache lookup
-  ├── HIT  → cached result
-  └── MISS → AI/Embedding → Cache → Result
-```
-
-Configured TTL categories:
-
-```text
-LLM, RAG off        → 7 days
-LLM, RAG on         → 1 hour
-Document embeddings → 90 days
-Query embeddings    → 30 days
-```
-
-Cache behavior is version-aware and designed to fail open in ordinary cases.
-
----
-
-# 22. Evaluation
-
-ReviewIQ contains a fixed evaluation set of:
-
-```text
-40 records
-```
-
-Important limitations:
-
-- Expected rating is a genuine human label.
-- Expected sentiment is a deterministic rating-derived pseudo-label.
-- Sentiment labels are **not independent human annotations**.
-- Quantitative aspect/evidence/RAG metrics are not claimed where reliable gold labels are unavailable.
-
-The fixed set provides a stable basis for regression testing.
-
----
-
-# 23. Testing
-
-Testing covers:
-
-- Backend unit/integration tests
-- AI/provider tests
-- RAG tests
-- Grounding tests
-- Retry/fallback tests
-- Cache tests
-- Evaluation/regression tests
-- API contract tests
-- Frontend tests
-- TypeScript checks
-- Production-build checks
-- End-to-end verification
-
-AI behavior is tested as software rather than treated as an untestable black box.
-
----
-
-# 24. Observability
-
-The fixed AI request outcome contains:
-
-```text
-request_id
-task
-outcome
-provider
-model
-fallback
-retry_attempts
-retry_count
-cache
-rag_status
-provider_latency_ms
-total_ms
-```
-
-The system intentionally avoids logging:
-
-- Raw review text
-- Raw prompts
-- RAG document bodies
-- Provider response bodies
-- API keys
-- Database connection strings
-- PII
-- Billing information
-
-This provides operational visibility without turning logs into a copy of user/AI data.
-
----
-
-# 25. Product Intelligence
-
-ReviewIQ supports:
-
-- Product search
-- Product summaries
-- Review analysis
-- Review exploration
-- Pros and cons
-- Themes
-- Similar reviews
-- Recommendations
-- Review history
-- Dataset-backed insights
-
-Direct Review AI analysis can continue even when local dataset-backed product features are unavailable.
-
----
-
-# 26. Local Dataset
-
-Product Search, Dataset Explorer and Insights use gitignored local files under:
-
-```text
-backend/data/
-```
-
-Build the seeded local dataset:
-
-```bash
-python scripts/seed_sample_data.py
-```
-
-For full-scale product search:
-
-```bash
-python scripts/ingest_dataset.py
-```
-
-The dataset is intentionally not committed to Git.
-
-Without dataset files:
-
-- Direct Review AI analysis continues.
-- Dataset-backed endpoints return safe failure responses until data is built.
-
----
-
-# 27. Repository Structure
-
-> This tree intentionally shows the **meaningful application structure**, not every generated or machine-specific file.
-
-```text
-ReviewIQ/
-│
-├── backend/
-│   ├── data/
-│   │   └── local / gitignored datasets
-│   │
-│   ├── models/
-│   │   └── application and review contracts
-│   │
-│   ├── routes/
-│   │   └── FastAPI API routes
-│   │
-│   ├── services/
-│   │   ├── ai/
-│   │   │   ├── contracts
-│   │   │   ├── errors
-│   │   │   ├── gateway
-│   │   │   ├── provider registry
-│   │   │   └── provider adapters
-│   │   │
-│   │   ├── embeddings/
-│   │   │   └── embedding generation/configuration
-│   │   │
-│   │   ├── retrieval/
-│   │   │   └── semantic retrieval/RAG support
-│   │   │
-│   │   └── observability.py
-│   │       └── safe AI request telemetry
-│   │
-│   ├── tests/
-│   │   └── backend/unit/integration/regression tests
-│   │
-│   └── main.py
-│       └── FastAPI application entry point
-│
-├── frontend/
-│   └── React / TypeScript / Vite application
-│
-├── scripts/
-│   ├── seed_sample_data.py
-│   └── ingest_dataset.py
-│
-├── docs/
-│   └── project/design/decision documentation
-│
-├── README.md
-└── project configuration files
-```
-
-### Structure rule
-
-Do not interpret these as architecture:
-
-- `.venv`
-- `node_modules`
-- Python/JS caches
-- IDE metadata
-- build output
-- temporary files
-- local secrets
-- generated datasets
-- local database files
-
-The architecture should be understood from meaningful source directories and files.
-
----
-
-# 28. Backend Architecture
-
-Conceptually:
-
-```text
-Routes
-  ↓
-Application / AI orchestration
-  ↓
-Services
-  ↓
-Provider / Retrieval / Embedding abstractions
-  ↓
-External AI or local data systems
-```
-
-This separates HTTP concerns, business logic, AI orchestration, provider-specific logic, retrieval and validation.
-
----
-
-# 29. Frontend Architecture
-
-The frontend uses:
-
-```text
-React
-+
-TypeScript
-+
-Vite
-+
-Tailwind
-```
-
-Responsibilities:
-
-1. Collect user input
-2. Call backend APIs
-3. Represent loading/error/empty states
-4. Work with API contracts through TypeScript
-5. Display AI/product intelligence
-6. Provide product/review exploration
-7. Display sentiment, rating, rating source, pros, cons, summary, aspects, evidence and support
-
-Core LLM orchestration remains in the backend.
-
----
-
-# 30. Backend ↔ Frontend Contract
-
-```text
-React / TypeScript
-        ↕
-       JSON
-        ↕
-FastAPI / Pydantic
-```
-
-The main analysis endpoint uses the established envelope:
-
-```json
 {
-  "success": true,
-  "data": {},
-  "error": null
+
+  "rating": 4,
+
+  "rating_source": "inferred"
+
 }
-```
 
-Internal implementation metadata is not exposed merely because it exists internally.
+\`\`\`
 
----
+or:
 
-# 31. AI Engineering Principles
+\`\`\`json
 
-### LLM for intelligence
+{
 
-Use the model where language understanding is valuable.
+  "rating": null,
 
-### Deterministic software for control
+  "rating_source": "not_found"
 
-Use application code for:
+}
 
-- Validation
-- Contracts
-- Grounding
-- Retry rules
-- Routing
-- Cache behavior
-- Evaluation
-- Observability
+\`\`\`
 
-### Fail explicitly
+The contract enforces the relationship between these fields, preventing a missing rating from silently becoming a fabricated numeric fact.
 
-Distinguish states such as:
+**---**
 
-```text
-empty
-unavailable
-invalid
-failure
-```
+**# 5. AI Orchestration**
 
-instead of silently pretending success.
+V1 uses a single LangGraph orchestration path:
 
-### Do not fabricate evidence
+\`\`\`text
 
-A plausible LLM statement is not automatically grounded.
+Review Input
 
-### Document limitations
+     │
 
-Evaluation and infrastructure limitations are stated instead of being presented as solved problems.
+     ▼
 
-### Keep providers replaceable
+Analyze Request
 
-Provider-specific SDK behavior stays behind provider abstractions.
+     │
 
----
+     ▼
 
-# 32. AI Knowledge Map
+Gemini Primary
 
-A person responsible for the AI/LLM side should understand:
+     │
 
-### LLM fundamentals
+     ▼
 
-- Tokens
-- Context windows
-- Transformer architecture
-- Self-attention
-- Inference
-- Temperature
-- Prompt engineering
+Structured Validation
 
-### Review intelligence
+     │
 
-- Sentiment analysis
-- Rating extraction
-- Rating provenance
-- Pros/cons extraction
-- Summarization
-- Aspect-based sentiment analysis
+     ▼
 
-### Reliable generation
-
-- Structured output
-- Pydantic validation
-- Evidence grounding
-- Deterministic validation
-- Hallucination control
-
-### Retrieval
-
-- Embeddings
-- Vector representations
-- Cosine similarity
-- Nearest-neighbor search
-- HNSW
-- RAG
-- Retrieval quality
-
-### AI engineering
-
-- LangGraph
-- AI Gateway
-- Provider abstraction
-- Model routing
-- Multi-provider fallback
-- Retry
-- Rate limits
-- Timeouts
-- Exponential backoff
-- Jitter
-- Retry-After
-
-### AI performance
-
-- LLM caching
-- Embedding caching
-- TTL
-- Cache invalidation
-
-### AI quality
-
-- Evaluation datasets
-- Regression testing
-- Baselines
-- Metrics
-- Evaluation limitations
-
-### AI operations
-
-- Request correlation
-- Provider latency
-- Retry telemetry
-- RAG status
-- Safe observability
-- Sensitive-data handling
-
----
-
-# 33. Viva Framework
-
-For every AI component, explain it using:
-
-> **What is it? → Why did we use it? → How does it work in ReviewIQ? → What happens when it fails?**
-
-Example: RAG
-
-**What?** Retrieval-Augmented Generation.
-
-**Why?** To give the LLM relevant review-corpus context.
-
-**How?** Query → embedding → vector search → retrieved reviews → LLM.
-
-**Failure?** Explicit retrieval states such as empty/unavailable/invalid prevent the system from pretending supporting context exists.
-
----
-
-# 34. Key Technical Questions
-
-### Why Gemini embeddings?
-
-We use `gemini-embedding-001` because it integrates with the existing Gemini-based AI stack and provides embeddings for semantic retrieval.
-
-### Why 768 dimensions?
-
-768 is the configured dimensionality of the embedding pipeline. The vector-store schema is configured to match it.
-
-### Why cosine similarity?
-
-It measures directional similarity between embedding vectors, which is useful for semantic nearest-neighbor retrieval.
-
-### Why HNSW?
-
-HNSW is an approximate nearest-neighbor index that makes vector search more efficient as the collection grows.
-
-### Why not keyword search?
-
-Keyword search depends heavily on lexical overlap. Semantic retrieval can identify related meaning even when the wording differs.
-
-### Why RAG?
-
-RAG retrieves relevant application-specific review data and provides it to the LLM as context.
-
-### What if retrieval returns nothing?
-
-The system records an explicit empty retrieval state and does not fabricate supporting context.
-
-### Why LangGraph?
-
-Ordinary Python could implement the workflow, but LangGraph provides explicit graph-based orchestration for the multi-step AI workflow and conditional paths.
-
-### Retry vs fallback?
-
-Retry repeats the same target. Fallback switches to another model/provider.
-
-### Why an AI Gateway?
-
-It decouples application logic from individual AI providers and centralizes provider abstraction, routing, retry and fallback behavior.
-
----
-
-# 35. What Makes ReviewIQ an LLM Engineering Project?
-
-It is not simply:
-
-```text
-Review
-  ↓
-Gemini API
-  ↓
-Answer
-```
-
-It is:
-
-```text
-Customer Review
-      ↓
-LLM Understanding
-      ↓
-Structured Output
-      ↓
-Deterministic Validation
-      ↓
 Evidence Grounding
-      ↓
-Aspect Intelligence
-      ↓
-Embedding / Retrieval
-      ↓
-RAG
-      ↓
-LangGraph Orchestration
-      ↓
-AI Gateway
-      ↓
-Model Routing
-      ↓
-Retry / Fallback
-      ↓
-Caching
-      ↓
-Evaluation
-      ↓
-Observability
-      ↓
-Product Intelligence
-```
 
-The project demonstrates both **AI capability** and **AI engineering discipline**.
+     │
 
----
+     ▼
 
-# 36. Local Development
+Final Response
 
-### Backend
+\`\`\`
 
-Use the project's Python environment and dependency configuration, then start the FastAPI application using its configured entry point.
+If a model attempt fails:
 
-### Frontend
+\`\`\`text
 
-Install frontend dependencies and start the Vite development server using the configured frontend scripts.
+Gemini Primary
 
-### AI configuration
+     │
 
-Provider credentials are supplied through environment variables and must never be committed to Git.
+     ├── success ───────────────► Validation ─► Grounding ─► Final
 
-### Dataset-backed features
+     │
 
-Build local dataset files when using Product Search, Dataset Explorer or Insights:
+     └── failure
 
-```bash
+            │
+
+            ▼
+
+      Next Gemini Model
+
+            │
+
+            ▼
+
+        Validation
+
+            │
+
+            ▼
+
+         Grounding
+
+            │
+
+            ▼
+
+          Final
+
+\`\`\`
+
+**### V1 deliberately does not include**
+
+\- Chain-of-Thought prompting
+
+\- RAG
+
+\- multi-provider fallback
+
+\- cost-based model selection
+
+\- model quantization
+
+\- local LLM inference
+
+\- caching
+
+\- multi-agent architecture
+
+These are intentionally outside the V1 scope.
+
+**---**
+
+**# 6. Technology Stack**
+
+\| Layer | Technology |
+
+\|---|---|
+
+\| Frontend | React, TypeScript, Vite, Tailwind CSS, Axios, Lucide React |
+
+\| Backend | Python, FastAPI, Uvicorn |
+
+\| Validation | Pydantic v2 |
+
+\| AI | Google Gemini API |
+
+\| Orchestration | LangGraph |
+
+\| Database | Supabase PostgreSQL |
+
+\| Local persistence fallback | Browser \`localStorage\` |
+
+\| Backend testing | pytest |
+
+\| Frontend testing | Vitest |
+
+\| Source control | Git + GitHub |
+
+\| Backend deployment | Render |
+
+\| Frontend deployment | Vercel |
+
+\| AI service | Google Gemini API |
+
+**---**
+
+**# 7. Project Structure**
+
+\`\`\`text
+
+ReviewIQ/
+
+│
+
+├── frontend/
+
+│   ├── src/
+
+│   │   ├── components/
+
+│   │   ├── pages/
+
+│   │   │   └── Dashboard.tsx
+
+│   │   ├── services/
+
+│   │   │   ├── api.ts
+
+│   │   │   ├── historyStorage.ts
+
+│   │   │   └── supabase.ts
+
+│   │   ├── types/
+
+│   │   ├── App.tsx
+
+│   │   └── main.tsx
+
+│   ├── package.json
+
+│   └── vite.config.ts
+
+│
+
+├── backend/
+
+│   ├── main.py
+
+│   ├── requirements.txt
+
+│   ├── .env.example
+
+│   ├── models/
+
+│   ├── routes/
+
+│   ├── services/
+
+│   │   ├── ai_analyzer.py
+
+│   │   ├── analysis_graph.py
+
+│   │   ├── grounding_service.py
+
+│   │   └── ...
+
+│   ├── scripts/
+
+│   └── tests/
+
+│
+
+├── supabase_schema.sql
+
+├── README.md
+
+└── .gitignore
+
+\`\`\`
+
+**---**
+
+**# 8. Environment Configuration**
+
+**## Backend**
+
+Create \`backend/.env\`:
+
+\`\`\`ini
+
+GEMINI_API_KEY=your_gemini_api_key_here
+
+HOST=127.0.0.1
+
+PORT=8000
+
+ALLOWED_ORIGINS=http\://localhost:5173,http\://127.0.0.1:5173
+
+\`\`\`
+
+The Gemini API key must remain server-side.
+
+**## Frontend**
+
+Create \`frontend/.env\`:
+
+\`\`\`ini
+
+VITE_API_BASE_URL=http\://localhost:8000
+
+VITE_SUPABASE_URL=https\://your-project.supabase.co
+
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+\# or
+
+VITE_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
+
+\`\`\`
+
+\> **\*\*Security:\*\*** Never put \`GEMINI_API_KEY\` or a Supabase service-role key in the frontend environment.
+
+Vite embeds \`VITE\_\*\` variables into the frontend build, so frontend environment changes require restarting the development server or rebuilding.
+
+**---**
+
+**# 9. Local Development**
+
+**## Backend**
+
+\`\`\`bash
+
+cd backend
+
+python -m venv .venv
+
+\`\`\`
+
+**### Windows**
+
+\`\`\`bash
+
+.venv\Scripts\activate
+
+\`\`\`
+
+**### macOS / Linux**
+
+\`\`\`bash
+
+source .venv/bin/activate
+
+\`\`\`
+
+Install dependencies:
+
+\`\`\`bash
+
+pip install -r requirements.txt
+
+\`\`\`
+
+Create the environment file:
+
+\`\`\`bash
+
+copy .env.example .env
+
+\`\`\`
+
+On macOS/Linux:
+
+\`\`\`bash
+
+cp .env.example .env
+
+\`\`\`
+
+Add the Gemini API key, then start FastAPI:
+
+\`\`\`bash
+
+uvicorn main\:app --reload --port 8000
+
+\`\`\`
+
+Backend: \`http\://localhost:8000\`
+
+Swagger: \`http\://localhost:8000/docs\`
+
+Health check: \`http\://localhost:8000/health\`
+
+### Review Dataset (Product Search, Insights)
+
+Product Search, Dataset Explorer, and Insights read gitignored data files in \`backend/data/\` (\`ecommerce_reviews.db\` and \`amazon_review.csv\`). Build them once before starting the backend:
+
+\`\`\`bash
+
 python scripts/seed_sample_data.py
-```
 
-For the full dataset:
+\`\`\`
 
-```bash
+This seeded setup is self-contained. For full-scale product search, ingest the 4M-row Kaggle CSV (\`backend/data/ecommerce_product_reviews_dataset.csv\`, gitignored) instead:
+
+\`\`\`bash
+
 python scripts/ingest_dataset.py
+
+\`\`\`
+
+Without these files, the app still runs: Direct Review AI analysis continues to work, while dataset-backed endpoints return safe 503 responses until the dataset is built.
+
+**## Frontend**
+
+In a second terminal:
+
+\`\`\`bash
+
+cd frontend
+
+npm install
+
+npm run dev
+
+\`\`\`
+
+**---**
+
+**# 10. Supabase Setup**
+
+The canonical schema is available in:
+
+\`\`\`text
+
+supabase_schema.sql
+
+\`\`\`
+
+The V1 \`reviews\` table stores:
+
+\- review text
+
+\- sentiment
+
+\- nullable rating
+
+\- rating source
+
+\- pros
+
+\- cons
+
+\- aspect analysis
+
+\- summary
+
+\- creation timestamp
+
+The schema also contains the required rating and sentiment constraints.
+
+**### V1 demo RLS posture**
+
+The current V1 demo configuration permits anonymous/authenticated:
+
+\- \`SELECT\`
+
+\- \`INSERT\`
+
+\- \`DELETE\`
+
+There is intentionally no \`UPDATE\` policy.
+
+\> **\*\*Important:\*\*** This posture is suitable for the V1 demonstration environment. It is **\*\*not\*\*** a multi-tenant production authorization model.
+
+**---**
+
+**# 11. API**
+
+**## Health**
+
+\`\`\`http
+
+GET /health
+
+\`\`\`
+
+Example:
+
+\`\`\`json
+
+{
+
+  "status": "ok",
+
+  "service": "Product Review Analyzer Backend",
+
+  "version": "1.0.0",
+
+  "ai_provider": "Google Gemini",
+
+  "ai_configured": true
+
+}
+
+\`\`\`
+
+**## Analyze Review**
+
+\`\`\`http
+
+POST /api/analyze-review
+
+\`\`\`
+
+Request:
+
+\`\`\`json
+
+{
+
+  "review": "The camera quality is excellent and the display is beautiful. Battery life is good for normal use, but the phone becomes hot while gaming. Overall I am happy with the product."
+
+}
+
+\`\`\`
+
+Response shape:
+
+\`\`\`json
+
+{
+
+  "success": true,
+
+  "data": {
+
+    "sentiment": "mixed",
+
+    "rating": 4,
+
+    "rating_source": "inferred",
+
+    "summary": "The customer praises the camera, display, and battery life but notes heating while gaming.",
+
+    "aspects": [
+
+      {
+
+        "aspect": "camera",
+
+        "sentiment": "positive",
+
+        "evidence": "camera quality is excellent"
+
+      },
+
+      {
+
+        "aspect": "gaming thermals",
+
+        "sentiment": "negative",
+
+        "evidence": "the phone becomes hot while gaming"
+
+      }
+
+    ],
+
+    "pros": [
+
+      {
+
+        "point": "Excellent camera quality",
+
+        "evidence": "camera quality is excellent"
+
+      },
+
+      {
+
+        "point": "Beautiful display",
+
+        "evidence": "the display is beautiful"
+
+      }
+
+    ],
+
+    "cons": [
+
+      {
+
+        "point": "Heats up while gaming",
+
+        "evidence": "the phone becomes hot while gaming"
+
+      }
+
+    ]
+
+  },
+
+  "error": null
+
+}
+
+\`\`\`
+
+The complete API contract is maintained in:
+
+\`docs/08_API_CONTRACT.md\`
+
+**---**
+
+**# 12. Testing & V1 Verification**
+
+**### Backend**
+
+\`\`\`bash
+
+python -m pytest backend/tests
+
+\`\`\`
+
+**### Frontend**
+
+\`\`\`bash
+
+cd frontend
+
+npm test
+
+npm run build
+
+\`\`\`
+
+The V1 verification suite covers:
+
+\- request validation
+
+\- Pydantic output contracts
+
+\- rating-source rules
+
+\- sentiment behavior
+
+\- ABSA scenarios
+
+\- evidence grounding
+
+\- invalid and empty AI responses
+
+\- Gemini fallback orchestration
+
+\- API error handling
+
+\- API endpoint contracts
+
+\- product endpoints
+
+\- dataset/analytics/evaluation endpoints
+
+\- persistence-related contracts
+
+\- model configuration
+
+\- security-sensitive error behavior
+
+Gemini and Supabase are mocked/faked for automated backend tests, so the backend test suite does not require live external services.
+
+V1 also underwent live end-to-end verification against the deployed application and Supabase persistence, including positive, negative, mixed, explicit-rating, inferred-rating, evidence-grounding, and no-rating scenarios.
+
+**---**
+
+**# 13. Production Deployment**
+
+V1 deployment stack:
+
+\`\`\`text
+
+                 ┌──────────────────┐
+
+                 │      Vercel      │
+
+                 │ React + Vite UI  │
+
+                 └────────┬─────────┘
+
+                          │
+
+                          ▼
+
+                 ┌──────────────────┐
+
+                 │      Render      │
+
+                 │ FastAPI Backend  │
+
+                 └────────┬─────────┘
+
+                          │
+
+                 ┌────────┴─────────┐
+
+                 ▼                  ▼
+
+        ┌────────────────┐  ┌────────────────┐
+
+        │ Google Gemini  │  │    Supabase    │
+
+        │       AI       │  │   PostgreSQL   │
+
+        └────────────────┘  └────────────────┘
+
+\`\`\`
+
+**### Render Backend**
+
+The V1 backend is deployed on Render with:
+
+\`\`\`text
+
+Root Directory: backend
+
+Build Command: pip install -r requirements.txt
+
+Start Command: uvicorn main\:app --host 0.0.0.0 --port $PORT
+
+Health Check: /health
+
+\`\`\`
+
+The deployed service responds successfully to \`/health\`.
+
+\> The backend root URL \`/\` is not an application page and may return \`404 Not Found\`. This is expected; \`/health\` is the service health endpoint and \`/docs\` exposes the FastAPI API documentation.
+
+**### Vercel Frontend**
+
+The frontend deployment uses:
+
+\`\`\`text
+
+VITE_API_BASE_URL=\<deployed Render backend URL>
+
+VITE_SUPABASE_URL=\<Supabase project URL>
+
+VITE_SUPABASE_ANON_KEY=\<Supabase anon key>
+
+\`\`\`
+
+**---**
+
+**# 14. V1 Completion Status**
+
+**## V1 — 100% Complete**
+
+\| Area | Status |
+
+\|---|:---:|
+
+\| Core review analysis | ✅ |
+
+\| Structured AI contract | ✅ |
+
+\| Sentiment | ✅ |
+
+\| Rating extraction | ✅ |
+
+\| Rating provenance | ✅ |
+
+\| ABSA | ✅ |
+
+\| Pros / cons | ✅ |
+
+\| Evidence grounding | ✅ |
+
+\| Summary generation | ✅ |
+
+\| Gemini fallback | ✅ |
+
+\| LangGraph orchestration | ✅ |
+
+\| API validation | ✅ |
+
+\| Error handling | ✅ |
+
+\| Product intelligence | ✅ |
+
+\| Dataset analytics | ✅ |
+
+\| Review history | ✅ |
+
+\| Supabase persistence | ✅ |
+
+\| Local persistence fallback | ✅ |
+
+\| Automated backend tests | ✅ |
+
+\| Frontend tests | ✅ |
+
+\| Production build | ✅ |
+
+\| Render backend deployment | ✅ |
+
+\| V1 scope audit | ✅ |
+
+\| Live end-to-end verification | ✅ |
+
+**\*\*V1 completion: 100%\*\***
+
+**---**
+
+**# 15. Intentionally Deferred from V1**
+
+These are deliberate future-scope decisions, not incomplete V1 requirements:
+
+\- RAG
+
+\- Vector database / ChromaDB
+
+\- Chain-of-Thought prompting
+
+\- multi-provider AI fallback
+
+\- cost-aware model routing
+
+\- response caching
+
+\- local model inference
+
+\- model quantization
+
+\- multi-agent architecture
+
+\- authentication
+
+\- multi-tenant authorization
+
+\- bulk review processing
+
+\- advanced report export
+
+V1 intentionally establishes a reliable and explainable foundation before introducing additional architectural complexity.
+
+**---**
+
+**# 16. V2 Direction
+
+V2 extends the proven V1 pipeline into a **retrieval-augmented, evidence-grounded, cost-aware multi-model review intelligence system**.
+
+V2 is intentionally designed as a **cloud/API-first architecture**. It does not introduce local LLM inference, model quantization, or multi-agent infrastructure.
+
+## V2 Core Architecture
+
+```text
+                         ReviewIQ V2
+                              │
+                ┌─────────────▼─────────────┐
+                │      Review API / UI      │
+                └─────────────┬─────────────┘
+                              │
+                ┌─────────────▼─────────────┐
+                │ Validation + Preprocessing│
+                └─────────────┬─────────────┘
+                              │
+                ┌─────────────▼─────────────┐
+                │  LLM Cache Check (opt.)   │
+                └─────────────┬─────────────┘
+                              │ miss
+                ┌─────────────▼─────────────┐
+                │       LangGraph           │
+                │      Orchestrator         │
+                └─────────────┬─────────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │ Embedding Cache   │
+                    │     (opt.)        │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │    Embeddings     │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │    Vector DB      │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │  Semantic Search  │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │   RAG Context     │
+                    │      Builder      │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │ Cost-Aware Model  │
+                    │      Router       │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │    AI Gateway     │
+                    └─────────┬─────────┘
+                              │
+              ┌───────────────┼────────────────┐
+              │               │                │
+          Gemini Models   Free-Tier Model   Other Provider
+              │               │                │
+              └───────────────┼────────────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │ Output Validation │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │ Evidence +        │
+                    │ Confidence        │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │ Final Intelligence│
+                    └───────────────────┘
 ```
+
+The two `(opt.)` nodes are the V2-P9 caches: the **LLM response cache check** sits before the LangGraph orchestrator (a validated hit skips routing, retrieval, and every provider call), and the **embedding cache** sits after preprocessing, before the embedding provider (only cache misses reach the provider). Both are disabled by default, live in the existing Postgres/Supabase database (no new dependency), and any cache/database failure degrades to a normal cache miss.
+
+## V2 Locked Feature Set
+
+### Foundation
+
+- V2 service and module boundaries.
+- Unified dataset and manual-review analysis pipeline.
+- Environment-based configuration and secret management.
+- Cloud/API-first AI architecture.
+
+### Review and Data Layer
+
+- Dataset validation.
+- Enhanced review preprocessing.
+- Duplicate and near-duplicate review handling.
+- Structured review metadata.
+
+### Embeddings and Vector Search
+
+- Cloud embedding generation.
+- Provider-independent embedding abstraction.
+- Vector database integration.
+- Review metadata associated with vectors.
+- Semantic similarity search.
+- Metadata filtering.
+- Embedding failure handling.
+
+### Retrieval-Augmented Generation
+
+- RAG retrieval pipeline.
+- Top-K retrieval.
+- Similarity thresholds.
+- Metadata-aware retrieval.
+- RAG context builder.
+- Context-size management.
+- Context-aware prompt construction.
+- Retrieval metadata and similarity information.
+- Safe no-result handling.
+- RAG integration with the existing analysis contract.
+
+### Evidence Grounding
+
+- Evidence extraction.
+- Evidence-to-conclusion mapping.
+- Evidence relevance filtering.
+- Evidence display in the UI.
+- Grounded versus ungrounded result handling.
+- Reuse and extension of V1's existing grounding validation.
+
+### Multi-Model and Multi-Provider AI
+
+V2 expands V1's Gemini-only fallback strategy.
+
+```text
+Primary task
+    │
+    ▼
+Cost-Aware Model Router
+    │
+    ▼
+Selected Model
+    │
+    ├── success ───────────────► Output Validation
+    │
+    └── failure
+           │
+           ▼
+      Gemini Model Fallbacks
+           │
+           └── exhausted
+                  │
+                  ▼
+          Free-Tier Provider Models
+                  │
+                  ▼
+             Final fallback
+```
+
+V2 includes:
+
+- AI provider abstraction.
+- AI gateway.
+- Gemini multi-model fallback.
+- Configurable Gemini model order.
+- Multi-provider fallback.
+- Suitable free-tier API models/providers where available.
+- Common provider request/response contract.
+- Provider error normalization.
+- Provider availability tracking.
+- Timeout and retry handling.
+
+Free-tier availability is configuration-dependent and may change over time; providers and models are therefore treated as replaceable adapters rather than permanent assumptions.
+
+### Cost-Effective Model Selection
+
+V2 separates **routing** from **fallback**.
+
+**Routing** decides which model should be used first.
+
+**Fallback** decides what to try when the selected model fails.
+
+The model registry records information such as:
+
+- Provider.
+- Model.
+- Task capability.
+- Context capacity.
+- Structured-output capability.
+- Estimated cost.
+- Expected latency.
+- Quality tier.
+- Availability/quota information.
+
+The router can use:
+
+```text
+Task
++
+Task complexity
++
+Quality requirement
++
+Token requirement
++
+Estimated cost
++
+Latency
++
+Provider availability
++
+Free-tier/quota availability
+```
+
+to select an appropriate model.
+
+### LangGraph Orchestration
+
+LangGraph coordinates the V2 analysis workflow and conditional recovery paths. The V2-P9 LLM cache check runs before the graph: a hit returns the validated result without entering orchestration at all (shown inline after input validation for readability).
+
+```text
+START
+  │
+  ▼
+Validate Input
+  │
+  ▼
+LLM Cache Check ── hit ──► return validated result
+  │ miss
+  ▼
+Generate Embedding (cache-first)
+  │
+  ▼
+Retrieve Context
+  │
+  ▼
+Build RAG Context
+  │
+  ▼
+Select Model
+  │
+  ▼
+AI Gateway
+  │
+  ▼
+Validate Output
+  │
+  ├── invalid ──► retry / alternate model
+  │
+  ▼
+Evidence Check
+  │
+  ▼
+Confidence
+  │
+  ▼
+END
+```
+
+LangGraph is used for orchestration and controlled branching, not for exposing or storing model chain-of-thought.
+
+### AI Reliability
+
+- Structured AI output.
+- Schema validation.
+- Automatic retry.
+- Exponential backoff for transient failures.
+- Rate-limit handling.
+- Timeout handling.
+- Provider failure handling.
+- Model/provider fallback.
+- Safe error normalization.
+
+### Advanced Review Intelligence
+
+- Aspect extraction.
+- Aspect-level sentiment.
+- Customer pain-point detection.
+- Positive pattern detection.
+- Topic extraction.
+- Evidence-based summaries.
+- Review-level confidence/uncertainty signal.
+
+### Caching and Efficiency
+
+- Optional LLM response caching (validated results; disabled by default).
+- Optional embedding caching (post-preprocessing vectors; disabled by default).
+- TTL/invalidation strategy (7 days non-RAG, 1 hour RAG, 90 days document embeddings, 30 days query embeddings).
+- Server-side cache operation logging only: no cache metrics, dashboards, or API fields.
+- Reduced repeated provider calls on identical requests.
+- Cache/database failures degrade to a normal cache miss (fail-open).
+
+### Evaluation and Quality
+
+- Fixed offline evaluation dataset (`backend/data/evaluation_set.json`, 40 records; human star ratings with rule-derived sentiment).
+- Offline rating/sentiment metric computation (`compute_metrics`) with dedicated unit tests.
+- Dataset integrity tests for the fixed evaluation dataset.
+- Deterministic metric-regression baseline (proves the metric implementation is stable — not model accuracy).
+- Adversarial input regression tests (unicode/emoji, prompt-like text, unknown fields, duplicates, long inputs).
+- Retry → grounding ordering regression test.
+- Structured-output validity checks.
+- Evidence grounding checks.
+- Model/fallback behavior tests.
+- Regression testing.
+- Deferred (no genuine gold labels exist yet): aspect/evidence quantitative evaluation, RAG retrieval metrics (Recall@K/MRR), V1 versus V2 comparison, live model-quality evaluation.
+
+### Observability and Cost Tracking
+
+- Per-request correlation IDs in server log lines (`rid=...`; internal only, never returned to clients).
+- Consolidated `ai_request_outcome` log event per analysis/summary request (outcome, provider/model, fallback, retry counts, cache and RAG status, provider and total latency).
+- Fallback transition and retry-exhaustion log events (server-side only).
+- Request, provider/model, routing/model-selection, and RAG retrieval logging.
+- Internal token usage is captured on `AIResponse.usage` but is never logged or surfaced.
+- Deferred (explicitly out of scope): user-facing cost/billing metrics, metrics endpoints, and dashboards (ADR-012).
+
+### Product Integration
+
+- Manual review → V2 analysis.
+- Dataset → V2 analysis.
+- RAG evidence shown in the UI.
+- Aspect-level sentiment shown in the UI.
+- Confidence/uncertainty shown in the UI.
+- Clear AI error/fallback states.
+- V2 end-to-end integration testing.
+
+## V2 Explicit Exclusions
+
+V2 remains cloud/API-first and does **not** include:
+
+- Local LLM inference.
+- Ollama.
+- LM Studio.
+- llama.cpp.
+- Local GPU inference.
+- GGUF models.
+- Model quantization.
+- Self-hosted LLM serving.
+- Multi-agent architecture.
+- Exposed or stored chain-of-thought.
+
+These are outside the locked V2 scope.
+
+## V2 Implementation Status
+
+V2 is being implemented incrementally on the `v2-main` branch.
+
+| Area | Status |
+|---|:---:|
+| V2 scope and architecture | 🔒 Locked |
+| V2 README / documentation baseline | 🔄 In progress |
+| V2 foundation | ⏳ |
+| AI gateway | ⏳ |
+| Gemini multi-model fallback | ⏳ |
+| Multi-provider fallback | ⏳ |
+| Cost-aware model routing | ⏳ |
+| LangGraph V2 orchestration | ⏳ |
+| Embeddings | ⏳ |
+| Vector database | ⏳ |
+| Semantic search | ⏳ |
+| RAG pipeline | ⏳ |
+| Evidence grounding expansion | ⏳ |
+| Aspect-level intelligence | ⏳ |
+| Caching | ✅ |
+| Reliability / rate-limit handling | ✅ |
+| Evaluation / regression testing | ✅ |
+| Observability (log-only; ADR-012) | ✅ |
+| End-to-end V2 integration | ⏳ |
+| V2 production readiness | ⏳ |
+
+**V2 status:** Architecture and scope locked; implementation in progress.
 
 ---
 
-# 37. Development Workflow
+# 17. Engineering Principles**
 
-```text
-Inspect
-  ↓
-Implement
-  ↓
-Test
-  ↓
-Review diff
-  ↓
-Document
-  ↓
-User manually commits
-  ↓
-User pushes
-```
+**### Evidence before confidence**
 
-Coding agents must **not** commit or push project changes.
+An insight is more useful when the user can trace it back to the source review.
 
----
+**### Structured output over free-form output**
 
-# 38. Project Philosophy
+Machine-readable contracts make AI behavior testable and predictable.
 
-> **Quality over Quantity.**
+**### Validation at boundaries**
 
-The goal is not to add AI buzzwords or unnecessary components.
+AI output is not trusted simply because it is valid JSON. It must satisfy the application schema and grounding rules.
 
-Every major technology should answer:
+**### Graceful degradation**
 
-```text
-What problem does this solve?
-Why is it needed?
-How does it work?
-How do we validate it?
-What happens when it fails?
-```
+Model failure should trigger a controlled fallback rather than silently returning an unreliable result.
 
-That is the standard used throughout ReviewIQ.
+**### Keep the architecture understandable**
+
+V1 intentionally avoids RAG, agents, caching, local models, and other advanced components before they are needed.
+
+**### Build, test, review, freeze**
+
+Features are implemented against explicit contracts and verified before V1 is considered complete.
+
+**---**
+
+**# 18. Team Structure**
+
+\| Area | Responsibility |
+
+\|---|---|
+
+\| **\*\*Rishi\*\*** | AI/NLP, analysis pipeline, testing & QA |
+
+\| **\*\*Sri\*\*** | Backend, data, API & persistence |
+
+\| **\*\*Alshifa\*\*** | Frontend, dashboard & product experience |
+
+The project follows a collaborative, phase-based implementation and verification workflow.
+
+**---**
+
+**# 19. License**
+
+MIT License.
+
+**---**
+
+**## ReviewIQ V1**
+
+\> **\*\*AI can generate the insight. ReviewIQ verifies the evidence.\*\***
