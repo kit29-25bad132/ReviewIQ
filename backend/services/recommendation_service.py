@@ -26,50 +26,23 @@ PERSONA_DEFAULTS = {
 
 # Domain-specific subcategory and product-type semantic taxonomy for genuine relationship matching
 PRODUCT_TAXONOMY = {
-    # Electronics
-    'audio_devices': {'headphone', 'headphones', 'earbud', 'earbuds', 'earphone', 'earphones', 'headset', 'audio', 'sound'},
-    'power_charging': {'power bank', 'charger', 'battery', 'charging', 'powerbank'},
-    'wearables': {'smartwatch', 'fitness tracker', 'smart watch', 'tracker', 'wearable'},
+    # Smartphone
+    'smartphone': {'smartphone', 'phone', '5g', 'pixel', 'nova', 'm14', 'x7', 'lite', 'pro'},
     
-    # Fashion
-    'clothing_apparel': {'t-shirt', 'shirt', 'jeans', 'denim', 'pants', 'trousers', 'clothing', 'apparel', 'cotton', 'top'},
-    'fashion_accessories': {'bag', 'crossbody', 'handbag', 'tote', 'scarf', 'wool', 'leather', 'purse', 'wallet'},
+    # Headphones
+    'headphones': {'headphone', 'headphones', 'earbud', 'earbuds', 'earphone', 'earphones', 'headset', 'audio', 'sound', 'basspro', 'soundmax', 'neckband', 'anc', 'buds'},
     
-    # Beauty
-    'skincare': {'cream', 'serum', 'lotion', 'moisturizer', 'facial', 'skin', 'anti-aging', 'hydrating', 'face'},
-    'cosmetics_makeup': {'lipstick', 'lip', 'makeup', 'matte', 'cosmetics', 'mascara', 'foundation'},
-    'haircare': {'shampoo', 'conditioner', 'hair', 'haircare', 'scalp'},
+    # Laptop
+    'laptop': {'laptop', 'notebook', 'air', 'probook', 'slim', 'gamer', 'computer'},
     
-    # Health & Personal Care
-    'oral_care': {'toothbrush', 'toothpaste', 'floss', 'dental', 'oral', 'brush'},
-    'hygiene_sanitizer': {'sanitizer', 'soap', 'disinfectant', 'hand wash', 'antiseptic'},
-    'supplements_vitamins': {'multivitamin', 'vitamin', 'supplement', 'nutrition', 'capsules', 'tablets'},
-    'sleep_bedding': {'pillow', 'mattress', 'memory foam', 'bedding', 'cushion'},
+    # Kitchen
+    'kitchen_appliances': {'blender', 'mixer', 'juicer', 'grinder', 'quickblend', 'airfryer', 'air fryer', 'airfry', 'cookware', 'cooktop', 'induction', 'pan', 'pot'},
     
-    # Home & Kitchen
-    'drinkware': {'mug', 'coffee mug', 'cup', 'bottle', 'tumbler'},
-    'lighting': {'lamp', 'desk lamp', 'light', 'led', 'lighting'},
-    'cookware': {'pan', 'frying pan', 'skillet', 'pot', 'cookware'},
-    'kitchen_appliances': {'blender', 'mixer', 'juicer', 'food processor', 'grinder'},
-    
-    # Sports & Outdoors
-    'fitness_equipment': {'exercise bands', 'resistance bands', 'yoga mat', 'mat', 'bands', 'workout', 'fitness'},
-    'outdoor_bags': {'backpack', 'hiking', 'rucksack', 'daypack', 'camping'},
-    'hydration_bottles': {'water bottle', 'bottle', 'flask', 'hydration'},
-    
-    # Toys & Games
-    'tabletop_games_puzzles': {'board game', 'puzzle', 'puzzle set', 'card game', 'tabletop', 'game bundle'},
-    'building_toys': {'building kit', 'lego', 'blocks', 'bricks', 'construction'},
-    'rc_vehicles': {'remote control', 'rc car', 'car', 'vehicle', 'drone'},
-    
-    # Books
-    'fiction_literature': {'novel', 'thriller', 'mystery', 'fiction', 'literature'},
-    'nonfiction_selfhelp': {'self-help', 'motivational', 'guide', 'psychology'},
-    'cooking_culinary': {'cookbook', 'recipes', 'recipe', 'cooking'},
-    'children_literature': {'children', 'picture book', 'kids book', 'bedtime'},
+    # Fitness Band / Wearables
+    'fitness_band': {'fitness band', 'band', 'watch', 'smartwatch', 'tracker', 'pulse', 'active', 'fit lite'},
 }
 
-STOPWORDS = {'a', 'an', 'the', 'and', 'or', 'with', 'for', 'of', 'in', 'on', 'at', 'by', 'set', 'pack', 'kit', 'bundle'}
+STOPWORDS = {'a', 'an', 'the', 'and', 'or', 'with', 'for', 'of', 'in', 'on', 'at', 'by', 'set', 'pack', 'kit', 'bundle', 'pcs'}
 
 
 def extract_title_tokens(text: str) -> set:
@@ -94,10 +67,11 @@ def compute_product_relationship_score(
     """
     Computes genuine relationship score between two products using dataset metadata.
     Must match exact category and have matching sub-category/product type or specific domain token overlap.
-    Broad department matching alone produces 0 score.
     """
     if not target_cat or not candidate_cat or target_cat.strip().lower() != candidate_cat.strip().lower():
         return 0.0
+
+    score = 30.0  # Exact category match baseline
 
     target_subcats = get_product_subcategories(target_title)
     cand_subcats = get_product_subcategories(candidate_title)
@@ -107,9 +81,8 @@ def compute_product_relationship_score(
     cand_tokens = extract_title_tokens(candidate_title)
     common_tokens = target_tokens.intersection(cand_tokens)
 
-    score = 0.0
     if common_subcats:
-        score += 50.0 * len(common_subcats)
+        score += 30.0 * len(common_subcats)
 
     if common_tokens:
         score += 15.0 * len(common_tokens)

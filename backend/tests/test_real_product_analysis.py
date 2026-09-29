@@ -83,10 +83,23 @@ def test_db():
 
     db_service = EcommerceDBService(db_path=db_path)
 
+    from services.gemini_summary_service import AIStructuredProductAnalysis
+
+    mock_analysis = AIStructuredProductAnalysis(
+        product_id="PROD_A",
+        product_title="Alpha Headphones",
+        summary="Grounded analysis of customer feedback.",
+        pros=["Audio quality", "Noise cancellation"],
+        cons=[],
+        insights=["Great customer satisfaction."],
+        evidence=["Crystal clear audio."],
+    )
+
     with patch("routes.products.ecommerce_db_service", db_service), \
          patch("routes.reviews.ecommerce_db_service", db_service), \
          patch("services.pros_cons_service.ecommerce_db_service", db_service), \
-         patch("services.recommendation_service.ecommerce_db_service", db_service):
+         patch("services.recommendation_service.ecommerce_db_service", db_service), \
+         patch.object(gemini_summary_service, "_generate_product_structured_analysis", return_value=mock_analysis):
         yield {"db_service": db_service, "db_path": db_path}
 
     try:

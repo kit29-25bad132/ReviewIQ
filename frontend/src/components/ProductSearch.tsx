@@ -191,7 +191,7 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
             placeholder={
               isAnalyzing
                 ? `Analyzing ${activeProductName || 'product'}... Please wait.`
-                : placeholder || "Search for a product (e.g. Electric Toothbrush, Headphones, Blender...)"
+                : placeholder || "Search for a product (e.g. Zyra Nova 5G, Kelto Gamer 16, Sonaro BassPro 300...)"
             }
             className={`w-full rounded-2xl border border-slate-200 bg-white py-3.5 pl-12 pr-28 text-sm text-slate-800 placeholder-slate-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-100/60 transition-all duration-200 ${
               isAnalyzing ? 'opacity-60 cursor-not-allowed bg-slate-50' : ''

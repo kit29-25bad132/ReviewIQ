@@ -142,7 +142,7 @@ class EcommerceDBService:
             """, (q_lower, limit))
             prefix_matches = cursor.fetchall()
 
-            # 4. Substring match or Product ID match
+            # 4. Substring match across product title, category, brand, or exact Product ID
             cursor.execute("""
                 SELECT
                     product_id,
@@ -152,11 +152,13 @@ class EcommerceDBService:
                     ROUND(AVG(rating), 2) AS average_rating
                 FROM reviews
                 WHERE LOWER(TRIM(product_title)) LIKE '%' || ? || '%'
+                   OR LOWER(TRIM(category)) LIKE '%' || ? || '%'
+                   OR LOWER(TRIM(brand)) LIKE '%' || ? || '%'
                    OR product_id = ?
                 GROUP BY product_id, product_title, category
                 ORDER BY review_count DESC
                 LIMIT ?;
-            """, (q_lower, q_clean, limit))
+            """, (q_lower, q_lower, q_lower, q_clean, limit))
             substring_matches = cursor.fetchall()
 
             seen = set()

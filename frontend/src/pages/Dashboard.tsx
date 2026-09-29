@@ -381,7 +381,7 @@ export const Dashboard: React.FC = () => {
                         onTriggerAnalyze={handleHomeAnalyze}
                         isAnalyzing={loadingProduct}
                         activeProductName={selectedProduct?.product_title}
-                        placeholder="Search for a product (e.g. Electric Toothbrush, Headphones, Blender...)"
+                        placeholder="Search for a product (e.g. Zyra Nova 5G, Kelto Gamer 16, Sonaro BassPro 300...)"
                         compact
                       />
                       <div className="flex items-center gap-2 text-xs text-slate-500 pt-0.5">
@@ -409,19 +409,19 @@ export const Dashboard: React.FC = () => {
                         <div className="bg-white/95 backdrop-blur-xs rounded-2xl p-4 shadow-lg border border-slate-100 text-center space-y-1.5 transform -rotate-3 hover:rotate-0 transition duration-300">
                           <span className="text-2xl block">🎧</span>
                           <div className="text-[11px] font-bold text-slate-900 leading-tight">Headphones</div>
-                          <div className="text-[10px] text-amber-500 font-bold">★ 4.8 / 5.0</div>
+                          <div className="text-[10px] text-amber-500 font-bold">★ 3.8 / 5.0</div>
                         </div>
 
                         <div className="bg-white rounded-2xl p-4 shadow-xl border border-indigo-200 text-center space-y-1.5 transform scale-110 z-20">
-                          <span className="text-3xl block">🧱</span>
-                          <div className="text-xs font-black text-slate-900 leading-tight">Lego Kit</div>
-                          <div className="text-[10px] text-emerald-600 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full inline-block">96% Positive</div>
+                          <span className="text-3xl block">💻</span>
+                          <div className="text-xs font-black text-slate-900 leading-tight">Laptops</div>
+                          <div className="text-[10px] text-emerald-600 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full inline-block">Top Rated</div>
                         </div>
 
                         <div className="bg-white/95 backdrop-blur-xs rounded-2xl p-4 shadow-lg border border-slate-100 text-center space-y-1.5 transform rotate-3 hover:rotate-0 transition duration-300">
-                          <span className="text-2xl block">🪥</span>
-                          <div className="text-[11px] font-bold text-slate-900 leading-tight">Toothbrush</div>
-                          <div className="text-[10px] text-amber-500 font-bold">★ 4.7 / 5.0</div>
+                          <span className="text-2xl block">📱</span>
+                          <div className="text-[11px] font-bold text-slate-900 leading-tight">Smartphones</div>
+                          <div className="text-[10px] text-amber-500 font-bold">★ 3.7 / 5.0</div>
                         </div>
                       </div>
                     </div>
@@ -530,12 +530,11 @@ export const Dashboard: React.FC = () => {
                       <div className="space-y-2">
                         {/* Thumbnail placeholder with product initials */}
                         <div className="h-28 rounded-xl bg-gradient-to-tr from-slate-100 to-indigo-50/50 flex items-center justify-center text-3xl group-hover:scale-105 transition duration-300">
-                          {prod.product_title.includes('Headphones') || prod.product_title.includes('Sound') ? '🎧' :
-                           prod.product_title.includes('Toothbrush') ? '🪥' :
-                           prod.product_title.includes('Blender') ? '🍹' :
-                           prod.product_title.includes('LEGO') ? '🧱' :
-                           prod.product_title.includes('Watch') ? '⌚' :
-                           prod.product_title.includes('Serum') ? '🧴' : '📦'}
+                          {prod.category?.toLowerCase() === 'smartphone' || prod.product_title.toLowerCase().includes('phone') ? '📱' :
+                           prod.category?.toLowerCase() === 'headphones' || prod.product_title.toLowerCase().includes('sound') || prod.product_title.toLowerCase().includes('buds') || prod.product_title.toLowerCase().includes('bass') ? '🎧' :
+                           prod.category?.toLowerCase() === 'laptop' || prod.product_title.toLowerCase().includes('book') || prod.product_title.toLowerCase().includes('air') || prod.product_title.toLowerCase().includes('slim') ? '💻' :
+                           prod.category?.toLowerCase() === 'kitchen' || prod.product_title.toLowerCase().includes('cook') || prod.product_title.toLowerCase().includes('blend') || prod.product_title.toLowerCase().includes('fry') ? '🍳' :
+                           prod.category?.toLowerCase() === 'fitness band' || prod.product_title.toLowerCase().includes('band') || prod.product_title.toLowerCase().includes('watch') || prod.product_title.toLowerCase().includes('fit') ? '⌚' : '📦'}
                         </div>
 
                         <div>
