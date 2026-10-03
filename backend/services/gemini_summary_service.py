@@ -66,6 +66,14 @@ Strict Rules:
 """
 
 
+import hashlib
+import threading
+from collections import OrderedDict
+
+PRODUCT_ANALYSIS_CACHE_TTL_SECONDS = int(os.getenv("PRODUCT_ANALYSIS_CACHE_TTL_SECONDS", "3600"))
+PRODUCT_ANALYSIS_CACHE_MAX_ENTRIES = int(os.getenv("PRODUCT_ANALYSIS_CACHE_MAX_ENTRIES", "500"))
+
+
 class AIStructuredProductAnalysis(BaseModel):
     product_id: str
     product_title: str
@@ -76,11 +84,88 @@ class AIStructuredProductAnalysis(BaseModel):
     evidence: List[str] = Field(default_factory=list)
 
 
+class ProductAnalysisCache:
+    """Thread-safe bounded in-memory cache for validated AI product analyses with TTL, LRU eviction, and dataset versioning."""
+
+    def __init__(
+        self,
+        default_ttl: int = PRODUCT_ANALYSIS_CACHE_TTL_SECONDS,
+        max_entries: int = PRODUCT_ANALYSIS_CACHE_MAX_ENTRIES,
+    ):
+        self.default_ttl = default_ttl
+        self.max_entries = max_entries
+        self._cache: OrderedDict[str, Tuple[AIStructuredProductAnalysis, float]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def _make_key(self, product_id: str, dataset_version: str, model: str, prompt_version: str) -> str:
+        raw = f"{product_id}::{dataset_version}::{model}::{prompt_version}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def get(self, product_id: str, dataset_version: str, model: str, prompt_version: str = "v2") -> Optional[AIStructuredProductAnalysis]:
+        key = self._make_key(product_id, dataset_version, model, prompt_version)
+        now = time.time()
+        with self._lock:
+            if key in self._cache:
+                data, expires_at = self._cache[key]
+                if now < expires_at:
+                    self._cache.move_to_end(key)
+                    logger.info("Product analysis cache hit for product_id=%s (key=%s)", product_id, key[:8])
+                    return data
+                del self._cache[key]
+        return None
+
+    def put(
+        self,
+        product_id: str,
+        dataset_version: str,
+        model: str,
+        data: AIStructuredProductAnalysis,
+        prompt_version: str = "v2",
+        ttl: Optional[int] = None,
+    ) -> None:
+        key = self._make_key(product_id, dataset_version, model, prompt_version)
+        expires_at = time.time() + (ttl or self.default_ttl)
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = (data, expires_at)
+            while len(self._cache) > self.max_entries:
+                self._cache.popitem(last=False)
+            logger.info("Product analysis cached for product_id=%s (key=%s, ttl=%ds, entries=%d)", product_id, key[:8], ttl or self.default_ttl, len(self._cache))
+
+    def invalidate(self, product_id: Optional[str] = None) -> None:
+        with self._lock:
+            if product_id is None:
+                self._cache.clear()
+            else:
+                prefix = hashlib.sha256(product_id.encode("utf-8")).hexdigest()[:4]
+                keys_to_del = [k for k in list(self._cache.keys()) if k.startswith(prefix)]
+                for k in keys_to_del:
+                    del self._cache[k]
+
+
+_inflight_locks: Dict[str, threading.Lock] = {}
+_inflight_master_lock = threading.Lock()
+
+
+def _get_product_inflight_lock(product_id: str) -> threading.Lock:
+    with _inflight_master_lock:
+        if product_id not in _inflight_locks:
+            _inflight_locks[product_id] = threading.Lock()
+        return _inflight_locks[product_id]
+
+
 class GeminiSummaryService:
     """Dataset summary and product intelligence generation."""
 
-    def __init__(self, *, llm_cache: Optional[LLMCache] = None) -> None:
+    def __init__(
+        self,
+        *,
+        llm_cache: Optional[LLMCache] = None,
+        product_cache: Optional[ProductAnalysisCache] = None,
+    ) -> None:
         self._llm_cache = llm_cache
+        self._product_cache = product_cache or ProductAnalysisCache()
 
     @property
     def llm_cache(self) -> LLMCache:
@@ -88,6 +173,10 @@ class GeminiSummaryService:
         if self._llm_cache is None:
             self._llm_cache = LLMCache()
         return self._llm_cache
+
+    @property
+    def product_cache(self) -> ProductAnalysisCache:
+        return self._product_cache
 
     def summarize_product_reviews(
         self, product_title: str, category: Optional[str], sample_reviews: List[str]
@@ -111,8 +200,8 @@ class GeminiSummaryService:
                 source_label="Summary generated from dataset reviews",
             )
 
-        # Build prompt with exact reviews
-        formatted_reviews = "\n".join(f"- {r}" for r in sample_reviews[:40])
+        # Build prompt with exact reviews (limit to 20 representative items)
+        formatted_reviews = "\n".join(f"- {r}" for r in sample_reviews[:20])
         prompt = f"""Product: {product_title}
 Category: {category or 'General'}
 
@@ -141,6 +230,7 @@ Synthesize these dataset reviews according to your system instructions into stru
         product_title: str,
         category: Optional[str],
         sample_reviews: List[str],
+        dataset_version: Optional[str] = None,
     ) -> AIStructuredProductAnalysis:
         if not sample_reviews:
             return AIStructuredProductAnalysis(
@@ -164,8 +254,26 @@ Synthesize these dataset reviews according to your system instructions into stru
                 evidence=[],
             )
 
-        formatted_reviews = "\n".join(f"- {r}" for r in sample_reviews[:40])
-        prompt = f"""Product ID: {product_id}
+        gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        d_version = dataset_version or f"{len(sample_reviews)}"
+
+        # 1. Check cache before locking
+        cached = self.product_cache.get(product_id, d_version, gemini_model)
+        if cached is not None:
+            return cached
+
+        # 2. Single-flight lock to coalesce concurrent requests
+        lock = _get_product_inflight_lock(product_id)
+        with lock:
+            # Double check cache inside lock
+            cached = self.product_cache.get(product_id, d_version, gemini_model)
+            if cached is not None:
+                return cached
+
+            # Take high-signal slice (up to 20 representative reviews)
+            selected_reviews = sample_reviews[:20]
+            formatted_reviews = "\n".join(f"- {r}" for r in selected_reviews)
+            prompt = f"""Product ID: {product_id}
 Product Title: {product_title}
 Category: {category or 'General'}
 
@@ -176,19 +284,14 @@ Customer Reviews from Dataset:
 
 Synthesize ONLY these supplied reviews according to your system instructions into structured JSON."""
 
-        try:
-            return self._generate_product_structured_analysis(prompt, product_id, product_title)
-        except Exception as exc:
-            logger.warning(f"AI product analysis error: {exc}", exc_info=True)
-            return AIStructuredProductAnalysis(
-                product_id=product_id,
-                product_title=product_title,
-                summary=f"Analysis based on {len(sample_reviews)} database customer reviews for {product_title}.",
-                pros=[],
-                cons=[],
-                insights=[],
-                evidence=[],
-            )
+            try:
+                result = self._generate_product_structured_analysis(prompt, product_id, product_title)
+                if result and result.summary and result.product_id == product_id:
+                    self.product_cache.put(product_id, d_version, gemini_model, result)
+                return result
+            except Exception as exc:
+                logger.warning("AI product analysis error for %s: %s", product_id, exc)
+                raise
 
 
     def _generate_summary(self, prompt: str) -> AISummaryResponse:

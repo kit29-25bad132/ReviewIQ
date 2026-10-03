@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Home,
   Search,
@@ -15,6 +15,8 @@ import {
   ThumbsDown,
   Check,
   X,
+  RotateCcw,
+  AlertCircle,
 } from 'lucide-react';
 import type { ReviewAnalysis, ReviewHistoryItem } from '../types/review';
 import type { ProductSummary, ProductAnalysisResponse, ReviewItem } from '../types/ecommerce';
@@ -162,22 +164,34 @@ export const Dashboard: React.FC = () => {
       .catch(() => {});
   }, []);
 
+  const analysisAbortRef = useRef<AbortController | null>(null);
+
   // Load review history on mount
   useEffect(() => {
     fetchAllReviews().then(({ reviews }) => setHistory(reviews));
   }, []);
 
-  // Product Selection handler (selection only, does NOT auto-show reviews)
+  // Product Selection handler (selection only, cancels any in-flight analysis)
   const handleSelectProduct = (product: ProductSummary) => {
+    if (analysisAbortRef.current) {
+      analysisAbortRef.current.abort();
+      analysisAbortRef.current = null;
+    }
     setSelectedProduct(product);
     setProductAnalysis(null);
     setProductError(null);
   };
 
-  // Explicit Analyze handler with 5-6s realistic 4-phase loading
+  // Explicit Analyze handler with progressive phases and no artificial sleep
   const handleTriggerAnalyze = async (product?: ProductSummary) => {
     const targetProduct = product || selectedProduct;
     if (!targetProduct) return;
+
+    if (analysisAbortRef.current) {
+      analysisAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    analysisAbortRef.current = controller;
 
     setSelectedProduct(targetProduct);
     setActiveTab('product_analysis');
@@ -186,17 +200,17 @@ export const Dashboard: React.FC = () => {
     setProductError(null);
     setAnalysisPhase(1);
 
-    const timer1 = setTimeout(() => setAnalysisPhase(2), 1200);
-    const timer2 = setTimeout(() => setAnalysisPhase(3), 2600);
-    const timer3 = setTimeout(() => setAnalysisPhase(4), 4000);
+    const timer1 = setTimeout(() => setAnalysisPhase(2), 600);
+    const timer2 = setTimeout(() => setAnalysisPhase(3), 1400);
+    const timer3 = setTimeout(() => setAnalysisPhase(4), 2200);
 
     try {
-      const [analysisData] = await Promise.all([
-        getProductAnalysis(targetProduct.product_id),
-        new Promise((resolve) => setTimeout(resolve, 2500)),
-      ]);
+      const analysisData = await getProductAnalysis(targetProduct.product_id, controller.signal);
       setProductAnalysis(analysisData);
     } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'Request was cancelled.') {
+        return;
+      }
       setProductError(
         err instanceof Error ? err.message : 'Failed to retrieve product intelligence.'
       );
@@ -205,7 +219,10 @@ export const Dashboard: React.FC = () => {
       clearTimeout(timer1);
       clearTimeout(timer2);
       clearTimeout(timer3);
-      setLoadingProduct(false);
+      if (analysisAbortRef.current === controller) {
+        analysisAbortRef.current = null;
+        setLoadingProduct(false);
+      }
     }
   };
 
@@ -837,8 +854,22 @@ export const Dashboard: React.FC = () => {
                   )}
 
                   {productError && (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-xs text-rose-700">
-                      {productError}
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50/80 p-5 text-xs text-rose-700 space-y-3 animate-fadeIn">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                        <span>{productError}</span>
+                      </div>
+                      {selectedProduct && (
+                        <div>
+                          <button
+                            onClick={() => handleTriggerAnalyze(selectedProduct)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 py-1.5 font-bold text-white shadow-xs hover:bg-rose-700 transition cursor-pointer"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            <span>Retry Analysis</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 

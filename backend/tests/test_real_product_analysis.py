@@ -95,12 +95,16 @@ def test_db():
         evidence=["Crystal clear audio."],
     )
 
+    gemini_summary_service.product_cache.invalidate()
+
     with patch("routes.products.ecommerce_db_service", db_service), \
          patch("routes.reviews.ecommerce_db_service", db_service), \
          patch("services.pros_cons_service.ecommerce_db_service", db_service), \
          patch("services.recommendation_service.ecommerce_db_service", db_service), \
          patch.object(gemini_summary_service, "_generate_product_structured_analysis", return_value=mock_analysis):
         yield {"db_service": db_service, "db_path": db_path}
+
+    gemini_summary_service.product_cache.invalidate()
 
     try:
         db_path.unlink()
@@ -262,6 +266,7 @@ def test_mandatory_test_f_gemini_receives_actual_retrieved_review_content(test_d
             evidence=["Unmatched noise cancellation and crystal clear audio quality."],
         )
 
+    gemini_summary_service.product_cache.invalidate()
     with patch.object(
         gemini_summary_service,
         "_generate_product_structured_analysis",

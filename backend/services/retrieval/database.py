@@ -14,6 +14,13 @@ import os
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
+from pathlib import Path
+from dotenv import load_dotenv
+
+_base = Path(__file__).resolve().parent.parent.parent
+load_dotenv(_base / ".env")
+load_dotenv(_base.parent / ".env")
+
 from services.embeddings.errors import EmbeddingError, EmbeddingErrorType
 
 #: Environment variables checked, in order, for the Postgres connection string.

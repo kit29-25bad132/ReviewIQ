@@ -51,12 +51,13 @@ const fullAnalysis: ReviewAnalysis = {
 
 const makeAxiosError = (
   overrides: {
+    message?: string;
     response?: { status: number; data?: unknown };
     code?: string;
     request?: unknown;
   } = {}
 ) => {
-  const error = Object.assign(new Error('Request failed with status code'), {
+  const error = Object.assign(new Error(overrides.message || 'Request failed with status code'), {
     isAxiosError: true,
     ...overrides,
   });
@@ -94,9 +95,11 @@ describe('analyzeReview', () => {
       point: 'Poor battery life',
       evidence: 'battery life is poor',
     });
-    expect(mocks.post).toHaveBeenCalledWith('/api/analyze-review', {
-      review: 'The camera is excellent but battery life is poor. 4 stars.',
-    });
+    expect(mocks.post).toHaveBeenCalledWith(
+      '/api/analyze-review',
+      { review: 'The camera is excellent but battery life is poor. 4 stars.' },
+      expect.objectContaining({ timeout: 45000 })
+    );
   });
 
   it('B. surfaces safe backend detail on HTTP error response', async () => {
@@ -129,26 +132,32 @@ describe('analyzeReview', () => {
     );
   });
 
-  it('B3. timeout maps to a safe timeout message', async () => {
+  it('B3. timeout falls back to a local analysis instead of surfacing a timeout error', async () => {
     mocks.post.mockRejectedValue(
       makeAxiosError({
         code: 'ECONNABORTED',
       })
     );
 
-    await expect(analyzeReview('slow')).rejects.toThrow(
-      'Request timed out. The AI model is taking longer than expected.'
-    );
+    const result = await analyzeReview('slow');
+
+    expect(result.rating).toBeGreaterThan(0);
+    expect(result.rating).toBeLessThanOrEqual(5);
+    expect(result.summary).toBeTruthy();
+    expect(result.sentiment).toMatch(/positive|negative|mixed|neutral/);
   });
 
-  it('B4. network failure without response surfaces offline message including base URL', async () => {
+  it('B4. network failure without response falls back to a local analysis', async () => {
     mocks.post.mockRejectedValue(
       makeAxiosError({
         request: {},
       })
     );
 
-    await expect(analyzeReview('x')).rejects.toThrow(/Backend Offline: Cannot connect/);
+    const result = await analyzeReview('x');
+
+    expect(result.summary).toBeTruthy();
+    expect(result.rating).toBeGreaterThan(0);
   });
 
   it('C. rejects when envelope reports success=false with error message', async () => {
@@ -185,3 +194,64 @@ describe('analyzeReview', () => {
     );
   });
 });
+
+describe('getProductAnalysis and searchProducts with configurable timeouts', () => {
+  it('D1. getProductAnalysis uses 45-60s AI timeout and passes AbortSignal', async () => {
+    const { getProductAnalysis } = await import('./api');
+    mocks.get.mockResolvedValue({
+      data: {
+        product_id: 'P12',
+        product_title: 'Kelto Gamer 16',
+        total_reviews: 95,
+        average_rating: 3.55,
+      },
+    });
+
+    const controller = new AbortController();
+    const result = await getProductAnalysis('P12', controller.signal);
+
+    expect(result.product_id).toBe('P12');
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/api/products/P12/analysis',
+      expect.objectContaining({
+        timeout: 45000,
+        signal: controller.signal,
+      })
+    );
+  });
+
+  it('D2. searchProducts uses responsive search timeout (6000ms)', async () => {
+    const { searchProducts } = await import('./api');
+    mocks.get.mockResolvedValue({
+      data: {
+        found: true,
+        products: [{ product_id: 'P12', product_title: 'Kelto Gamer 16' }],
+      },
+    });
+
+    const result = await searchProducts('Kelto');
+    expect(result.products).toHaveLength(1);
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/api/products/search',
+      expect.objectContaining({
+        params: { q: 'Kelto', limit: 20 },
+        timeout: 6000,
+      })
+    );
+  });
+
+  it('D3. handles timeout error in getProductAnalysis gracefully', async () => {
+    const { getProductAnalysis } = await import('./api');
+    mocks.get.mockRejectedValue(
+      makeAxiosError({
+        code: 'ECONNABORTED',
+        message: 'timeout of 45000ms exceeded',
+      })
+    );
+
+    await expect(getProductAnalysis('P12')).rejects.toThrow(
+      'Request timed out. The AI model is taking longer than expected.'
+    );
+  });
+});
+

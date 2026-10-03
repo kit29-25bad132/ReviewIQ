@@ -73,14 +73,11 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
     const timer2 = setTimeout(() => setAnalysisPhase(3), 1500);
 
     try {
-      const [res] = await Promise.all([
-        getPersonalizedRecommendation(productId, {
-          persona: targetPersona,
-          priorities: targetPriorities,
-          custom_requirements: targetCustom.trim() || undefined,
-        }),
-        new Promise((resolve) => setTimeout(resolve, 1800)),
-      ]);
+      const res = await getPersonalizedRecommendation(productId, {
+        persona: targetPersona,
+        priorities: targetPriorities,
+        custom_requirements: targetCustom.trim() || undefined,
+      });
       setData(res);
       setEvaluatedPersona(targetPersona);
     } catch (err: unknown) {

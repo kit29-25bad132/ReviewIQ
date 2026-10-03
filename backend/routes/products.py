@@ -1,5 +1,6 @@
+import time
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from models.ecommerce import (
     ProductSummary,
@@ -67,13 +68,14 @@ def search_products(
     response_model=ProductAnalysisResponse,
     summary="Analyze a product from real database reviews with Gemini AI",
 )
-def get_product_analysis(product_id: str):
+def get_product_analysis(product_id: str, response: Response):
     """
     Retrieves real database statistics and grounded AI analysis for a product:
     - Factual metrics calculated directly from database reviews
     - Grounded Gemini AI synthesis strictly from retrieved reviews
     - Returns 404 with clear message if product has insufficient review data
     """
+    t_start = time.perf_counter()
     if not ecommerce_db_service.is_ready():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -81,7 +83,15 @@ def get_product_analysis(product_id: str):
         )
 
     clean_pid = str(product_id).strip()
+    gemini_model = "gemini-3.8-flash"
+    dataset_version = ecommerce_db_service.get_dataset_version(clean_pid)
+    cached_check = gemini_summary_service.product_cache.get(clean_pid, dataset_version, gemini_model)
+    cache_status = "HIT" if cached_check is not None else "MISS"
+
+    t_db_start = time.perf_counter()
     analysis = ecommerce_db_service.get_product_analysis(clean_pid)
+    db_ms = (time.perf_counter() - t_db_start) * 1000
+
     if not analysis or analysis.total_reviews == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -95,26 +105,49 @@ def get_product_analysis(product_id: str):
             detail="Product ID mismatch in analysis response.",
         )
 
-    # Attempt AI analysis grounded strictly in retrieved database reviews
-    sample_reviews = ecommerce_db_service.get_sample_reviews(clean_pid, limit=40)
-    if sample_reviews:
-        try:
-            ai_data = gemini_summary_service.generate_product_analysis(
-                product_id=clean_pid,
-                product_title=analysis.product_title,
-                category=analysis.category,
-                sample_reviews=sample_reviews,
-            )
-            if ai_data:
-                analysis.summary = ai_data.summary
-                analysis.pros = ai_data.pros
-                analysis.cons = ai_data.cons
-                analysis.insights = ai_data.insights
-                analysis.evidence = ai_data.evidence
-                analysis.ai_available = True
-        except Exception:
-            # If Gemini fails, keep factual database metrics and mark AI analysis unavailable
-            analysis.ai_available = False
+    if cached_check is not None:
+        analysis.summary = cached_check.summary
+        analysis.pros = cached_check.pros
+        analysis.cons = cached_check.cons
+        analysis.insights = cached_check.insights
+        analysis.evidence = cached_check.evidence
+        analysis.ai_available = True
+        ai_ms = 0.0
+    else:
+        ai_ms = 0.0
+
+        # Attempt AI analysis grounded strictly in retrieved database reviews
+        sample_reviews = ecommerce_db_service.get_sample_reviews(clean_pid, limit=40)
+        if sample_reviews:
+            t_ai_start = time.perf_counter()
+            try:
+                ai_data = gemini_summary_service.generate_product_analysis(
+                    product_id=clean_pid,
+                    product_title=analysis.product_title,
+                    category=analysis.category,
+                    sample_reviews=sample_reviews,
+                    dataset_version=dataset_version,
+                )
+                ai_ms = (time.perf_counter() - t_ai_start) * 1000
+                if ai_data:
+                    analysis.summary = ai_data.summary
+                    analysis.pros = ai_data.pros
+                    analysis.cons = ai_data.cons
+                    analysis.insights = ai_data.insights
+                    analysis.evidence = ai_data.evidence
+                    analysis.ai_available = True
+            except Exception:
+                ai_ms = (time.perf_counter() - t_ai_start) * 1000
+                # If Gemini fails, keep factual database metrics and mark AI analysis unavailable
+                analysis.ai_available = False
+
+    total_ms = (time.perf_counter() - t_start) * 1000
+
+    if response is not None:
+        response.headers["Server-Timing"] = f"db;dur={db_ms:.1f}, ai;dur={ai_ms:.1f}, total;dur={total_ms:.1f}"
+        response.headers["X-Cache-Status"] = cache_status
+        response.headers["X-Dataset-Version"] = dataset_version
+        response.headers["X-Total-Duration-Ms"] = f"{total_ms:.1f}"
 
     return analysis
 

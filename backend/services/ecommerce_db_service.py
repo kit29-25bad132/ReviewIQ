@@ -26,12 +26,36 @@ class EcommerceDBService:
             raise FileNotFoundError(
                 f"Database file not found at {self.db_path}. Please run dataset ingestion."
             )
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10.0, check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA journal_mode = WAL;")
+        cursor.execute("PRAGMA synchronous = NORMAL;")
+        cursor.execute("PRAGMA cache_size = -32000;")
+        cursor.execute("PRAGMA temp_store = MEMORY;")
+        cursor.execute("PRAGMA mmap_size = 268435456;")
         return conn
+
+    def ensure_indexes(self) -> None:
+        """Ensures high-performance covering indexes exist on reviews and products tables."""
+        if not self.db_path.exists():
+            return
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_reviews_product_id ON reviews(product_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_reviews_pid_sentiment ON reviews(product_id, sentiment);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_reviews_pid_rating ON reviews(product_id, rating);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_products_pid ON products(product_id);")
+            conn.commit()
+        except Exception:
+            pass
+        finally:
+            conn.close()
 
     def ensure_seed_data(self) -> bool:
         if self.db_path.exists():
+            self.ensure_indexes()
             return True
 
         seed_file = BASE_DIR / "scripts" / "seed_sample_data.py"
@@ -51,7 +75,10 @@ class EcommerceDBService:
         except Exception:
             return False
 
-        return self.db_path.exists()
+        ready = self.db_path.exists()
+        if ready:
+            self.ensure_indexes()
+        return ready
 
     def is_ready(self) -> bool:
         return self.ensure_seed_data()
@@ -370,21 +397,72 @@ class EcommerceDBService:
         finally:
             conn.close()
 
-    def get_sample_reviews(self, product_id: str, limit: int = 40) -> List[str]:
+    def get_dataset_version(self, product_id: Optional[str] = None) -> str:
+        """Returns a stable dataset version string based on review count and latest review id for product or entire DB."""
+        if not self.is_ready():
+            return "0_0"
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            if product_id:
+                cursor.execute("""
+                    SELECT COUNT(*), MAX(id), ROUND(AVG(rating), 2)
+                    FROM reviews
+                    WHERE product_id = ?;
+                """, (str(product_id),))
+            else:
+                cursor.execute("""
+                    SELECT COUNT(*), MAX(id), ROUND(AVG(rating), 2)
+                    FROM reviews;
+                """)
+            row = cursor.fetchone()
+            if not row or row[0] == 0:
+                return "empty"
+            return f"{row[0]}_{row[1]}_{row[2]}"
+        finally:
+            conn.close()
+
+    def get_sample_reviews(self, product_id: str, limit: int = 20) -> List[str]:
         if not self.is_ready():
             return []
 
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, review_text, rating, sentiment
-                FROM reviews
-                WHERE product_id = ?
-                ORDER BY id ASC
-                LIMIT ?;
-            """, (str(product_id), limit))
-            rows = cursor.fetchall()
+            rows = []
+            try:
+                # Balanced high-signal review sampling across sentiments, prioritizing helpful votes and verified reviews
+                cursor.execute("""
+                    WITH ranked_reviews AS (
+                        SELECT 
+                            id, review_text, rating, sentiment, helpful_votes,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY LOWER(sentiment) 
+                                ORDER BY helpful_votes DESC, id DESC
+                            ) AS rn
+                        FROM reviews
+                        WHERE product_id = ?
+                    )
+                    SELECT id, review_text, rating, sentiment
+                    FROM ranked_reviews
+                    WHERE rn <= 8
+                    ORDER BY id ASC
+                    LIMIT ?;
+                """, (str(product_id), limit))
+                rows = cursor.fetchall()
+            except sqlite3.OperationalError:
+                rows = []
+
+            if not rows:
+                cursor.execute("""
+                    SELECT id, review_text, rating, sentiment
+                    FROM reviews
+                    WHERE product_id = ?
+                    ORDER BY id ASC
+                    LIMIT ?;
+                """, (str(product_id), limit))
+                rows = cursor.fetchall()
+
             return [
                 f"[Review #{r['id']} | {r['sentiment']} | {r['rating']}★] {r['review_text']}"
                 for r in rows
@@ -394,4 +472,5 @@ class EcommerceDBService:
 
 
 ecommerce_db_service = EcommerceDBService()
+
 

@@ -25,7 +25,7 @@ from services.ai.registry import (
 # invalid request, unknown) continue along the model-level chain, and provider
 # fallback happens when the provider's usable models are exhausted.
 SKIP_REMAINING_PROVIDER_ERRORS = frozenset(
-    {AIErrorType.AUTHENTICATION, AIErrorType.CONFIGURATION, AIErrorType.RATE_LIMIT}
+    {AIErrorType.AUTHENTICATION, AIErrorType.CONFIGURATION}
 )
 
 
