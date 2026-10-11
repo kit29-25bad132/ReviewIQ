@@ -12,7 +12,7 @@ distance == descending similarity) and the similarity score is reported in
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set
 
 
 @dataclass(frozen=True)
@@ -108,6 +108,27 @@ class VectorRepository(ABC):
     @abstractmethod
     def existing_fingerprints(self, fingerprints: Sequence[str]) -> Set[str]:
         """Return the subset of fingerprints already stored (skip re-embedding)."""
+
+    @abstractmethod
+    def fingerprints_by_review(self, source: str) -> Dict[str, Set[str]]:
+        """Map review_id -> stored fingerprints for one source identity.
+
+        Powers stale-vector detection: a stored fingerprint for a known
+        review that no longer matches its expected fingerprint is obsolete
+        and must never be served as current evidence.
+        """
+
+    @abstractmethod
+    def delete_stale_review_embeddings(
+        self, review_id: str, keep_fingerprint: str, source: str
+    ) -> int:
+        """Delete stored rows for ``review_id``/``source`` whose fingerprint
+        differs from ``keep_fingerprint``; returns rows deleted.
+
+        Call only AFTER the replacement record is safely stored: deletion
+        never precedes insertion. Scoped by both review_id and source so
+        legacy rows (disjoint IDs and source) can never match.
+        """
 
     @abstractmethod
     def get_metadata(self, review_id: str) -> Optional[VectorMetadata]:

@@ -5,39 +5,50 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from main import app
-from models.dataset import DatasetReview
-from services.dataset_service import DatasetUnavailableError, dataset_service
+from services.catalog.catalog_service import canonical_catalog
 from services.evaluation_service import evaluation_service
 
 client = TestClient(app, raise_server_exceptions=False)
 
-ROWS = [
-    DatasetReview(
-        id="r1",
-        asin="B000000001",
-        review_text="Love it",
-        actual_rating=5,
-        actual_sentiment="positive",
-    ),
-    DatasetReview(
-        id="r2",
-        asin="B000000001",
-        review_text="Okay",
-        actual_rating=3,
-        actual_sentiment="neutral",
-    ),
-    DatasetReview(
-        id="r3",
-        asin="B000000002",
-        review_text="Hate it",
-        actual_rating=1,
-        actual_sentiment="negative",
-    ),
+OVERVIEW_AGG = {
+    "total_reviews": 3,
+    "average_rating": 3.0,
+    "positive_reviews": 1,
+    "neutral_reviews": 1,
+    "negative_reviews": 1,
+    "rating_distribution": {1: 0, 2: 0, 3: 1, 4: 0, 5: 1},
+}
+
+PRODUCT_ROWS = [
+    {
+        "source_product_id": "B000000001",
+        "product_name": None,
+        "review_count": 2,
+        "average_rating": 4.0,
+        "positive_reviews": 1,
+        "neutral_reviews": 1,
+        "negative_reviews": 0,
+        "helpful_votes": 0,
+        "review_ids": ["r1", "r2"],
+    },
+    {
+        "source_product_id": "B000000002",
+        "product_name": None,
+        "review_count": 1,
+        "average_rating": 1.0,
+        "positive_reviews": 0,
+        "neutral_reviews": 0,
+        "negative_reviews": 1,
+        "helpful_votes": 0,
+        "review_ids": ["r3"],
+    },
 ]
 
 
 def test_overview_success():
-    with patch.object(dataset_service, "records", return_value=ROWS):
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "get_overview_analytics", return_value=OVERVIEW_AGG
+    ):
         resp = client.get("/api/analytics/overview")
     assert resp.status_code == 200
     body = resp.json()
@@ -50,7 +61,18 @@ def test_overview_success():
 
 
 def test_overview_empty_rows():
-    with patch.object(dataset_service, "records", return_value=[]):
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog,
+        "get_overview_analytics",
+        return_value={
+            "total_reviews": 0,
+            "average_rating": 0.0,
+            "positive_reviews": 0,
+            "neutral_reviews": 0,
+            "negative_reviews": 0,
+            "rating_distribution": {1: 0, 2: 0, 3: 0, 4: 0, 5: 0},
+        },
+    ):
         resp = client.get("/api/analytics/overview")
     assert resp.status_code == 200
     body = resp.json()
@@ -59,26 +81,26 @@ def test_overview_empty_rows():
 
 
 def test_overview_unavailable_safe_503():
-    secret = "DB password=hunter2 connection failed"
-    with patch.object(
-        dataset_service, "records", side_effect=DatasetUnavailableError(secret)
-    ):
+    with patch.object(canonical_catalog, "is_configured", return_value=False):
         resp = client.get("/api/analytics/overview")
     assert resp.status_code == 503
-    assert secret not in resp.text
     assert resp.json()["detail"] == "Analytics service is currently unavailable. Please try again later."
 
 
 def test_overview_unexpected_error_safe_503():
     secret = "INTERNAL stacktrace /etc/passwd"
-    with patch.object(dataset_service, "records", side_effect=RuntimeError(secret)):
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "get_overview_analytics", side_effect=RuntimeError(secret)
+    ):
         resp = client.get("/api/analytics/overview")
     assert resp.status_code == 503
     assert secret not in resp.text
 
 
 def test_products_analytics_success():
-    with patch.object(dataset_service, "records", return_value=ROWS), patch.object(
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "get_product_analytics", return_value=PRODUCT_ROWS
+    ), patch.object(
         evaluation_service, "_cache", return_value={}
     ):
         resp = client.get("/api/analytics/products")
@@ -98,7 +120,9 @@ def test_products_analytics_limit_validation():
 
 
 def test_products_analytics_empty_rows():
-    with patch.object(dataset_service, "records", return_value=[]), patch.object(
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "get_product_analytics", return_value=[]
+    ), patch.object(
         evaluation_service, "_cache", return_value={}
     ):
         resp = client.get("/api/analytics/products")
@@ -107,19 +131,17 @@ def test_products_analytics_empty_rows():
 
 
 def test_products_analytics_unavailable_safe_503():
-    secret = "sqlite disk I/O error /secret/path.db"
-    with patch.object(
-        dataset_service, "records", side_effect=DatasetUnavailableError(secret)
-    ):
+    with patch.object(canonical_catalog, "is_configured", return_value=False):
         resp = client.get("/api/analytics/products")
     assert resp.status_code == 503
-    assert secret not in resp.text
     assert resp.json()["detail"] == "Analytics service is currently unavailable. Please try again later."
 
 
 def test_products_analytics_unexpected_error_safe_503():
     secret = "unexpected analytics boom"
-    with patch.object(dataset_service, "records", side_effect=RuntimeError(secret)):
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "get_product_analytics", side_effect=RuntimeError(secret)
+    ):
         resp = client.get("/api/analytics/products")
     assert resp.status_code == 503
     assert secret not in resp.text

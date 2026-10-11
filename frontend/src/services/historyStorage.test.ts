@@ -4,6 +4,8 @@ import type { ReviewAnalysis } from '../types/review';
 const mockState = vi.hoisted(() => ({
   configured: true,
   configError: null as string | null,
+  authUser: { id: 'user-123' } as { id: string } | null,
+  authError: null as Record<string, unknown> | null,
   insertPayload: null as Record<string, unknown> | null,
   insertData: null as Record<string, unknown> | null,
   insertError: null as Record<string, unknown> | null,
@@ -15,7 +17,85 @@ const mockState = vi.hoisted(() => ({
 }));
 
 vi.mock('./supabase', () => {
+  const buildSelectBuilder = () => {
+    const builder = {
+      eq: (column: string, value: string) => ({
+        ...builder,
+        order: (_field: string, _opts?: Record<string, unknown>) => {
+          if (mockState.selectThrow) {
+            throw new Error('network failure');
+          }
+          return {
+            data: mockState.selectData,
+            error: mockState.selectError,
+          };
+        },
+        maybeSingle: async () => {
+          if (column === 'id' && mockState.authUser && mockState.authUser.id === 'user-999') {
+            return {
+              data: { id: value, user_id: 'user-123' },
+              error: null,
+            };
+          }
+          return {
+            data: null,
+            error: { code: 'PGRST116', message: 'No rows found', details: '', hint: '' },
+          };
+        },
+        single: async () => {
+          if (column === 'id' && mockState.authUser && mockState.authUser.id === 'user-999') {
+            return {
+              data: { id: value, user_id: 'user-123' },
+              error: null,
+            };
+          }
+          return { data: null, error: null };
+        },
+      }),
+      order: (_field: string, _opts?: Record<string, unknown>) => {
+        if (mockState.selectThrow) {
+          throw new Error('network failure');
+        }
+        return {
+          data: mockState.selectData,
+          error: mockState.selectError,
+        };
+      },
+      maybeSingle: async () => ({
+        data: null,
+        error: { code: 'PGRST116', message: 'No rows found', details: '', hint: '' },
+      }),
+      single: async () => ({
+        data: null,
+        error: null,
+      }),
+    };
+    return builder;
+  };
+
+  const buildDeleteBuilder = () => {
+    const builder = {
+      eq: (column: string, value: string) => {
+        mockState.deleteCalls.push({ type: 'eq', value: column === 'id' ? value : 'user-123' });
+        return {
+          eq: (nextColumn: string, nextValue: string) => {
+            mockState.deleteCalls.push({ type: 'eq', value: nextColumn === 'id' ? nextValue : 'user-123' });
+            return { error: mockState.deleteError };
+          },
+          error: mockState.deleteError,
+        };
+      },
+    };
+    return builder;
+  };
+
   const client = {
+    auth: {
+      getUser: async () => ({
+        data: { user: mockState.authUser },
+        error: mockState.authError,
+      }),
+    },
     from: (_table: string) => ({
       insert: (payload: Record<string, unknown>) => {
         mockState.insertPayload = payload;
@@ -28,27 +108,8 @@ vi.mock('./supabase', () => {
           }),
         };
       },
-      select: () => ({
-        order: async () => {
-          if (mockState.selectThrow) {
-            throw new Error('network failure');
-          }
-          return {
-            data: mockState.selectData,
-            error: mockState.selectError,
-          };
-        },
-      }),
-      delete: () => ({
-        eq: async (_column: string, value: string) => {
-          mockState.deleteCalls.push({ type: 'eq', value });
-          return { error: mockState.deleteError };
-        },
-        neq: async (_column: string, value: string) => {
-          mockState.deleteCalls.push({ type: 'neq', value });
-          return { error: mockState.deleteError };
-        },
-      }),
+      select: () => buildSelectBuilder(),
+      delete: () => buildDeleteBuilder(),
     }),
   };
 
@@ -135,6 +196,8 @@ beforeEach(() => {
   vi.stubGlobal('localStorage', new MemoryStorage());
   mockState.configured = true;
   mockState.configError = null;
+  mockState.authUser = { id: 'user-123' };
+  mockState.authError = null;
   mockState.insertPayload = null;
   mockState.insertData = null;
   mockState.insertError = null;
@@ -319,6 +382,26 @@ describe('F. Supabase unavailable/unconfigured', () => {
     expect(source).toBe('local');
     expect(reviews[0].analysis).toEqual(fullAnalysis);
   });
+
+  it('falls back to localStorage when no authenticated user is present', async () => {
+    mockState.authUser = null;
+
+    const saved = await saveReviewAnalysis(reviewText, fullAnalysis);
+    expect(saved.analysis).toEqual(fullAnalysis);
+    expect(getLocalReviews()).toHaveLength(1);
+
+    const { reviews, source } = await fetchAllReviews();
+    expect(source).toBe('local');
+    expect(reviews[0].analysis).toEqual(fullAnalysis);
+  });
+
+  it('rejects delete attempts without an authenticated user', async () => {
+    mockState.authUser = null;
+    setLocalReviews([{ id: 'del-guest', reviewText: 'x', analysis: fullAnalysis, createdAt: '2026-01-01T00:00:00.000Z' }]);
+
+    await expect(deleteReviewById('del-guest')).rejects.toBeInstanceOf(SupabasePersistenceError);
+    expect(getLocalReviews()).toHaveLength(1);
+  });
 });
 
 describe('G. Supabase fetch failure', () => {
@@ -396,7 +479,22 @@ describe('I. Delete failure', () => {
 
     await expect(deleteReviewById('del-1')).rejects.toBeInstanceOf(SupabasePersistenceError);
     expect(getLocalReviews()).toHaveLength(1);
-    expect(mockState.deleteCalls).toContainEqual({ type: 'eq', value: 'del-1' });
+    expect(mockState.deleteCalls.some((call) => call.type === 'eq' && call.value === 'del-1')).toBe(true);
+  });
+
+  it('rejects delete attempts for a different authenticated user', async () => {
+    mockState.authUser = { id: 'user-999' };
+    setLocalReviews([
+      {
+        id: 'del-other',
+        reviewText: 'x',
+        analysis: fullAnalysis,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+
+    await expect(deleteReviewById('del-other')).rejects.toBeInstanceOf(SupabasePersistenceError);
+    expect(getLocalReviews()).toHaveLength(1);
   });
 
   it('removes local row when Supabase delete succeeds', async () => {
@@ -434,7 +532,7 @@ describe('J. Clear failure', () => {
 
     await expect(clearAllReviews()).rejects.toBeInstanceOf(SupabasePersistenceError);
     expect(getLocalReviews()).toHaveLength(1);
-    expect(mockState.deleteCalls.some((c) => c.type === 'neq')).toBe(true);
+    expect(mockState.deleteCalls.some((c) => c.type === 'eq')).toBe(true);
   });
 
   it('clears local history when Supabase clear succeeds', async () => {

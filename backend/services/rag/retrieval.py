@@ -18,7 +18,7 @@ from typing import Optional, Tuple
 from services.embeddings.errors import EmbeddingError, EmbeddingErrorType
 from services.rag.config import RAGConfig
 from services.retrieval.search_service import SemanticSearchService
-from services.retrieval.vector_repository import ReviewSearchResult
+from services.retrieval.vector_repository import ReviewSearchFilters, ReviewSearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +87,12 @@ class RagRetrievalService:
             self._search_service = build_search_service()
         return self._search_service
 
-    def retrieve(self, query: str) -> RagRetrievalResult:
-        """Run semantic search for ``query``; never raises."""
+    def retrieve(self, query: str, *, filters: Optional[ReviewSearchFilters] = None) -> RagRetrievalResult:
+        """Run semantic search for ``query``; never raises.
+
+        ``filters`` scopes the corpus (e.g. to canonical source rows).
+        ``None`` preserves the legacy unfiltered behavior.
+        """
         config = self._config
         if not config.enabled:
             return self._build(query, (), RagRetrievalStatus.DISABLED)
@@ -104,6 +108,7 @@ class RagRetrievalService:
                 query,
                 top_k=config.top_k,
                 similarity_threshold=config.similarity_threshold,
+                filters=filters,
             )
         except EmbeddingError as err:
             status = (
