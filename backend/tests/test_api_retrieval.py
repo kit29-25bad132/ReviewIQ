@@ -30,8 +30,8 @@ def _wired_service():
     indexer = ReviewIndexingService(embedding, repository)
     indexer.index(
         [
-            {"review_id": "r1", "product_id": "p1", "review_text": "The battery drains quickly.", "rating": 1},
-            {"review_id": "r2", "product_id": "p1", "review_text": "Battery life is excellent.", "rating": 5},
+            {"review_id": "r1", "product_id": "p1", "review_text": "The battery drains quickly.", "rating": 1, "source": "canonical"},
+            {"review_id": "r2", "product_id": "p1", "review_text": "Battery life is excellent.", "rating": 5, "source": "canonical"},
         ]
     )
     return SemanticSearchService(embedding, repository)

@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 SUMMARY_TEMPERATURE = 0.2
 
 SUMMARY_SYSTEM_INSTRUCTION = """You are a strict Product Review Intelligence AI.
-Analyze ONLY the supplied real customer reviews from the product review dataset.
+Analyze ONLY the supplied canonical dataset reviews from the product review dataset.
 
 Strict Rules:
 1. NO HALLUCINATION RULE: Use ONLY facts, experiences, pros, and cons explicitly stated in the provided reviews. Do NOT invent features, issues, ratings, or opinions not found in the review text.
@@ -51,7 +51,7 @@ Strict Rules:
 """
 
 PRODUCT_ANALYSIS_SYSTEM_INSTRUCTION = """You are a strict Product Review Intelligence AI.
-Analyze ONLY the supplied real customer reviews for the requested product.
+Analyze ONLY the supplied canonical dataset reviews for the requested product.
 
 Strict Rules:
 1. NO HALLUCINATION RULE: Use ONLY facts, experiences, pros, and cons explicitly stated in the provided reviews. Do NOT invent features, issues, ratings, or opinions not found in the review text.

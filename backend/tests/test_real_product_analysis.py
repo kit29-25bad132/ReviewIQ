@@ -26,7 +26,12 @@ client = TestClient(app, raise_server_exceptions=False)
 
 @pytest.fixture
 def test_db():
-    """Creates an isolated temporary SQLite database with real reviews."""
+    """Creates isolated canonical-catalog state with real review content.
+
+    The analysis route reads CanonicalCatalogService (Supabase); the
+    reviews route still reads the temp SQLite DB, which is retained so the
+    reviews-endpoint isolation check keeps exercising a real store.
+    """
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = Path(tmp.name)
 
@@ -95,14 +100,112 @@ def test_db():
         evidence=["Crystal clear audio."],
     )
 
+    def _review(rid, pid, text, rating, sentiment):
+        return {
+            "id": rid,
+            "review_id": rid,
+            "source_review_id": rid,
+            "product_id": pid,
+            "source_product_id": pid,
+            "canonical_product_id": pid,
+            "rating": rating,
+            "review_title": "",
+            "review_text": text,
+            "sentiment": sentiment,
+        }
+
+    def _stats(pid, title, category, reviews):
+        ratings = [r["rating"] for r in reviews]
+        total = len(reviews)
+        avg = round(sum(ratings) / total, 2) if total else 0.0
+        star = {f"star_{s}": sum(1 for x in ratings if x == s) for s in range(1, 6)}
+        sent = {"positive": 0, "neutral": 0, "negative": 0}
+        for r in reviews:
+            sent[r["sentiment"]] = sent.get(r["sentiment"], 0) + 1
+        return {
+            "product": {
+                "id": pid,
+                "source_product_id": pid,
+                "product_title": title,
+                "name": title,
+                "category": category,
+            },
+            "total_reviews": total,
+            "average_rating": avg,
+            "rating_distribution": star,
+            "sentiment_distribution": sent,
+        }
+
+    canonical_state = {
+        "PROD_A": (
+            _stats("PROD_A", "Alpha Headphones", "Electronics", [
+                _review("RA1", "PROD_A", "Unmatched noise cancellation and crystal clear audio quality.", 5, "positive"),
+                _review("RA2", "PROD_A", "Battery life lasts over 40 hours easily. Extremely comfortable.", 5, "positive"),
+                _review("RA3", "PROD_A", "Super fast bluetooth connection and premium travel pouch.", 5, "positive"),
+            ]),
+            [
+                _review("RA1", "PROD_A", "Unmatched noise cancellation and crystal clear audio quality.", 5, "positive"),
+                _review("RA2", "PROD_A", "Battery life lasts over 40 hours easily. Extremely comfortable.", 5, "positive"),
+                _review("RA3", "PROD_A", "Super fast bluetooth connection and premium travel pouch.", 5, "positive"),
+            ],
+        ),
+        "PROD_B": (
+            _stats("PROD_B", "Beta Blender", "Home & Kitchen", [
+                _review("RB1", "PROD_B", "Motor started smoking on day two. Horrible durability.", 1, "negative"),
+                _review("RB2", "PROD_B", "Plastic blade gears snapped when blending soft fruit.", 1, "negative"),
+                _review("RB3", "PROD_B", "Okay for liquids but leaks if filled past halfway.", 3, "neutral"),
+            ]),
+            [
+                _review("RB1", "PROD_B", "Motor started smoking on day two. Horrible durability.", 1, "negative"),
+                _review("RB2", "PROD_B", "Plastic blade gears snapped when blending soft fruit.", 1, "negative"),
+                _review("RB3", "PROD_B", "Okay for liquids but leaks if filled past halfway.", 3, "neutral"),
+            ],
+        ),
+        "PROD_C": (
+            _stats("PROD_C", "Gamma Gadget", "Gadgets", [
+                _review("RC1", "PROD_C", "Just an ordinary gadget.", 3, "neutral"),
+            ]),
+            [
+                _review("RC1", "PROD_C", "Just an ordinary gadget.", 3, "neutral"),
+            ],
+        ),
+    }
+
+    def _fake_stats(pid, product=None):
+        entry = canonical_state.get(pid)
+        return entry[0] if entry else None
+
+    def _fake_reviews(pid, page=1, page_size=20, product=None, **kwargs):
+        entry = canonical_state.get(pid)
+        if not entry:
+            return [], 0
+        return entry[1][:page_size], len(entry[1])
+
+    def _fake_product(pid):
+        entry = canonical_state.get(pid)
+        if not entry or not entry[0]:
+            return None
+        return entry[0]["product"]
+
+    fake_catalog = MagicMock()
+    fake_catalog.is_configured.return_value = True
+    # Version tracks the canonical store contents so a store change (test C)
+    # busts the product cache exactly like the SQLite dataset version did.
+    fake_catalog.get_dataset_version.side_effect = lambda: (
+        "test-v" + str(sum(e[0]["total_reviews"] for e in canonical_state.values() if e[0]))
+    )
+    fake_catalog.get_product_by_id.side_effect = _fake_product
+    fake_catalog.get_product_statistics.side_effect = _fake_stats
+    fake_catalog.get_reviews.side_effect = _fake_reviews
+
     gemini_summary_service.product_cache.invalidate()
 
-    with patch("routes.products.ecommerce_db_service", db_service), \
-         patch("routes.reviews.ecommerce_db_service", db_service), \
-         patch("services.pros_cons_service.ecommerce_db_service", db_service), \
-         patch("services.recommendation_service.ecommerce_db_service", db_service), \
+    with patch("routes.products.canonical_catalog", fake_catalog), \
+         patch("routes.reviews.canonical_catalog", fake_catalog), \
+         patch("services.pros_cons_service.canonical_catalog", fake_catalog), \
+         patch("services.recommendation_service.canonical_catalog", fake_catalog), \
          patch.object(gemini_summary_service, "_generate_product_structured_analysis", return_value=mock_analysis):
-        yield {"db_service": db_service, "db_path": db_path}
+        yield {"db_service": db_service, "db_path": db_path, "canonical_state": canonical_state}
 
     gemini_summary_service.product_cache.invalidate()
 
@@ -166,8 +269,6 @@ def test_mandatory_test_b_product_b_differs_when_reviews_differ(test_db):
 
 def test_mandatory_test_c_modify_database_changes_factual_metrics(test_db):
     """Test C: Modify/add a review in the database. Run Analyze again. Verify metrics change accordingly."""
-    db_path = test_db["db_path"]
-
     # Initial state of Product A: 3 reviews, avg 5.0
     resp_1 = client.get("/api/products/PROD_A/analysis")
     assert resp_1.status_code == 200
@@ -175,15 +276,25 @@ def test_mandatory_test_c_modify_database_changes_factual_metrics(test_db):
     assert resp_1.json()["average_rating"] == 5.0
     assert resp_1.json()["sentiment"]["negative"] == 0
 
-    # Add a 1-star negative review to Product A in SQLite database
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO reviews (product_id, product_title, category, review_text, rating, sentiment) VALUES (?, ?, ?, ?, ?, ?)",
-        ("PROD_A", "Alpha Headphones", "Electronics", "Left ear cup completely stopped working after a week.", 1, "negative")
-    )
-    conn.commit()
-    conn.close()
+    # Add a 1-star negative review to Product A in the canonical store
+    state = test_db["canonical_state"]
+    stats_a, reviews_a = state["PROD_A"]
+    reviews_a.append({
+        "id": "RA4",
+        "review_id": "RA4",
+        "source_review_id": "RA4",
+        "product_id": "PROD_A",
+        "source_product_id": "PROD_A",
+        "canonical_product_id": "PROD_A",
+        "rating": 1,
+        "review_title": "",
+        "review_text": "Left ear cup completely stopped working after a week.",
+        "sentiment": "negative",
+    })
+    stats_a["total_reviews"] = 4
+    stats_a["average_rating"] = 4.0
+    stats_a["rating_distribution"]["star_1"] = 1
+    stats_a["sentiment_distribution"]["negative"] = 1
 
     # Run Analyze again on Product A
     resp_2 = client.get("/api/products/PROD_A/analysis")
@@ -202,14 +313,8 @@ def test_mandatory_test_c_modify_database_changes_factual_metrics(test_db):
 
 def test_mandatory_test_d_delete_reviews_returns_insufficient_data(test_db):
     """Test D: Delete/remove all reviews for a product. Run Analyze. Verify API returns 'insufficient review data' and no fake values."""
-    db_path = test_db["db_path"]
-
-    # Delete all reviews for PROD_C
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM reviews WHERE product_id = 'PROD_C';")
-    conn.commit()
-    conn.close()
+    # Remove all canonical reviews for PROD_C
+    test_db["canonical_state"]["PROD_C"] = (None, [])
 
     # Run Analyze on PROD_C
     resp = client.get("/api/products/PROD_C/analysis")

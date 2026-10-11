@@ -77,7 +77,7 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mt-1">Dataset Analytics & Market Intelligence</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Real-time aggregate sentiment breakdown, ratings distribution, and product benchmarks computed directly from verified customer reviews.
+            Real-time aggregate sentiment breakdown, ratings distribution, and product benchmarks computed directly from canonical dataset reviews.
           </p>
         </div>
       </div>
@@ -232,7 +232,7 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
                 <h3 className="text-sm font-bold text-slate-900">AI Intelligence Core</h3>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                ReviewIQ analyzes authentic customer sentiment using grounded Google Gemini and Groq AI models. No synthetic or hardcoded scores are used.
+                ReviewIQ analyzes dataset-derived sentiment using grounded Google Gemini and Groq AI models. Scores are derived from the canonical review dataset.
               </p>
               <div className="space-y-2.5 pt-2 text-xs">
                 <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">

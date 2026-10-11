@@ -54,11 +54,18 @@ def main():
         for w in report.warnings:
             print(f"  - {w}")
 
-    # Save to json file for persistence
-    report_file = BASE_DIR / "data" / "data_quality_report.json"
-    with open(report_file, "w", encoding="utf-8") as f:
-        f.write(report.model_dump_json(indent=2))
-    print(f"\nSaved machine-readable report to {report_file}")
+    # Save versioned report plus a stable "latest" pointer (same content).
+    # BASE_DIR-anchored so the script behaves identically from any CWD.
+    version_slug = report.dataset_version.replace("/", "_").replace(" ", "_")
+    versioned_path = BASE_DIR / "data" / f"quality_report_{version_slug}.json"
+    payload = report.model_dump_json(indent=2)
+    with open(versioned_path, "w", encoding="utf-8") as f:
+        f.write(payload)
+    print(f"\nSaved versioned report to {versioned_path}")
+    latest_path = BASE_DIR / "data" / "data_quality_report.json"
+    with open(latest_path, "w", encoding="utf-8") as f:
+        f.write(payload)
+    print(f"Updated latest pointer at {latest_path}")
 
 if __name__ == "__main__":
     main()

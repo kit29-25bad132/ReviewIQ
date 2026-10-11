@@ -312,7 +312,7 @@ class EcommerceDBService:
                 sentiment=sentiment_distribution,
                 pros=[],
                 cons=[],
-                summary=f"Analysis of {review_count} verified customer reviews for {title}.",
+                summary=f"Analysis of {review_count} canonical dataset reviews for {title}.",
                 insights=[],
                 evidence=[],
                 ai_available=False,

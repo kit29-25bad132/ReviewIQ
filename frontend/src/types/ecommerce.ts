@@ -20,7 +20,7 @@ export interface ProductStatistics {
 }
 
 export interface ReviewItem {
-  id: number;
+  id: number | string;
   product_id: string;
   product_title: string;
   category?: string | null;

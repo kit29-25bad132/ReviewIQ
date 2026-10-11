@@ -37,6 +37,7 @@ class DataQualityReport(BaseModel):
     missing_values_count: int = 0
     invalid_ratings_count: int = 0
     orphan_reviews_count: int = 0
+    contradictory_metadata_count: int = 0
     provenance_coverage_pct: float = 100.0
     trustworthiness_score: float = 100.0
     rating_distribution: List[Dict[str, Any]] = Field(default_factory=list)
@@ -84,6 +85,13 @@ class QualityGateRunner:
         total_products = counts["unique_products"]
         total_reviews = counts["unique_reviews"]
 
+        # Check 1 — Empty dataset (FAIL). First check: an empty dataset
+        # short-circuits everything downstream (downstream analyzers handle
+        # empty input safely and report zeros).
+        EMPTY_DATASET_THRESHOLD = 0
+        if total_reviews <= EMPTY_DATASET_THRESHOLD:
+            hard_failures.append("EMPTY_DATASET: zero reviews loaded — dataset is empty")
+
         # 3. Duplicate analysis
         with open(csv_path, "r", encoding="utf-8-sig") as f:
             records = list(csv.DictReader(f))
@@ -99,14 +107,33 @@ class QualityGateRunner:
         trust_analysis = trustworthiness_checker.check(records, valid_pids)
 
         # 5. Determine Hard Failures vs Warnings
+        CONTRADICTION_FAIL_PCT = 5.0
+        NEAR_DUP_FAIL_PCT = 5.0
         if trust_analysis["orphan_reviews_count"] > 0:
             hard_failures.append(f"Orphan reviews detected: {trust_analysis['orphan_reviews_count']} reviews have no matching product.")
 
         if trust_analysis["provenance_coverage_pct"] < 100.0:
             hard_failures.append(f"Incomplete provenance coverage: {trust_analysis['provenance_coverage_pct']}% (must be 100%).")
 
+        # Check 2 — Contradiction rate (FAIL above 5%)
+        contradiction_pct = (trust_analysis["contradictory_metadata_count"] / total_reviews * 100
+                             if total_reviews > 0 else 0.0)
+        if contradiction_pct > CONTRADICTION_FAIL_PCT:
+            hard_failures.append(
+                f"CONTRADICTION_RATE: {contradiction_pct:.1f}% exceeds {CONTRADICTION_FAIL_PCT}% threshold"
+            )
+
+        # Check 3 — Near-duplicate rate (FAIL above 5%)
+        if near_dups["percentage"] > NEAR_DUP_FAIL_PCT:
+            hard_failures.append(
+                f"NEAR_DUPLICATE_RATE: {near_dups['percentage']:.1f}% exceeds {NEAR_DUP_FAIL_PCT}% threshold"
+            )
+
+        # Check 4 — Exact duplicates (FAIL; formerly a warning)
         if exact_dups["count"] > 0:
-            warnings.append(f"Exact duplicate reviews present: {exact_dups['count']} ({exact_dups['percentage']}%)")
+            hard_failures.append(
+                f"EXACT_DUPLICATES: {exact_dups['count']} identical review texts found"
+            )
 
         if template_reps["count"] > 0:
             warnings.append(f"Template repetition detected in {template_reps['count']} reviews ({template_reps['percentage']}%)")
@@ -114,6 +141,17 @@ class QualityGateRunner:
         # Compute Gate Status
         gate_status = "FAIL" if hard_failures else "PASS"
         passed = (gate_status == "PASS")
+
+        # Deterministic ordering: the profiler sorts distributions by review
+        # count, so tied rows come back in arbitrary order between runs.
+        # Sort by the distribution key here so identical input always yields
+        # byte-identical report output.
+        category_distribution = sorted(
+            profiling["category_distribution"], key=lambda row: row["category"]
+        )
+        brand_distribution = sorted(
+            profiling["brand_distribution"], key=lambda row: row["brand"]
+        )
 
         report = DataQualityReport(
             dataset_version=version,
@@ -133,12 +171,13 @@ class QualityGateRunner:
             missing_values_count=trust_analysis.get("missing_provenance_count", 0),
             invalid_ratings_count=0 if is_pandera_valid else 1,
             orphan_reviews_count=trust_analysis["orphan_reviews_count"],
+            contradictory_metadata_count=trust_analysis["contradictory_metadata_count"],
             provenance_coverage_pct=trust_analysis["provenance_coverage_pct"],
             trustworthiness_score=trust_analysis["trustworthiness_score"],
             rating_distribution=profiling["rating_distribution"],
             product_distribution=profiling["products_summary"],
-            category_distribution=profiling["category_distribution"],
-            brand_distribution=profiling["brand_distribution"],
+            category_distribution=category_distribution,
+            brand_distribution=brand_distribution,
             review_length_statistics=profiling["review_length_statistics"],
             sentiment_distribution=profiling["sentiment_distribution"],
             hard_failure_reasons=hard_failures,

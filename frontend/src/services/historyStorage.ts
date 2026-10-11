@@ -314,6 +314,11 @@ const formatReviewRow = (row: ReviewsTableRow): ReviewHistoryItem => ({
 
 /**
  * Fetch all reviews from Supabase (or fallback to localStorage).
+ *
+ * KNOWN ISSUE: These calls target the legacy user-owned review schema
+ * (user_id, pros, cons, aspects columns) which no longer exists.
+ * All cloud-history calls fail silently and fall back to localStorage.
+ * Fix requires a frontend schema migration — tracked as a separate task.
  */
 export async function fetchAllReviews(): Promise<{ reviews: ReviewHistoryItem[]; source: 'supabase' | 'local' }> {
   if (isSupabaseConfigured && supabase) {

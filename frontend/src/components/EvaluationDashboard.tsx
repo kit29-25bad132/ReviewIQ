@@ -176,7 +176,7 @@ export const EvaluationDashboard: React.FC = () => {
           </div>
           <h3 className="text-sm font-semibold text-slate-300">Evaluation not run yet</h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            No cached evaluation records found. Click <strong className="text-purple-400">"Run AI Evaluation"</strong> above to benchmark Gemini on a sample of real customer reviews.
+            No cached evaluation records found. Click <strong className="text-purple-400">"Run AI Evaluation"</strong> above to benchmark Gemini on a sample of canonical dataset reviews.
           </p>
         </div>
       ) : (

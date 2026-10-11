@@ -75,7 +75,7 @@ export const DatasetExplorer: React.FC = () => {
         if (isMounted) {
           setError(
             err.response?.data?.detail ||
-              'Review dataset could not be loaded. Please verify backend/data/amazon_review.csv.'
+              'Failed to load dataset reviews.'
           );
         }
       })
@@ -134,7 +134,7 @@ export const DatasetExplorer: React.FC = () => {
             <span>Dataset Review Explorer</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Explore <span className="font-semibold text-slate-800">{total.toLocaleString()}</span> real customer reviews from the verified dataset.
+            Explore <span className="font-semibold text-slate-800">{total.toLocaleString()}</span> canonical dataset reviews.
           </p>
         </div>
 
@@ -189,7 +189,7 @@ export const DatasetExplorer: React.FC = () => {
       {loading ? (
         <div className="py-16 text-center space-y-3">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-3 border-indigo-600 border-t-transparent" />
-          <p className="text-xs text-slate-500 font-medium">Loading verified customer reviews...</p>
+          <p className="text-xs text-slate-500 font-medium">Loading canonical dataset reviews...</p>
         </div>
       ) : error ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-center text-xs text-rose-700 space-y-1">

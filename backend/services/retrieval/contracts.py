@@ -16,6 +16,14 @@ from pydantic import BaseModel, ConfigDict, Field
 # rather than silently truncated (never manufacture or corrupt review content).
 MAX_REVIEW_TEXT_LENGTH = 20_000
 
+# Source identity written on every canonical review embedding. Legacy rows
+# carry 'amazon_review'; the two corpora are disjoint by (source, review_id)
+# as well as by ID shape (R00001… vs hex) and product ID (P01… vs ASINs).
+# Retrieval must filter on this value — never infer it from similarity.
+# Note: fingerprints do not bind source, so relabeling converges on rerun
+# via upsert without re-embedding or duplicating rows.
+CANONICAL_REVIEW_SOURCE = "canonical"
+
 
 class ValidationOutcome(str, Enum):
     """Explicit outcome of validating one raw review record."""

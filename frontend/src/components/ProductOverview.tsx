@@ -49,7 +49,7 @@ export const ProductOverview: React.FC<ProductOverviewProps> = ({ analysis }) =>
 
             <p className="text-xs text-slate-500 flex items-center gap-2">
               <Database className="h-3.5 w-3.5 text-indigo-600" />
-              <span>Verified Dataset Intelligence ({review_count.toLocaleString()} customer reviews analyzed)</span>
+              <span>Canonical Dataset Analysis ({review_count.toLocaleString()} customer reviews analyzed)</span>
             </p>
           </div>
 

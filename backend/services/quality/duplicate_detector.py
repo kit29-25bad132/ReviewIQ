@@ -47,6 +47,44 @@ def extract_template_skeleton(text: str) -> str:
     return skeleton
 
 
+def _near_duplicate_pairs(ngram_cache, threshold: float) -> List[Dict[str, Any]]:
+    """Order-independent exhaustive near-duplicate detection.
+
+    Compares EVERY pair (no sampling window). Pairs whose char-3-gram set
+    size ratio is below the threshold are pruned: Jaccard can never reach
+    the threshold then, so pruning loses zero recall. Normalized-text
+    duplicates are Level 2's jurisdiction and are excluded here to avoid
+    double counting. Output sorted by (review_a, review_b) with IDs ordered
+    within each pair — identical input in any row order yields identical
+    output.
+    """
+    prepared = [
+        (rid, text, norms) for rid, text, norms in ngram_cache if norms
+    ]
+    pairs = []
+    for i in range(len(prepared)):
+        rid_a, text_a, set_a = prepared[i]
+        norm_a = normalize_text(text_a)
+        for j in range(i + 1, len(prepared)):
+            rid_b, text_b, set_b = prepared[j]
+            if norm_a == normalize_text(text_b):
+                continue  # counted at Level 2, not here
+            small, large = (len(set_a), len(set_b)) if len(set_a) <= len(set_b) else (len(set_b), len(set_a))
+            if large == 0 or small / large < threshold:
+                continue  # provably cannot reach threshold
+            sim = jaccard_similarity(set_a, set_b)
+            if sim >= threshold:
+                first, second = sorted((str(rid_a), str(rid_b)))
+                pairs.append({
+                    "review_a": first,
+                    "review_b": second,
+                    "similarity": round(sim, 3),
+                    "sample": text_a[:80],
+                })
+    pairs.sort(key=lambda p: (p["review_a"], p["review_b"]))
+    return pairs
+
+
 class DuplicateDetector:
     """Analyzes exact, normalized, near, and template duplicates across review collections."""
 
@@ -76,23 +114,9 @@ class DuplicateDetector:
         norm_dup_count = sum(len(ids) - 1 for ids in norm_map.values() if len(ids) > 1)
         norm_examples = [k[:100] for k, ids in norm_map.items() if len(ids) > 1][:5]
 
-        # Level 3: Near Duplicates (using token n-gram Jaccard within same product or cross-product)
+        # Level 3: Near Duplicates (exhaustive, order-independent — see _near_duplicate_pairs)
         ngram_cache = [(r.get("review_id"), r.get("review_text", ""), get_ngrams(r.get("review_text", ""))) for r in reviews]
-        near_dup_pairs = []
-        # Sample bounded comparisons for performance
-        for i in range(len(ngram_cache)):
-            rid_a, text_a, ngrams_a = ngram_cache[i]
-            for j in range(i + 1, min(i + 50, len(ngram_cache))):
-                rid_b, text_b, ngrams_b = ngram_cache[j]
-                if text_a != text_b:  # Don't count exact dups again
-                    sim = jaccard_similarity(ngrams_a, ngrams_b)
-                    if sim >= near_dup_threshold:
-                        near_dup_pairs.append({
-                            "review_a": rid_a,
-                            "review_b": rid_b,
-                            "similarity": round(sim, 3),
-                            "sample": text_a[:80],
-                        })
+        near_dup_pairs = _near_duplicate_pairs(ngram_cache, near_dup_threshold)
 
         near_dup_count = len(near_dup_pairs)
 

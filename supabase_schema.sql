@@ -1,3 +1,12 @@
+-- ============================================================
+-- HISTORICAL FILE — DO NOT APPLY TO PRODUCTION
+-- public.reviews §1-§4 and V2-P2 embeddings sections are
+-- OBSOLETE. Applying them would destroy the canonical data
+-- path and lock out backend reads via stale RLS policies.
+-- The ONLY authoritative definitions here are:
+--   ai_response_cache and embedding_cache (V2-P9)
+-- For everything else use supabase_canonical_schema.sql
+-- ============================================================
 -- =========================================================
 -- PRODUCT REVIEW ANALYZER — SUPABASE DATABASE SCHEMA
 -- Run this SQL in your Supabase SQL Editor:

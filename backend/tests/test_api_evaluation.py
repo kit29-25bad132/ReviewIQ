@@ -42,7 +42,39 @@ def test_run_evaluation_success_with_mocked_service():
         resp = client.post("/api/evaluation/run?limit=5")
     assert resp.status_code == 200
     assert resp.json()["evaluated_reviews"] == 10
-    mock_run.assert_called_once_with(limit=5, reanalyze=False)
+    mock_run.assert_called_once_with(limit=5, reanalyze=False, source="benchmark")
+
+
+def test_run_evaluation_explicit_benchmark_source():
+    with patch.object(evaluation_service, "run", return_value=METRICS) as mock_run:
+        resp = client.post("/api/evaluation/run?limit=5&source=benchmark")
+    assert resp.status_code == 200
+    mock_run.assert_called_once_with(limit=5, reanalyze=False, source="benchmark")
+
+
+def test_run_evaluation_explicit_canonical_source():
+    with patch.object(evaluation_service, "run", return_value=METRICS) as mock_run:
+        resp = client.post("/api/evaluation/run?limit=5&source=canonical")
+    assert resp.status_code == 200
+    mock_run.assert_called_once_with(limit=5, reanalyze=False, source="canonical")
+
+
+def test_run_evaluation_unsupported_source_returns_422():
+    resp = client.post("/api/evaluation/run?source=sqlite")
+    assert resp.status_code == 422
+
+
+def test_get_evaluation_unsupported_source_returns_422():
+    resp = client.get("/api/evaluation?source=legacy")
+    assert resp.status_code == 422
+
+
+def test_get_evaluation_canonical_source_passthrough():
+    with patch.object(evaluation_service, "metrics", return_value=None) as mock_metrics:
+        resp = client.get("/api/evaluation?source=canonical")
+    assert resp.status_code == 200
+    assert resp.json() is None
+    mock_metrics.assert_called_once_with(source="canonical")
 
 
 def test_run_evaluation_invalid_limit_returns_422():

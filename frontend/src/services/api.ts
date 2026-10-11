@@ -211,7 +211,7 @@ export async function searchProducts(
 }
 
 /**
- * Retrieves complete real dataset statistics and grounded Gemini AI analysis for a product.
+ * Retrieves complete canonical dataset statistics and grounded Gemini AI analysis for a product.
  */
 export async function getProductAnalysis(
   productId: string,
@@ -343,7 +343,7 @@ export async function getPersonalizedRecommendation(
 }
 
 /**
- * Retrieves paginated actual customer reviews for a product from the dataset.
+ * Retrieves paginated canonical dataset reviews for a product from the dataset.
  */
 export async function getProductReviews(
   productId: string,
@@ -421,7 +421,7 @@ export async function getProducts(limit: number = 100, signal?: AbortSignal): Pr
 }
 
 /**
- * Queries real reviews from the dataset with search, filters, and pagination.
+ * Queries canonical dataset reviews from the dataset with search, filters, and pagination.
  */
 export async function getDatasetReviews(
   params: {
@@ -462,7 +462,7 @@ export async function getEvaluation(signal?: AbortSignal): Promise<EvaluationMet
 }
 
 /**
- * Triggers AI evaluation over a subset of real Kaggle dataset reviews.
+ * Triggers AI evaluation over a subset of canonical dataset reviews.
  */
 export async function runEvaluation(
   limit: number = 10,

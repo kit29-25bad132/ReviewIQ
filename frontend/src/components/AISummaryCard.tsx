@@ -90,7 +90,7 @@ export const AISummaryCard: React.FC<AISummaryCardProps> = ({
           </div>
           <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
             <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Summary constrained strictly to verified dataset reviews</span>
+            <span>Summary constrained strictly to canonical dataset reviews</span>
           </p>
         </div>
 

@@ -127,7 +127,7 @@ export const ProsConsAnalysis: React.FC<ProsConsAnalysisProps> = ({
             Top Pros & Cons Intelligence
           </h2>
           <p className="text-xs text-slate-500">
-            Quantified from {data.total_analyzed_reviews.toLocaleString()} actual customer reviews for{' '}
+            Quantified from {data.total_analyzed_reviews.toLocaleString()} canonical dataset reviews for{' '}
             <strong className="text-slate-700 font-semibold">{productTitle}</strong>
           </p>
         </div>

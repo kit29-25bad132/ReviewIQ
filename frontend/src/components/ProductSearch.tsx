@@ -259,7 +259,7 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
                       {item.product_title}
                     </h4>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      {item.category || 'Product'} · {item.review_count.toLocaleString()} real customer reviews
+                      {item.category || 'Product'} · {item.review_count.toLocaleString()} canonical dataset reviews
                     </p>
                   </div>
                 </div>

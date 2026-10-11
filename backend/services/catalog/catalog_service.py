@@ -218,9 +218,19 @@ class CanonicalCatalogService:
                     "metadata": meta_dict,
                 }
 
-    def get_product_statistics(self, product_id_or_source_id: str) -> Optional[Dict[str, Any]]:
-        """Calculates detailed rating distribution and sentiment metrics for a product."""
-        product = self.get_product_by_id(product_id_or_source_id)
+    def get_product_statistics(
+        self,
+        product_id_or_source_id: str,
+        product: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Calculates detailed rating distribution and sentiment metrics for a product.
+
+        Pass a previously resolved ``product`` dict (from
+        :meth:`get_product_by_id`) to skip the redundant lookup — callers
+        that already resolved the product avoid an extra connection.
+        """
+        if product is None:
+            product = self.get_product_by_id(product_id_or_source_id)
         if not product:
             return None
 
@@ -296,9 +306,15 @@ class CanonicalCatalogService:
         page: int = 1,
         page_size: int = 20,
         sort_by: str = "recent",
+        product: Optional[Dict[str, Any]] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
-        """Returns paginated canonical reviews for a product."""
-        product = self.get_product_by_id(product_id_or_source_id)
+        """Returns paginated canonical reviews for a product.
+
+        Pass a previously resolved ``product`` dict (from
+        :meth:`get_product_by_id`) to skip the redundant lookup.
+        """
+        if product is None:
+            product = self.get_product_by_id(product_id_or_source_id)
         if not product:
             return [], 0
 
@@ -399,6 +415,205 @@ class CanonicalCatalogService:
             with conn.cursor() as cur:
                 cur.execute("SELECT DISTINCT brand FROM public.products ORDER BY brand;")
                 return [row[0] for row in cur.fetchall()]
+
+    def get_overview_analytics(self) -> Dict[str, Any]:
+        """Corpus-wide aggregates in a single query (no N+1).
+
+        Sentiment counts are DERIVED from stored `metadata->>'sentiment'`
+        labels with unknown values folded into neutral — the same rule as
+        `get_product_statistics`. Ratings outside 1-5 cannot occur (DB
+        check constraint) and are ignored defensively.
+        """
+        with self.db.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        COUNT(*) AS total_reviews,
+                        COALESCE(ROUND(AVG(rating)::numeric, 2), 0.0) AS average_rating,
+                        COALESCE(SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END), 0) AS star_1,
+                        COALESCE(SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END), 0) AS star_2,
+                        COALESCE(SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END), 0) AS star_3,
+                        COALESCE(SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END), 0) AS star_4,
+                        COALESCE(SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END), 0) AS star_5,
+                        COALESCE(SUM(CASE WHEN LOWER(metadata->>'sentiment') = 'positive' THEN 1 ELSE 0 END), 0) AS positive_reviews,
+                        COALESCE(SUM(CASE WHEN LOWER(metadata->>'sentiment') = 'negative' THEN 1 ELSE 0 END), 0) AS negative_reviews
+                    FROM public.reviews;
+                """)
+                row = cur.fetchone()
+                total = int(row[0])
+                return {
+                    "total_reviews": total,
+                    "average_rating": float(row[1]),
+                    "positive_reviews": int(row[7]),
+                    "negative_reviews": int(row[8]),
+                    "neutral_reviews": total - int(row[7]) - int(row[8]),
+                    "rating_distribution": {
+                        1: int(row[2]),
+                        2: int(row[3]),
+                        3: int(row[4]),
+                        4: int(row[5]),
+                        5: int(row[6]),
+                    },
+                }
+
+    def get_product_analytics(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Per-product aggregates in a single grouped query (no N+1).
+
+        Only products with at least one review are returned, ordered by
+        review count descending. `review_ids` supports joining AI-evaluation
+        predictions cached under stable canonical review IDs.
+        """
+        with self.db.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        p.source_product_id,
+                        p.name,
+                        COUNT(r.id) AS review_count,
+                        COALESCE(ROUND(AVG(r.rating)::numeric, 2), 0.0) AS average_rating,
+                        COALESCE(SUM(CASE WHEN LOWER(r.metadata->>'sentiment') = 'positive' THEN 1 ELSE 0 END), 0) AS positive_reviews,
+                        COALESCE(SUM(CASE WHEN LOWER(r.metadata->>'sentiment') = 'negative' THEN 1 ELSE 0 END), 0) AS negative_reviews,
+                        COALESCE(SUM((r.metadata->>'helpful_votes')::int), 0) AS helpful_votes,
+                        COALESCE(array_agg(r.source_review_id), '{}') AS review_ids
+                    FROM public.products p
+                    LEFT JOIN public.reviews r ON r.product_id = p.id
+                    GROUP BY p.source_product_id, p.name
+                    HAVING COUNT(r.id) > 0
+                    ORDER BY review_count DESC
+                    LIMIT %s;
+                """, (limit,))
+                rows = cur.fetchall()
+
+                result = []
+                for s_pid, name, cnt, avg, pos, neg, helpful, ids in rows:
+                    total = int(cnt)
+                    result.append({
+                        "source_product_id": s_pid,
+                        "product_name": name,
+                        "review_count": total,
+                        "average_rating": float(avg),
+                        "positive_reviews": int(pos),
+                        "negative_reviews": int(neg),
+                        "neutral_reviews": total - int(pos) - int(neg),
+                        "helpful_votes": int(helpful),
+                        "review_ids": [str(i) for i in (ids or [])],
+                    })
+                return result
+
+    def query_dataset_reviews(
+        self,
+        limit: int,
+        offset: int,
+        search: Optional[str],
+        rating: Optional[int],
+        sentiment: Optional[str],
+        product: Optional[str],
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Corpus-wide review search mirroring the legacy explorer filters.
+
+        Substring matching is case-insensitive (ILIKE) over review text,
+        product ID, review ID, and product name — the SQL equivalent of the
+        previous casefold logic. Ordered by stable `source_review_id`, which
+        matches dataset order. No invented fields: `total_vote` has no
+        canonical counterpart and is returned as None.
+        """
+        with self.db.connection() as conn:
+            with conn.cursor() as cur:
+                where_clauses = []
+                params: List[Any] = []
+
+                if search and search.strip():
+                    term = f"%{search.strip()}%"
+                    where_clauses.append(
+                        "(r.review_text ILIKE %s OR r.source_product_id ILIKE %s "
+                        "OR r.source_review_id ILIKE %s OR p.name ILIKE %s)"
+                    )
+                    params.extend([term, term, term, term])
+
+                if rating is not None:
+                    where_clauses.append("r.rating = %s")
+                    params.append(rating)
+
+                if sentiment and sentiment.strip():
+                    where_clauses.append("r.metadata->>'sentiment' = %s")
+                    params.append(sentiment.strip().lower())
+
+                if product and product.strip():
+                    term = f"%{product.strip()}%"
+                    where_clauses.append("(r.source_product_id ILIKE %s OR p.name ILIKE %s)")
+                    params.extend([term, term])
+
+                where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+                cur.execute(
+                    f"SELECT COUNT(*) FROM public.reviews r JOIN public.products p ON r.product_id = p.id {where_sql};",
+                    params,
+                )
+                total = cur.fetchone()[0]
+
+                cur.execute(
+                    f"""SELECT
+                            r.source_review_id,
+                            r.source_product_id,
+                            p.name,
+                            r.review_text,
+                            r.rating,
+                            r.review_title,
+                            r.review_date,
+                            r.metadata,
+                            r.source_reference
+                        FROM public.reviews r
+                        JOIN public.products p ON r.product_id = p.id
+                        {where_sql}
+                        ORDER BY r.source_review_id ASC
+                        LIMIT %s OFFSET %s;""",
+                    params + [limit, offset],
+                )
+                items = []
+                for s_rid, s_pid, pname, text, rating_val, title, r_date, meta, src_ref in cur.fetchall():
+                    meta_dict = meta if isinstance(meta, dict) else (json.loads(meta) if meta else {})
+                    sent = str(meta_dict.get("sentiment", "neutral")).lower()
+                    if sent not in ("positive", "neutral", "negative"):
+                        sent = "neutral"
+                    helpful = meta_dict.get("helpful_votes")
+                    items.append({
+                        "id": s_rid,
+                        "asin": s_pid,
+                        "product_name": pname,
+                        "review_text": text,
+                        "actual_rating": int(rating_val),
+                        "summary": title or None,
+                        "review_date": r_date or None,
+                        "helpful_yes": int(helpful) if helpful is not None else None,
+                        "total_vote": None,
+                        "actual_sentiment": sent,
+                        "source_reference": src_ref,
+                    })
+                return items, total
+
+    def get_dataset_version(self) -> str:
+        """Returns the active canonical dataset version tag for cache keying.
+
+        Falls back to "canonical-unknown" when the version table is
+        unreachable so callers degrade to an unversioned cache key instead
+        of failing the request.
+        """
+        try:
+            with self.db.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT version_tag
+                        FROM public.dataset_versions
+                        WHERE is_active = true
+                        ORDER BY created_at DESC
+                        LIMIT 1;
+                    """)
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        return str(row[0])
+        except Exception:
+            logger.warning("Could not resolve canonical dataset version.", exc_info=True)
+        return "canonical-unknown"
 
 
 # Singleton instance

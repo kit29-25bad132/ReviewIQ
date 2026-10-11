@@ -1,6 +1,7 @@
 import os
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 # Load environment variables early
@@ -18,6 +19,7 @@ from routes.products import router as products_router
 from routes.reviews import router as reviews_router
 from routes.retrieval import router as retrieval_router
 from services.ai_analyzer import analyzer_service
+from services.catalog.catalog_service import canonical_catalog
 from services.observability import RequestIdFilter, request_id_var
 
 # Setup logging (V2-P11: every line carries the request correlation ID).
@@ -33,10 +35,25 @@ for _handler in logging.getLogger().handlers:
         _handler.addFilter(RequestIdFilter())
 logger = logging.getLogger("product_review_analyzer")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Own the shared Postgres pool across the app lifetime.
+
+    Startup resets any stale pool (e.g. opened at import time in tests) and
+    lets the first request initialize it lazily. Shutdown drains it cleanly.
+    Both calls are idempotent no-ops when no pool exists.
+    """
+    canonical_catalog.db.close()
+    yield
+    canonical_catalog.db.close()
+
+
 app = FastAPI(
     title="ReviewIQ - Product Review Intelligence API",
     description="Production-ready AI backend for dataset-based product search, review analytics, and ground-truth intelligence",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 # CORS Configuration

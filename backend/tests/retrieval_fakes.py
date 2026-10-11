@@ -95,6 +95,28 @@ class InMemoryVectorRepository(VectorRepository):
     def existing_fingerprints(self, fingerprints: Sequence[str]) -> Set[str]:
         return {fp for fp in fingerprints if fp in self._records}
 
+    def fingerprints_by_review(self, source: str) -> Dict[str, Set[str]]:
+        grouped: Dict[str, Set[str]] = {}
+        for record in self._records.values():
+            if record.source != source:
+                continue
+            grouped.setdefault(record.review_id, set()).add(record.fingerprint)
+        return grouped
+
+    def delete_stale_review_embeddings(
+        self, review_id: str, keep_fingerprint: str, source: str
+    ) -> int:
+        doomed = [
+            fp
+            for fp, record in self._records.items()
+            if record.review_id == review_id
+            and record.source == source
+            and fp != keep_fingerprint
+        ]
+        for fp in doomed:
+            del self._records[fp]
+        return len(doomed)
+
     def search(
         self,
         query_vector: Sequence[float],

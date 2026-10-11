@@ -1,10 +1,24 @@
 """End-to-End Runtime Unification Tests across all ReviewIQ APIs."""
 
+from pathlib import Path
+
 import pytest
+from dotenv import dotenv_values
 from starlette.testclient import TestClient
 from main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def live_db_env(monkeypatch):
+    # Search now reads the canonical Supabase catalog, so this module needs
+    # the verified DSN like test_catalog_service.py (conftest strips it).
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    vals = dotenv_values(env_path)
+    dsn = vals.get("DATABASE_URL") or vals.get("SUPABASE_DB_URL")
+    if dsn:
+        monkeypatch.setenv("DATABASE_URL", dsn)
 
 
 def test_products_search_kelto():

@@ -50,7 +50,7 @@ create table if not exists public.reviews (
     created_at timestamptz not null default timezone('utc'::text, now())
 );
 
-comment on table public.reviews is 'Authoritative canonical customer reviews for ReviewIQ.';
+comment on table public.reviews is 'Canonical product review corpus — synthetic/template-like dataset, no original source URLs for ReviewIQ.';
 
 -- Indexes for reviews
 create index if not exists idx_reviews_product_id on public.reviews (product_id);
@@ -62,6 +62,10 @@ create index if not exists idx_reviews_product_rating on public.reviews (product
 -- =========================================================
 -- 4. REVIEW EMBEDDINGS (pgvector)
 -- =========================================================
+-- RLS posture (verified live):
+-- products, reviews, dataset_versions: RLS OFF
+-- review_embeddings: RLS ON, zero policies in public schema
+-- ai_response_cache, embedding_cache: RLS ON, zero policies
 create table if not exists public.review_embeddings (
     id bigint generated always as identity primary key,
     review_id text not null,
@@ -71,8 +75,6 @@ create table if not exists public.review_embeddings (
     normalized_text text not null,
     rating integer check (rating is null or (rating >= 1 and rating <= 5)),
     source text default 'product_reviews_dataset.csv',
-    source_dataset text default 'product_reviews_dataset.csv',
-    source_reference text,
     review_date timestamptz,
     embedding_model text not null default 'gemini-embedding-001',
     embedding_dimension integer not null default 768 check (embedding_dimension = 768),
@@ -85,6 +87,8 @@ comment on table public.review_embeddings is 'Gemini 768-dimension vector embedd
 
 create index if not exists idx_review_embeddings_product_id on public.review_embeddings (product_id);
 create index if not exists idx_review_embeddings_rating on public.review_embeddings (rating);
+create index if not exists idx_review_embeddings_model_dimension
+    on public.review_embeddings (embedding_model, embedding_dimension);
 create index if not exists idx_review_embeddings_embedding_hnsw on public.review_embeddings using hnsw (embedding vector_cosine_ops);
 
 -- =========================================================

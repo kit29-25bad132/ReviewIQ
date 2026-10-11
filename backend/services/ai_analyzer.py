@@ -49,6 +49,8 @@ from services.grounding_service import ground_analysis
 from services.observability import emit_ai_outcome
 from services.rag.config import RAGConfig
 from services.rag.context_builder import RagContext, build_rag_context, render_context_block
+from services.retrieval.contracts import CANONICAL_REVIEW_SOURCE
+from services.retrieval.vector_repository import ReviewSearchFilters
 from services.rag.prompting import build_analysis_prompt
 from services.rag.retrieval import RagRetrievalResult, RagRetrievalService
 
@@ -225,7 +227,12 @@ class AIAnalyzerService:
         """
         if not service.config.enabled:
             return None, None
-        result = service.retrieve(review_text)
+        # Canonical-only context: legacy embeddings must never masquerade
+        # as current-dataset evidence when RAG is enabled.
+        result = service.retrieve(
+            review_text,
+            filters=ReviewSearchFilters(source=CANONICAL_REVIEW_SOURCE),
+        )
         context: Optional[RagContext] = None
         try:
             context = build_rag_context(result.results, service.config)

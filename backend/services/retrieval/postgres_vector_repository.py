@@ -11,7 +11,7 @@ internals never reach API callers.
 
 import json
 import re
-from typing import List, Mapping, Optional, Sequence, Set
+from typing import Dict, List, Mapping, Optional, Sequence, Set
 
 from services.embeddings.errors import EmbeddingError, EmbeddingErrorType
 from services.retrieval.database import PostgresDatabase
@@ -57,6 +57,15 @@ LIMIT %s
 
 _EXISTING_FINGERPRINTS_SQL = """
 SELECT fingerprint FROM {table} WHERE fingerprint = ANY(%s)
+"""
+
+_FINGERPRINTS_BY_REVIEW_SQL = """
+SELECT review_id, fingerprint FROM {table} WHERE source = %s
+"""
+
+_DELETE_STALE_SQL = """
+DELETE FROM {table}
+WHERE review_id = %s AND source = %s AND fingerprint <> %s
 """
 
 _METADATA_SQL = """
@@ -294,6 +303,49 @@ class PostgresVectorRepository(VectorRepository):
                 EmbeddingErrorType.DATABASE_ERROR,
             ) from exc
         return {str(row[0]) for row in rows}
+
+    def fingerprints_by_review(self, source: str) -> Dict[str, Set[str]]:
+        try:
+            with self._database.connection() as connection:
+                with connection.cursor() as cur:
+                    cur.execute(
+                        _FINGERPRINTS_BY_REVIEW_SQL.format(table=self._table),
+                        (source,),
+                    )
+                    rows = cur.fetchall() or []
+        except EmbeddingError:
+            raise
+        except Exception as exc:
+            raise EmbeddingError(
+                "Vector store review listing failed.",
+                EmbeddingErrorType.DATABASE_ERROR,
+            ) from exc
+        grouped: Dict[str, Set[str]] = {}
+        for review_id, fingerprint in rows:
+            grouped.setdefault(str(review_id), set()).add(str(fingerprint))
+        return grouped
+
+    def delete_stale_review_embeddings(
+        self, review_id: str, keep_fingerprint: str, source: str
+    ) -> int:
+        """Delete obsolete rows only; the replacement must already be stored."""
+        try:
+            with self._database.connection() as connection:
+                with connection.cursor() as cur:
+                    cur.execute(
+                        _DELETE_STALE_SQL.format(table=self._table),
+                        (review_id, source, keep_fingerprint),
+                    )
+                    deleted = cur.rowcount or 0
+                connection.commit()
+        except EmbeddingError:
+            raise
+        except Exception as exc:
+            raise EmbeddingError(
+                "Vector store stale cleanup failed.",
+                EmbeddingErrorType.DATABASE_ERROR,
+            ) from exc
+        return int(deleted)
 
     def get_metadata(self, review_id: str) -> Optional[VectorMetadata]:
         try:

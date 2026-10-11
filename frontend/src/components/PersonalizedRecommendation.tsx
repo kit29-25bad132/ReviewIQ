@@ -159,7 +159,7 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
               <span>1. Select User Profile & Tailor Priorities</span>
             </h3>
             <p className="text-xs text-slate-500">
-              Select a target profile and click <strong className="text-indigo-600 font-semibold">Analyze Suitability</strong> to evaluate authentic buyer reviews for <span className="font-semibold text-slate-700">{productTitle}</span>.
+              Select a target profile and click <strong className="text-indigo-600 font-semibold">Analyze Suitability</strong> to evaluate canonical dataset reviews for <span className="font-semibold text-slate-700">{productTitle}</span>.
             </p>
           </div>
 
@@ -251,7 +251,7 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
               {analysisPhase === 3 && `Synthesizing ${selectedPersona} suitability verdict...`}
             </p>
             <p className="text-xs text-slate-500">
-              Evaluating real customer sentiment and computing category benchmark rankings...
+              Evaluating dataset-derived sentiment and computing category benchmark rankings...
             </p>
           </div>
           <div className="w-48 h-1.5 bg-slate-100 rounded-full mx-auto overflow-hidden">
@@ -274,7 +274,7 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
             <p className="text-xs text-slate-600 leading-relaxed">
               Target Priorities: <span className="font-semibold text-indigo-700">{selectedPriorities.join(', ')}</span>.
               <br />
-              Click the button below to process verified customer reviews and calculate authentic suitability for <span className="font-semibold">{selectedPersona}s</span>.
+              Click the button below to process canonical dataset reviews and calculate dataset-derived suitability for <span className="font-semibold">{selectedPersona}s</span>.
             </p>
           </div>
           <div className="pt-2">

@@ -388,7 +388,7 @@ export const Dashboard: React.FC = () => {
                       </span>
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-600 max-w-xl leading-relaxed">
-                      AI-powered insights strictly from verified dataset customer reviews. Analyze products, evaluate sentiment, and compare alternatives with confidence.
+                      AI-powered insights strictly from canonical dataset reviews. Analyze products, evaluate sentiment, and compare alternatives with confidence.
                     </p>
 
                     {/* Search in Hero */}
@@ -750,7 +750,7 @@ export const Dashboard: React.FC = () => {
                       ))
                     ) : (
                       <div className="p-4 text-center text-xs text-slate-400">
-                        Loading verified dataset reviews...
+                        Loading canonical dataset reviews...
                       </div>
                     )}
                   </div>
@@ -887,7 +887,7 @@ export const Dashboard: React.FC = () => {
                           {selectedProduct.product_title}
                         </h3>
                         <p className="mt-1 text-xs text-slate-500">
-                          {selectedProduct.review_count} verified customer reviews ready in database. Click Analyze to process intelligence.
+                          {selectedProduct.review_count} canonical dataset reviews ready in database. Click Analyze to process intelligence.
                         </p>
                       </div>
                       <div className="pt-2">
@@ -939,7 +939,7 @@ export const Dashboard: React.FC = () => {
                                 key_themes: productAnalysis.insights || [],
                                 common_pros: productAnalysis.pros || [],
                                 common_cons: productAnalysis.cons || [],
-                                source_label: 'Synthesized from verified customer reviews',
+                                source_label: 'Synthesized from canonical dataset reviews',
                               }
                             : undefined
                         }
