@@ -112,7 +112,7 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
               </div>
               <div className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
                 <TrendingUp className="h-3 w-3" />
-                <span>Real Verified Customer Data</span>
+                <span>Counted from canonical database rows</span>
               </div>
             </div>
 
@@ -240,12 +240,12 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
                   <span className="font-bold text-slate-900">{datasetProducts.length} Items</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                  <span className="text-slate-500">Accuracy Verification</span>
-                  <span className="font-bold text-emerald-600">Deterministic SQL</span>
+                  <span className="text-slate-500">Statistics Source</span>
+                  <span className="font-bold text-emerald-600">SQL aggregate</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                  <span className="text-slate-500">Analysis Latency</span>
-                  <span className="font-bold text-indigo-600">&lt; 2.5 seconds</span>
+                  <span className="text-slate-500">Data Source</span>
+                  <span className="font-bold text-indigo-600">Supabase canonical</span>
                 </div>
               </div>
             </div>

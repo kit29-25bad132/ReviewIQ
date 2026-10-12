@@ -18,6 +18,33 @@ from services.catalog.models import (
 
 logger = logging.getLogger(__name__)
 
+#: Sort keys accepted by :meth:`CanonicalCatalogService.get_reviews`.
+#:
+#: 5E introduces the canonical four (``rating_desc`` / ``rating_asc`` /
+#: ``date_desc`` / ``date_asc``); the older names stay as aliases so existing
+#: callers keep working during the 5H migration.
+#:
+#: Every order ends with the unique ``source_review_id``. Without that final
+#: tiebreaker, rows sharing a rating or review_date have no defined order, and
+#: LIMIT/OFFSET paging can duplicate or skip them between pages.
+_SORT_ORDERS = {
+    "rating_desc": "ORDER BY r.rating DESC, r.source_review_id ASC",
+    "rating_asc": "ORDER BY r.rating ASC, r.source_review_id ASC",
+    "date_desc": "ORDER BY r.review_date DESC NULLS LAST, r.source_review_id ASC",
+    "date_asc": "ORDER BY r.review_date ASC NULLS LAST, r.source_review_id ASC",
+    # Legacy aliases (same shapes, pre-5E names).
+    "highest_rating": "ORDER BY r.rating DESC, r.source_review_id ASC",
+    "lowest_rating": "ORDER BY r.rating ASC, r.source_review_id ASC",
+    "helpful": (
+        "ORDER BY COALESCE((r.metadata->>'helpful_votes')::int, 0) DESC, "
+        "r.source_review_id ASC"
+    ),
+    "recent": "ORDER BY r.review_date DESC NULLS LAST, r.source_review_id ASC",
+}
+
+#: Default ordering when an unrecognized ``sort_by`` is supplied.
+_DEFAULT_SORT = "date_desc"
+
 
 class CanonicalCatalogService:
     """Catalog service operating directly on Supabase PostgreSQL canonical schema."""
@@ -312,6 +339,13 @@ class CanonicalCatalogService:
 
         Pass a previously resolved ``product`` dict (from
         :meth:`get_product_by_id`) to skip the redundant lookup.
+
+        Filtering, sorting, and pagination all happen in SQL. 5E filters on
+        the resolved canonical UUID alone: the previous
+        ``(source_product_id = %s OR product_id::text = %s)`` form selected the
+        same rows (verified: zero mismatched or orphan reviews in the corpus)
+        but the ``OR`` prevents the planner from using
+        ``idx_reviews_product_id``.
         """
         if product is None:
             product = self.get_product_by_id(product_id_or_source_id)
@@ -320,8 +354,8 @@ class CanonicalCatalogService:
 
         with self.db.connection() as conn:
             with conn.cursor() as cur:
-                where_clauses = ["(r.source_product_id = %s OR r.product_id::text = %s)"]
-                params: List[Any] = [product["source_product_id"], product["id"]]
+                where_clauses = ["r.product_id = %s"]
+                params: List[Any] = [product["id"]]
 
                 if rating is not None:
                     where_clauses.append("r.rating = %s")
@@ -341,15 +375,8 @@ class CanonicalCatalogService:
                 cur.execute(f"SELECT COUNT(*) FROM public.reviews r {where_sql};", params)
                 total_reviews = cur.fetchone()[0]
 
-                # Sorting
-                if sort_by == "highest_rating":
-                    order_sql = "ORDER BY r.rating DESC, r.created_at DESC"
-                elif sort_by == "lowest_rating":
-                    order_sql = "ORDER BY r.rating ASC, r.created_at DESC"
-                elif sort_by == "helpful":
-                    order_sql = "ORDER BY (COALESCE((r.metadata->>'helpful_votes')::int, 0)) DESC, r.created_at DESC"
-                else:
-                    order_sql = "ORDER BY r.review_date DESC NULLS LAST, r.created_at DESC"
+                # Sorting (5E keys + legacy aliases; see _SORT_ORDERS).
+                order_sql = _SORT_ORDERS.get(sort_by, _SORT_ORDERS[_DEFAULT_SORT])
 
                 offset = (page - 1) * page_size
                 query = f"""

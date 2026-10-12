@@ -18,6 +18,10 @@ import {
   UserRequirementRequest,
   PersonalizedRecommendationResponse,
 } from '../types/ecommerce';
+import {
+  AnalysisErrorResponse,
+  ProductIntelligence,
+} from '../types/intelligence';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
@@ -26,6 +30,11 @@ export const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS) ||
 export const AI_ANALYSIS_TIMEOUT_MS = Number(import.meta.env.VITE_AI_ANALYSIS_TIMEOUT_MS) || 45000;
 export const SEARCH_TIMEOUT_MS = Number(import.meta.env.VITE_SEARCH_TIMEOUT_MS) || 6000;
 export const EVALUATION_TIMEOUT_MS = Number(import.meta.env.VITE_EVALUATION_TIMEOUT_MS) || 180000;
+// Phase 5 intelligence runs three grounded AI stages (aspects, RAG pros/cons,
+// summary) plus a live similarity search, so it needs a much longer budget
+// than the legacy single-shot analysis call.
+export const INTELLIGENCE_TIMEOUT_MS =
+  Number(import.meta.env.VITE_INTELLIGENCE_TIMEOUT_MS) || 240000;
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -339,6 +348,27 @@ export async function getPersonalizedRecommendation(
     return response.data;
   } catch (error) {
     return handleApiError(error, 'Failed to generate recommendation.');
+  }
+}
+
+/**
+ * Phase 5: retrieves the full real product intelligence payload.
+ *
+ * Returns the structured error body (never a partial payload) when the backend
+ * reports one, so the caller can render an explicit error state.
+ */
+export async function getProductIntelligence(
+  productId: string,
+  signal?: AbortSignal
+): Promise<ProductIntelligence | AnalysisErrorResponse> {
+  try {
+    const response = await apiClient.get<ProductIntelligence | AnalysisErrorResponse>(
+      `/api/products/${productId}/intelligence`,
+      { timeout: INTELLIGENCE_TIMEOUT_MS, signal }
+    );
+    return response.data;
+  } catch (error) {
+    return handleApiError(error, 'Failed to retrieve product intelligence.');
   }
 }
 

@@ -19,12 +19,16 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import type { ReviewAnalysis, ReviewHistoryItem } from '../types/review';
-import type { ProductSummary, ProductAnalysisResponse, ReviewItem } from '../types/ecommerce';
+import type { ProductSummary, ReviewItem } from '../types/ecommerce';
+import type { ProductIntelligence } from '../types/intelligence';
+import { isAnalysisError } from '../types/intelligence';
 import {
   analyzeReview,
   checkBackendHealth,
   HealthStatus,
-  getProductAnalysis,
+  getProductIntelligence,
+  getOverview,
+  getProducts,
   searchProducts,
   getProductReviews,
   getProductProsCons,
@@ -39,9 +43,10 @@ import {
 } from '../services/historyStorage';
 import { ProductSearch } from '../components/ProductSearch';
 import { ProductOverview } from '../components/ProductOverview';
-import { ProsConsAnalysis } from '../components/ProsConsAnalysis';
+import { AspectThemes } from '../components/AspectThemes';
+import { GroundedClaims } from '../components/GroundedClaims';
+import { IntelligenceSummary } from '../components/IntelligenceSummary';
 import { PersonalizedRecommendation } from '../components/PersonalizedRecommendation';
-import { AISummaryCard } from '../components/AISummaryCard';
 import { ReviewList } from '../components/ReviewList';
 import { ReviewInput } from '../components/ReviewInput';
 import { AnalysisResult } from '../components/AnalysisResult';
@@ -64,7 +69,7 @@ export const Dashboard: React.FC = () => {
   // Real Database Products
   const [trendingProducts, setTrendingProducts] = useState<ProductSummary[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<ProductSummary | null>(null);
-  const [productAnalysis, setProductAnalysis] = useState<ProductAnalysisResponse | null>(null);
+  const [productIntelligence, setProductIntelligence] = useState<ProductIntelligence | null>(null);
   const [loadingProduct, setLoadingProduct] = useState<boolean>(false);
   const [productError, setProductError] = useState<string | null>(null);
   const [analysisPhase, setAnalysisPhase] = useState<number>(1);
@@ -73,9 +78,16 @@ export const Dashboard: React.FC = () => {
   const [recentHomeReviews, setRecentHomeReviews] = useState<ReviewItem[]>([]);
   const [homePros, setHomePros] = useState<string[]>([]);
   const [homeCons, setHomeCons] = useState<string[]>([]);
-  const [totalDatasetReviews, setTotalDatasetReviews] = useState<number>(100000);
-  const [totalDatasetProducts, setTotalDatasetProducts] = useState<number>(9);
-  const [avgDatasetRating, setAvgDatasetRating] = useState<number>(4.8);
+  // Phase 4/5H: no hardcoded dataset numbers. These start as null and are only
+  // ever set from the real analytics API, so nothing fake can be rendered.
+  const [totalDatasetReviews, setTotalDatasetReviews] = useState<number | null>(null);
+  const [totalDatasetProducts, setTotalDatasetProducts] = useState<number | null>(null);
+  const [avgDatasetRating, setAvgDatasetRating] = useState<number | null>(null);
+  const [corpusSentiment, setCorpusSentiment] = useState<{
+    positive: number;
+    neutral: number;
+    negative: number;
+  } | null>(null);
 
   // Typewriter effect for Hero Title
   const TYPING_PHRASES = ['Purchase Decisions', 'Product Choices', 'Customer Insights'];
@@ -124,21 +136,32 @@ export const Dashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch real dataset products for trending section & metric calculations
+  // Fetch real corpus metrics for the home dashboard.
+  //
+  // Previously this screen showed a hardcoded 100,000 reviews, 9 products and a
+  // 4.8 rating, and multiplied the sampled review count by 100. All four are
+  // gone: every figure below comes from the analytics endpoints.
   useEffect(() => {
+    getOverview()
+      .then((ov) => {
+        setTotalDatasetReviews(ov.total_reviews);
+        setAvgDatasetRating(Number(ov.average_rating.toFixed(1)));
+        setCorpusSentiment({
+          positive: ov.positive_reviews,
+          neutral: ov.neutral_reviews,
+          negative: ov.negative_reviews,
+        });
+      })
+      .catch(() => {});
+
+    getProducts(100)
+      .then((rows) => setTotalDatasetProducts(rows.length))
+      .catch(() => {});
+
     searchProducts('', 10)
       .then((res) => {
         if (res.found && res.products.length > 0) {
           setTrendingProducts(res.products);
-          setTotalDatasetProducts(res.products.length);
-
-          const totalRev = res.products.reduce((acc, p) => acc + p.review_count, 0);
-          if (totalRev > 0) setTotalDatasetReviews(totalRev * 100);
-
-          const sumRating = res.products.reduce((acc, p) => acc + p.average_rating, 0);
-          if (res.products.length > 0) {
-            setAvgDatasetRating(Number((sumRating / res.products.length).toFixed(1)));
-          }
 
           // Fetch sample reviews and pros/cons from the first product for home feed
           if (res.products[0]) {
@@ -178,7 +201,7 @@ export const Dashboard: React.FC = () => {
       analysisAbortRef.current = null;
     }
     setSelectedProduct(product);
-    setProductAnalysis(null);
+    setProductIntelligence(null);
     setProductError(null);
   };
 
@@ -196,7 +219,7 @@ export const Dashboard: React.FC = () => {
     setSelectedProduct(targetProduct);
     setActiveTab('product_analysis');
     setLoadingProduct(true);
-    setProductAnalysis(null);
+    setProductIntelligence(null);
     setProductError(null);
     setAnalysisPhase(1);
 
@@ -205,8 +228,14 @@ export const Dashboard: React.FC = () => {
     const timer3 = setTimeout(() => setAnalysisPhase(4), 2200);
 
     try {
-      const analysisData = await getProductAnalysis(targetProduct.product_id, controller.signal);
-      setProductAnalysis(analysisData);
+      const result = await getProductIntelligence(targetProduct.product_id, controller.signal);
+      if (isAnalysisError(result)) {
+        // The backend reports a structured error rather than a partial payload.
+        setProductError(result.error);
+        setProductIntelligence(null);
+      } else {
+        setProductIntelligence(result);
+      }
     } catch (err: unknown) {
       if (err instanceof Error && err.message === 'Request was cancelled.') {
         return;
@@ -214,7 +243,7 @@ export const Dashboard: React.FC = () => {
       setProductError(
         err instanceof Error ? err.message : 'Failed to retrieve product intelligence.'
       );
-      setProductAnalysis(null);
+      setProductIntelligence(null);
     } finally {
       clearTimeout(timer1);
       clearTimeout(timer2);
@@ -251,6 +280,17 @@ export const Dashboard: React.FC = () => {
       setIsLoadingLive(false);
     }
   };
+
+  // Real corpus sentiment shares for the home donut. Derived only from the
+  // analytics API; until it resolves these are 0 and render as such.
+  const corpusSentimentTotal = corpusSentiment
+    ? corpusSentiment.positive + corpusSentiment.neutral + corpusSentiment.negative
+    : 0;
+  const share = (count: number) =>
+    corpusSentimentTotal > 0 ? Math.round((count / corpusSentimentTotal) * 100) : 0;
+  const posShare = share(corpusSentiment?.positive ?? 0);
+  const neuShare = share(corpusSentiment?.neutral ?? 0);
+  const negShare = share(corpusSentiment?.negative ?? 0);
 
   const navItems = [
     { id: 'home', label: 'Home', icon: Home },
@@ -426,7 +466,6 @@ export const Dashboard: React.FC = () => {
                         <div className="bg-white/95 backdrop-blur-xs rounded-2xl p-4 shadow-lg border border-slate-100 text-center space-y-1.5 transform -rotate-3 hover:rotate-0 transition duration-300">
                           <span className="text-2xl block">🎧</span>
                           <div className="text-[11px] font-bold text-slate-900 leading-tight">Headphones</div>
-                          <div className="text-[10px] text-amber-500 font-bold">★ 3.8 / 5.0</div>
                         </div>
 
                         <div className="bg-white rounded-2xl p-4 shadow-xl border border-indigo-200 text-center space-y-1.5 transform scale-110 z-20">
@@ -438,7 +477,6 @@ export const Dashboard: React.FC = () => {
                         <div className="bg-white/95 backdrop-blur-xs rounded-2xl p-4 shadow-lg border border-slate-100 text-center space-y-1.5 transform rotate-3 hover:rotate-0 transition duration-300">
                           <span className="text-2xl block">📱</span>
                           <div className="text-[11px] font-bold text-slate-900 leading-tight">Smartphones</div>
-                          <div className="text-[10px] text-amber-500 font-bold">★ 3.7 / 5.0</div>
                         </div>
                       </div>
                     </div>
@@ -455,7 +493,9 @@ export const Dashboard: React.FC = () => {
                       <Package className="h-5 w-5" />
                     </div>
                     <div>
-                      <div className="text-2xl font-extrabold text-slate-900">{totalDatasetProducts}+</div>
+                      <div className="text-2xl font-extrabold text-slate-900">
+                        {totalDatasetProducts !== null ? totalDatasetProducts : '—'}
+                      </div>
                       <div className="text-xs font-medium text-slate-500">Products Analyzed</div>
                     </div>
                   </div>
@@ -474,7 +514,9 @@ export const Dashboard: React.FC = () => {
                       <MessageSquare className="h-5 w-5" />
                     </div>
                     <div>
-                      <div className="text-2xl font-extrabold text-slate-900">{totalDatasetReviews.toLocaleString()}+</div>
+                      <div className="text-2xl font-extrabold text-slate-900">
+                        {totalDatasetReviews !== null ? totalDatasetReviews.toLocaleString() : '—'}
+                      </div>
                       <div className="text-xs font-medium text-slate-500">Customer Reviews</div>
                     </div>
                   </div>
@@ -486,33 +528,16 @@ export const Dashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 3. Verified Authenticity */}
-                <div className="modern-card p-5 space-y-3 modern-card-hover">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                      <ShieldCheck className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-extrabold text-slate-900">98.5%</div>
-                      <div className="text-xs font-medium text-slate-500">Evidence Grounded</div>
-                    </div>
-                  </div>
-                  {/* SVG Sparkline (Purple) */}
-                  <div className="h-8 w-full pt-1">
-                    <svg viewBox="0 0 100 25" className="w-full h-full stroke-purple-500 fill-none stroke-2">
-                      <path d="M0,15 Q30,5 60,18 T85,8 T100,10" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* 4. User Satisfaction */}
+                {/* 3. User Satisfaction */}
                 <div className="modern-card p-5 space-y-3 modern-card-hover">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
                       <Star className="h-5 w-5 fill-amber-400" />
                     </div>
                     <div>
-                      <div className="text-2xl font-extrabold text-slate-900">{avgDatasetRating} / 5</div>
+                      <div className="text-2xl font-extrabold text-slate-900">
+                        {avgDatasetRating !== null ? `${avgDatasetRating} / 5` : '—'}
+                      </div>
                       <div className="text-xs font-medium text-slate-500">User Satisfaction</div>
                     </div>
                   </div>
@@ -593,7 +618,7 @@ export const Dashboard: React.FC = () => {
                           fill="transparent"
                           stroke="#EF4444"
                           strokeWidth="3.8"
-                          strokeDasharray="7 93"
+                          strokeDasharray={`${negShare} ${100 - negShare}`}
                           strokeDashoffset="0"
                         />
                         {/* Neutral (Yellow arc) */}
@@ -604,8 +629,8 @@ export const Dashboard: React.FC = () => {
                           fill="transparent"
                           stroke="#F59E0B"
                           strokeWidth="3.8"
-                          strokeDasharray="15 85"
-                          strokeDashoffset="-7"
+                          strokeDasharray={`${neuShare} ${100 - neuShare}`}
+                          strokeDashoffset={-negShare}
                         />
                         {/* Positive (Green arc) */}
                         <circle
@@ -615,12 +640,12 @@ export const Dashboard: React.FC = () => {
                           fill="transparent"
                           stroke="#10B981"
                           strokeWidth="3.8"
-                          strokeDasharray="78 22"
-                          strokeDashoffset="-22"
+                          strokeDasharray={`${posShare} ${100 - posShare}`}
+                          strokeDashoffset={-(negShare + neuShare)}
                         />
                       </svg>
                       <div className="absolute text-center">
-                        <div className="text-xl font-extrabold text-slate-900">78%</div>
+                        <div className="text-xl font-extrabold text-slate-900">{posShare}%</div>
                         <div className="text-[10px] text-slate-400 font-medium">Positive</div>
                       </div>
                     </div>
@@ -632,21 +657,21 @@ export const Dashboard: React.FC = () => {
                           <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
                           <span className="text-slate-600 font-medium">Positive</span>
                         </div>
-                        <span className="font-bold text-slate-900">78%</span>
+                        <span className="font-bold text-slate-900">{posShare}%</span>
                       </div>
                       <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-2">
                           <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
                           <span className="text-slate-600 font-medium">Neutral</span>
                         </div>
-                        <span className="font-bold text-slate-900">15%</span>
+                        <span className="font-bold text-slate-900">{neuShare}%</span>
                       </div>
                       <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-2">
                           <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
                           <span className="text-slate-600 font-medium">Negative</span>
                         </div>
-                        <span className="font-bold text-slate-900">7%</span>
+                        <span className="font-bold text-slate-900">{negShare}%</span>
                       </div>
                     </div>
                   </div>
@@ -874,7 +899,7 @@ export const Dashboard: React.FC = () => {
                   )}
 
                   {/* State B: Product selected but user has NOT clicked Analyze yet */}
-                  {selectedProduct && !productAnalysis && !loadingProduct && (
+                  {selectedProduct && !productIntelligence && !loadingProduct && (
                     <div className="modern-card p-8 sm:p-10 text-center space-y-4 border-indigo-100 bg-gradient-to-b from-indigo-50/30 to-white animate-fadeIn">
                       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
                         <Package className="h-6 w-6" />
@@ -903,7 +928,7 @@ export const Dashboard: React.FC = () => {
                   )}
 
                   {/* State C: Initial prompt */}
-                  {!selectedProduct && !productAnalysis && !loadingProduct && !productError && (
+                  {!selectedProduct && !productIntelligence && !loadingProduct && !productError && (
                     <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-12 text-center space-y-3">
                       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
                         <Search className="h-6 w-6" />
@@ -915,47 +940,41 @@ export const Dashboard: React.FC = () => {
                     </div>
                   )}
 
-                  {/* State D: Render Analyzed Product */}
-                  {productAnalysis && !loadingProduct && (
+                  {/* State D: Render Analyzed Product (Phase 5 real intelligence) */}
+                  {productIntelligence && !loadingProduct && (
                     <div className="space-y-8 animate-fadeIn">
                       <ProductOverview
-                        key={`overview-${productAnalysis.product.product_id}`}
-                        analysis={productAnalysis}
+                        key={`overview-${productIntelligence.product_id}`}
+                        intelligence={productIntelligence}
                       />
 
-                      <ProsConsAnalysis
-                        key={`proscons-${productAnalysis.product.product_id}`}
-                        productId={productAnalysis.product.product_id}
-                        productTitle={productAnalysis.product.product_title}
+                      <IntelligenceSummary
+                        key={`summary-${productIntelligence.product_id}`}
+                        intelligence={productIntelligence}
                       />
 
-                      <AISummaryCard
-                        key={`aisummary-${productAnalysis.product.product_id}`}
-                        productId={productAnalysis.product.product_id}
-                        initialSummary={
-                          productAnalysis.summary
-                            ? {
-                                summary: productAnalysis.summary,
-                                key_themes: productAnalysis.insights || [],
-                                common_pros: productAnalysis.pros || [],
-                                common_cons: productAnalysis.cons || [],
-                                source_label: 'Synthesized from canonical dataset reviews',
-                              }
-                            : undefined
-                        }
+                      <AspectThemes
+                        key={`aspects-${productIntelligence.product_id}`}
+                        aspects={productIntelligence.aspects}
+                      />
+
+                      <GroundedClaims
+                        key={`claims-${productIntelligence.product_id}`}
+                        pros={productIntelligence.pros}
+                        cons={productIntelligence.cons}
                       />
 
                       <PersonalizedRecommendation
-                        key={`rec-${productAnalysis.product.product_id}`}
-                        productId={productAnalysis.product.product_id}
-                        productTitle={productAnalysis.product.product_title}
+                        key={`rec-${productIntelligence.product_id}`}
+                        productId={productIntelligence.product_id}
+                        productTitle={productIntelligence.product_name}
                         onSelectAlternativeProduct={handleSelectProduct}
                       />
 
                       <ReviewList
-                        key={`reviews-${productAnalysis.product.product_id}`}
-                        productId={productAnalysis.product.product_id}
-                        productTitle={productAnalysis.product.product_title}
+                        key={`reviews-${productIntelligence.product_id}`}
+                        productId={productIntelligence.product_id}
+                        productTitle={productIntelligence.product_name}
                       />
                     </div>
                   )}
