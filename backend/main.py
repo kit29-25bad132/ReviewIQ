@@ -17,6 +17,7 @@ from routes.analytics import router as analytics_router
 from routes.evaluation import router as evaluation_router
 from routes.products import router as products_router
 from routes.reviews import router as reviews_router
+from routes.intelligence import router as intelligence_router
 from routes.retrieval import router as retrieval_router
 from services.ai_analyzer import analyzer_service
 from services.catalog.catalog_service import canonical_catalog
@@ -101,6 +102,7 @@ app.add_middleware(RequestCorrelationMiddleware)
 # Include routers
 app.include_router(products_router)
 app.include_router(reviews_router)
+app.include_router(intelligence_router)
 app.include_router(review_router)
 app.include_router(dataset_router)
 app.include_router(analytics_router)
