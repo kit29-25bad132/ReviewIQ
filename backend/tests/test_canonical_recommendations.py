@@ -142,11 +142,62 @@ def test_recommendation_database_error_is_not_masked():
     assert resp.status_code == 500
 
 
+def test_live_weighted_alignment_discriminates_p12_peers():
+    """A1 mandatory live check: percentage-weighted alignment must be
+    non-binary and distinct per candidate on real Supabase data.
+    P11 wins both inputs due to rating/sentiment base
+    dominance on this peer set — see A1 audit report.
+    Winner-flip capability proven by synthetic fixture."""
+    from services.catalog.catalog_service import canonical_catalog
+    from services.pros_cons_service import pros_cons_service
+    from services.recommendation_service import compute_priority_alignment
+
+    with _no_sqlite_recommend():
+        resp_a = client.post(
+            "/api/products/P12/recommendation",
+            json={"priorities": ["Value for Money"]},
+        )
+        resp_b = client.post(
+            "/api/products/P12/recommendation",
+            json={"priorities": ["Ease of Use"]},
+        )
+    assert resp_a.status_code == 200
+    assert resp_b.status_code == 200
+    # Base dominance on this peer set: P11 is recommended for both inputs.
+    assert resp_a.json()["recommended_product"]["product_id"] == "P11"
+    assert resp_b.json()["recommended_product"]["product_id"] == "P11"
+    assert resp_a.json()["user_priorities"] == ["Value for Money"]
+    assert resp_b.json()["user_priorities"] == ["Ease of Use"]
+
+    # Live pros percentages are distinct per candidate, and alignment is a
+    # non-binary fraction of the matched theme's real percentage.
+    def pro_pcts(pid):
+        pc = pros_cons_service.analyze_product_pros_cons(pid)
+        assert pc is not None
+        return [(t.theme, t.percentage) for t in pc.pros[:4]]
+
+    assert compute_priority_alignment(["Value for Money"], pro_pcts("P11")) == pytest.approx(0.418)
+    assert compute_priority_alignment(["Value for Money"], pro_pcts("P12")) == pytest.approx(0.326)
+    assert compute_priority_alignment(["Ease of Use"], pro_pcts("P12")) == pytest.approx(0.137)
+    assert compute_priority_alignment(["Ease of Use"], pro_pcts("P09")) == pytest.approx(0.135)
+    assert compute_priority_alignment(["Ease of Use"], pro_pcts("P10")) == pytest.approx(0.101)
+    assert compute_priority_alignment(["Ease of Use"], pro_pcts("P11")) == 0.0
+    # Distinct per candidate (the A1 discrimination property).
+    ease_aligns = [
+        compute_priority_alignment(["Ease of Use"], pro_pcts(pid))
+        for pid in ("P12", "P10", "P11", "P09")
+    ]
+    assert len(set(ease_aligns)) == len(ease_aligns)
+    assert canonical_catalog.get_product_by_id("P12") is not None
+
+
 # ---------------- isolated scoring behavior ----------------
 
 def _two_alternative_state():
     """Deterministic fixture: X has the higher rating baseline, Y matches
-    the 'design' priority, X matches the 'battery' priority."""
+    the 'design' priority strongly, X matches the 'battery' priority.
+    Theme percentages are (title, pct) pairs as produced by the pros-cons
+    analysis (alignment consumes pct/100 per matched priority)."""
     def stats(pid, title, total, avg, pos, neu, neg):
         return {
             "product": {"id": pid, "source_product_id": pid, "product_title": title, "category": "Smartphone"},
@@ -170,9 +221,9 @@ def _two_alternative_state():
         "Y": stats("Y", "Acme Phone Stylish", 10, 4.0, 5, 3, 2),
     }
     themes = {
-        "S": ["Okay Build Quality"],
-        "X": ["Amazing Battery Life"],
-        "Y": ["Great Design Quality"],
+        "S": [("Okay Build Quality", 40.0)],
+        "X": [("Amazing Battery Life", 90.0)],
+        "Y": [("Great Design Quality", 85.0)],
     }
     return products, stat, themes
 
@@ -191,10 +242,10 @@ def _patched_service(products, stat, themes):
     def fake_pros_cons(pid):
         ts = themes.get(pid, [])
         return SimpleNamespace(
-            pros=[SimpleNamespace(theme=t, review_count=5, percentage=50.0, example_reviews=[t])
-                  for t in ts],
+            pros=[SimpleNamespace(theme=t, review_count=5, percentage=pct, example_reviews=[t])
+                  for t, pct in ts],
             cons=[],
-            top_pros=ts[:3],
+            top_pros=[t for t, _ in ts[:3]],
             top_cons=[],
         )
 
@@ -235,7 +286,8 @@ def test_baseline_ranking_is_deterministic_without_preferences():
     assert first.model_dump() == second.model_dump()
 
 
-def test_budget_does_not_change_ranking():
+def test_budget_field_does_not_affect_ranking():
+    """Regression guard: budget is accepted but must not affect V2 ranking or output."""
     from services.recommendation_service import recommendation_service
     from models.ecommerce import UserRequirementRequest
 
@@ -246,9 +298,32 @@ def test_budget_does_not_change_ranking():
             "S", UserRequirementRequest(priorities=["battery"])
         )
         budgeted = recommendation_service.generate_recommendation(
-            "S", UserRequirementRequest(priorities=["battery"], budget="under 100")
+            "S", UserRequirementRequest(priorities=["battery"], budget="under 500")
         )
-    assert budgeted.recommended_product.product_id == plain.recommended_product.product_id == "X"
+    assert budgeted.model_dump_json() == plain.model_dump_json()
+
+
+def test_custom_requirements_field_is_accepted_but_ignored():
+    """Contract compatibility: custom_requirements stays in the request model
+    (legacy clients may still send it) but is not implemented in candidate
+    scoring, so it must not change the V2 recommendation output."""
+    from services.recommendation_service import recommendation_service
+    from models.ecommerce import UserRequirementRequest
+
+    products, stat, themes = _two_alternative_state()
+    cat_patch, pc_patch = _patched_service(products, stat, themes)
+    with cat_patch, pc_patch:
+        plain = recommendation_service.generate_recommendation(
+            "S", UserRequirementRequest(priorities=["battery"])
+        )
+        with_custom = recommendation_service.generate_recommendation(
+            "S",
+            UserRequirementRequest(
+                priorities=["battery"],
+                custom_requirements="long battery for travel",
+            ),
+        )
+    assert with_custom.model_dump_json() == plain.model_dump_json()
 
 
 def test_priority_alignment_scoring_units():
@@ -258,10 +333,26 @@ def test_priority_alignment_scoring_units():
         priority_matches_theme,
     )
 
-    assert compute_priority_alignment([], ["Anything"]) == 0.0
+    assert compute_priority_alignment([], [("Anything", 50.0)]) == 0.0
     assert compute_priority_alignment(["battery"], []) == 0.0
-    assert compute_priority_alignment(["battery"], ["Amazing Battery Life"]) == 1.0
-    assert compute_priority_alignment(["design"], ["Amazing Battery Life"]) == 0.0
+    # Percentage-weighted: matched theme contributes pct/100, not a bare 1.
+    assert compute_priority_alignment(["battery"], [("Amazing Battery Life", 90.0)]) == 0.9
+    assert compute_priority_alignment(["design"], [("Amazing Battery Life", 90.0)]) == 0.0
+    # Mean across priorities: matched themes add pct/100, unmatched add 0.0.
+    assert compute_priority_alignment(
+        ["battery", "design"],
+        [("Amazing Battery Life", 80.0), ("Great Design Quality", 60.0)],
+    ) == pytest.approx(0.7)
+    # When several themes match one priority, the strongest percentage wins.
+    assert compute_priority_alignment(
+        ["battery"], [("Battery", 10.0), ("Amazing Battery Life", 90.0)]
+    ) == 0.9
+    # Per-theme and aggregate values are capped at 1.0.
+    assert compute_priority_alignment(["battery"], [("Amazing Battery Life", 150.0)]) == 1.0
+    assert compute_priority_alignment(
+        ["battery", "design"],
+        [("Amazing Battery Life", 100.0), ("Great Design Quality", 100.0)],
+    ) == 1.0
     assert priority_matches_theme("Quality & Durability", "Quality & Durability")
     # Alignment only ever adds to the rating baseline, deterministically.
     assert composite_candidate_score(4.0, 50.0, 0.0) == 4.0 * 0.6 + 0.5 * 0.4

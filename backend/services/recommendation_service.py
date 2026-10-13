@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from models.ecommerce import (
     ProductSummary,
@@ -106,16 +106,28 @@ def priority_matches_theme(priority: str, theme_title: str) -> bool:
     )
 
 
-def compute_priority_alignment(priorities: List[str], pro_themes: List[str]) -> float:
-    """Fraction of user priorities matching a candidate's pro themes.
+def compute_priority_alignment(
+    priorities: List[str], pro_themes: List[Tuple[str, float]]
+) -> float:
+    """Mean evidence strength of user priorities across a candidate's pros.
 
-    Missing attributes count as unknown (no match); an empty priority list
-    scores 0.0 so the rating baseline alone decides.
+    Each theme is a (title, percentage) pair from the pros-cons analysis.
+    For every priority the best-matching theme's percentage is divided by
+    100, keeping alignment in 0.0-1.0 (the same range as the previous
+    binary matched-fraction); unmatched priorities contribute 0.0 and the
+    aggregate is capped at 1.0. An empty priority list scores 0.0 so the
+    rating baseline alone decides.
     """
     if not priorities:
         return 0.0
-    matched = sum(1 for p in priorities if any(priority_matches_theme(p, t) for t in pro_themes))
-    return matched / len(priorities)
+    total = 0.0
+    for prio in priorities:
+        best = 0.0
+        for theme, pct in pro_themes:
+            if priority_matches_theme(prio, theme):
+                best = max(best, min(1.0, max(0.0, pct) / 100.0))
+        total += best
+    return min(1.0, total / len(priorities))
 
 
 def composite_candidate_score(average_rating: float, positive_percentage: float, alignment: float) -> float:
@@ -232,11 +244,19 @@ class RecommendationService:
             user_priorities = ["Product Reliability", "Value for Money", "Quality & Durability"]
 
         candidate_pros: Dict[str, List[str]] = {}
+        candidate_pro_theme_pcts: Dict[str, List[Tuple[str, float]]] = {}
         candidate_cons: Dict[str, List[str]] = {}
         for key in candidate_stats:
             cand_pc = pros_cons_service.analyze_product_pros_cons(key)
-            candidate_pros[key] = [p.theme for p in cand_pc.pros[:3]] if cand_pc else []
-            candidate_cons[key] = [c.theme for c in cand_pc.cons[:3]] if cand_pc else []
+            if cand_pc:
+                top_pros = cand_pc.pros[:4]
+                candidate_pros[key] = [p.theme for p in top_pros]
+                candidate_pro_theme_pcts[key] = [(p.theme, p.percentage) for p in top_pros]
+                candidate_cons[key] = [c.theme for c in cand_pc.cons[:3]]
+            else:
+                candidate_pros[key] = []
+                candidate_pro_theme_pcts[key] = []
+                candidate_cons[key] = []
 
         for key, st in candidate_stats.items():
             prod = st["product"]
@@ -296,11 +316,16 @@ class RecommendationService:
                     )
                 )
 
+        # budget: not implemented in V2 — price data unverified.
+        # Deferred to V3 after confirming price column and values.
         # Best candidate by preference-aware composite score (rating evidence
-        # plus alignment of each candidate's pro themes with user priorities).
+        # plus percentage-weighted alignment of each candidate's pro themes
+        # with user priorities).
         scored = []
         for item in comparison_items:
-            alignment = compute_priority_alignment(user_priorities, item.common_pros)
+            alignment = compute_priority_alignment(
+                user_priorities, candidate_pro_theme_pcts.get(item.product_id, [])
+            )
             scored.append(
                 (composite_candidate_score(item.average_rating, item.positive_percentage, alignment), item)
             )

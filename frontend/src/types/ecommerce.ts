@@ -91,9 +91,7 @@ export interface ProsConsAnalysisResponse {
 
 export interface UserRequirementRequest {
   persona?: string;
-  custom_requirements?: string;
   priorities?: string[];
-  budget?: string;
 }
 
 export interface ProductComparisonItem {

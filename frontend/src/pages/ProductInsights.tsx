@@ -16,11 +16,27 @@ import {
 } from '../services/api';
 import type { ProductSummary } from '../types/ecommerce';
 import type { OverviewAnalytics, ProductAnalytics } from '../types/review';
+import { CATALOG_FETCH_CAP, catalogCountLabel, insightsProductSummary, productLabel } from '../utils/productLabel';
 
 interface ProductInsightsProps {
   onSelectProduct?: (product: ProductSummary) => void;
   initialProductId?: string;
 }
+
+// 6C-C1: name first, canonical ID second; never the literal "Product".
+const renderProductCell = (p: ProductAnalytics) => {
+  const label = productLabel(p);
+  return (
+    <>
+      <div className="font-bold text-slate-900">{label.name || '\u2014'}</div>
+      {label.id && label.id !== label.name && (
+        <span className="block font-mono text-[10px] font-normal text-slate-400">
+          {label.id}
+        </span>
+      )}
+    </>
+  );
+};
 
 export const ProductInsights: React.FC<ProductInsightsProps> = ({
   onSelectProduct,
@@ -35,7 +51,7 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
     setLoading(true);
     setError('');
 
-    Promise.all([getOverview(), getProducts(50)])
+    Promise.all([getOverview(), getProducts(CATALOG_FETCH_CAP)])
       .then(([ov, prods]) => {
         if (isMounted) {
           setOverviewData(ov);
@@ -237,7 +253,7 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
               <div className="space-y-2.5 pt-2 text-xs">
                 <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
                   <span className="text-slate-500">Products Cataloged</span>
-                  <span className="font-bold text-slate-900">{datasetProducts.length} Items</span>
+                  <span className="font-bold text-slate-900">{catalogCountLabel(datasetProducts.length)} Items</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
                   <span className="text-slate-500">Statistics Source</span>
@@ -261,7 +277,9 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
                     <span>Top Catalog Products & Sentiment Benchmarks</span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Aggregated scores across all products in the database with customer feedback breakdown.
+                    {datasetProducts.length >= CATALOG_FETCH_CAP
+                      ? `Aggregated scores for the top ${CATALOG_FETCH_CAP} catalog products by review count.`
+                      : `Aggregated scores for all ${datasetProducts.length} catalog products, ordered by review count.`}
                   </p>
                 </div>
               </div>
@@ -270,7 +288,7 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-500 font-bold uppercase text-[10px]">
-                      <th className="p-3.5">Product ASIN / Title</th>
+                      <th className="p-3.5">Product / ID</th>
                       <th className="p-3.5">Reviews</th>
                       <th className="p-3.5">Average Rating</th>
                       <th className="p-3.5">Positive</th>
@@ -281,9 +299,7 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {datasetProducts.map((p) => (
                       <tr key={p.asin} className="hover:bg-slate-50/70 transition">
-                        <td className="p-3.5 font-bold text-slate-900">
-                          {p.asin || 'Product'}
-                        </td>
+                        <td className="p-3.5">{renderProductCell(p)}</td>
                         <td className="p-3.5 font-mono text-slate-600 font-medium">
                           {p.review_count}
                         </td>
@@ -306,13 +322,7 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
                           {onSelectProduct ? (
                             <button
                               onClick={() => {
-                                onSelectProduct({
-                                  product_id: p.asin || '',
-                                  product_title: p.asin || 'Product',
-                                  category: 'Dataset Product',
-                                  review_count: p.review_count,
-                                  average_rating: p.average_actual_rating,
-                                });
+                                onSelectProduct(insightsProductSummary(p));
                               }}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-600 hover:bg-indigo-600 hover:text-white transition"
                             >
