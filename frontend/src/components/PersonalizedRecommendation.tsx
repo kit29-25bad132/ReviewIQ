@@ -50,7 +50,6 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
 }) => {
   const [selectedPersona, setSelectedPersona] = useState<string>('General User');
   const [evaluatedPersona, setEvaluatedPersona] = useState<string | null>(null);
-  const [customReq, setCustomReq] = useState<string>('');
   const [selectedPriorities, setSelectedPriorities] = useState<string[]>([
     'Quality & Durability',
     'Value for Money',
@@ -62,8 +61,7 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
 
   const triggerAnalysis = async (
     targetPersona: string = selectedPersona,
-    targetPriorities: string[] = selectedPriorities,
-    targetCustom: string = customReq
+    targetPriorities: string[] = selectedPriorities
   ) => {
     setLoading(true);
     setError('');
@@ -76,7 +74,6 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
       const res = await getPersonalizedRecommendation(productId, {
         persona: targetPersona,
         priorities: targetPriorities,
-        custom_requirements: targetCustom.trim() || undefined,
       });
       setData(res);
       setEvaluatedPersona(targetPersona);
@@ -97,8 +94,7 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
   useEffect(() => {
     setSelectedPersona('General User');
     setSelectedPriorities(['Quality & Durability', 'Value for Money']);
-    setCustomReq('');
-    triggerAnalysis('General User', ['Quality & Durability', 'Value for Money'], '');
+    triggerAnalysis('General User', ['Quality & Durability', 'Value for Money']);
   }, [productId]);
 
   const handlePersonaClick = (pId: string) => {
@@ -125,7 +121,7 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
 
   const handleApplyRequirements = (e: React.FormEvent) => {
     e.preventDefault();
-    triggerAnalysis(selectedPersona, selectedPriorities, customReq);
+    triggerAnalysis(selectedPersona, selectedPriorities);
   };
 
   const isPending = !evaluatedPersona || evaluatedPersona !== selectedPersona;
@@ -221,13 +217,6 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
-            <input
-              type="text"
-              value={customReq}
-              onChange={(e) => setCustomReq(e.target.value)}
-              placeholder="e.g. Need durable materials for travel with high reliability..."
-              className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition"
-            />
             <button
               type="submit"
               disabled={loading}
@@ -306,7 +295,7 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
                   Profile: {evaluatedPersona}
                 </span>
                 <button
-                  onClick={() => triggerAnalysis(selectedPersona, selectedPriorities, customReq)}
+                  onClick={() => triggerAnalysis(selectedPersona, selectedPriorities)}
                   title="Re-run analysis"
                   className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-50 transition"
                 >

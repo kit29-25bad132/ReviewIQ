@@ -341,6 +341,8 @@ Personalized recommendation from user priorities.
 }
 ```
 
+> **V2 note:** `budget` is accepted but ignored in V2; reserved for V3.
+
 ### Response
 `PersonalizedRecommendationResponse` (see `backend/models/ecommerce.py`).
 
