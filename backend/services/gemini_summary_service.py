@@ -27,6 +27,7 @@ from services.ai.retry_policy import (
     resolve_retry_policy,
 )
 from services.ai_analyzer import analyzer_service
+from services.cache.keys import sha256_hex
 from services.cache.llm_cache import LLMCache
 from services.observability import emit_ai_outcome
 
@@ -215,7 +216,15 @@ Synthesize these dataset reviews according to your system instructions into stru
         try:
             return self._generate_summary(prompt)
         except Exception as exc:
-            logger.warning(f"AI summarization error: {exc}", exc_info=True)
+            # Privacy (ADR-012): this exception can be a Pydantic ValidationError
+            # (or any raised ``last_error``) whose message embeds raw model
+            # output, and a traceback frame would print it too. Log only the
+            # operation, the exception class and a non-reversible digest prefix.
+            logger.warning(
+                "AI summarization error (error_type=%s, message_sha256_prefix=%s)",
+                type(exc).__name__,
+                sha256_hex(str(exc))[:12],
+            )
             return AISummaryResponse(
                 summary=f"Analysis of {len(sample_reviews)} dataset reviews available for {product_title}.",
                 common_pros=[],
@@ -290,7 +299,17 @@ Synthesize ONLY these supplied reviews according to your system instructions int
                     self.product_cache.put(product_id, d_version, gemini_model, result)
                 return result
             except Exception as exc:
-                logger.warning("AI product analysis error for %s: %s", product_id, exc)
+                # Privacy (ADR-012 / Gate 1.1): ``exc`` can be the loop's
+                # ``last_error`` — e.g. a Pydantic ValidationError from the
+                # response parse whose string embeds raw model output — so
+                # neither the message nor a traceback is logged. Fixed
+                # operation context + exception class only; the re-raise below
+                # keeps propagation and the fallback flow unchanged.
+                logger.warning(
+                    "AI product analysis error (product_id=%s, error_type=%s)",
+                    product_id,
+                    type(exc).__name__,
+                )
                 raise
 
 
@@ -486,10 +505,24 @@ Synthesize ONLY these supplied reviews according to your system instructions int
 
             text = (response.content or "").strip()
             if text:
-                summary = self._parse_json(text)
+                try:
+                    summary = self._parse_json(text)
+                except Exception as e:
+                    # Malformed JSON / Pydantic validation failure: advance
+                    # the fallback chain to the next target (was: raised and
+                    # aborted the whole loop). Exception class only — a
+                    # ValidationError string can embed raw LLM output.
+                    logger.warning(
+                        "Summary parse failed with %s model %s: %s",
+                        target.provider,
+                        target.model,
+                        type(e).__name__,
+                    )
+                    last_error = e
+                    continue
                 # V2-P9: only a successfully generated AND Pydantic-validated
-                # summary is cached (parse/validation failures raise above and
-                # never reach this write).
+                # summary is cached (parse/validation failures advance to the
+                # next target and never reach this write).
                 llm_cache.put_summary(
                     prompt=prompt,
                     task=TASK_DATASET_SUMMARY,
@@ -620,7 +653,17 @@ Synthesize ONLY these supplied reviews according to your system instructions int
 
                 text = (response.content or "").strip()
                 if text:
-                    parsed = self._parse_product_analysis_json(text, product_id, product_title)
+                    try:
+                        parsed = self._parse_product_analysis_json(
+                            text, product_id, product_title
+                        )
+                    except Exception as e:
+                        # Malformed JSON / Pydantic validation failure: advance
+                        # the fallback chain to the next target (was: raised and
+                        # aborted the whole loop). No logging here — matches
+                        # this loop's existing silent except style.
+                        last_error = e
+                        continue
                     status = "success"
                     return parsed
 

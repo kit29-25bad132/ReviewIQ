@@ -857,6 +857,72 @@ def test_product_summary_fallback_supports_provider_switch(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# 27b. Parse-failure fallback (malformed JSON advances the chain)
+# ---------------------------------------------------------------------------
+
+MALFORMED_JSON = "{not valid json!!!"
+
+ANALYSIS_JSON = json.dumps(
+    {
+        "product_id": "P12",
+        "product_title": "Kelto Gamer 16",
+        "summary": "Grounded in canonical samples.",
+        "pros": ["Performance"],
+        "cons": ["Weight"],
+        "insights": ["Gamers approve"],
+        "evidence": ["Runs cool under load"],
+    }
+)
+
+
+def test_product_summary_malformed_json_advances_fallback_chain(monkeypatch):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    providers = _multi_providers([MALFORMED_JSON, SUMMARY_JSON])
+    monkeypatch.setattr(analyzer_service, "_gateway", _gateway(providers))
+
+    result = gemini_summary_service._generate_summary("prompt")
+
+    assert result.summary == "Customer feedback highlights battery performance."
+    # First target's malformed JSON advanced to the second target; no abort.
+    assert len(providers["gemini"].requests) == 2
+
+
+def test_product_summary_all_parse_failures_raise_after_exhaustion(monkeypatch):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    providers = _multi_providers([MALFORMED_JSON])
+    monkeypatch.setattr(analyzer_service, "_gateway", _gateway(providers))
+
+    with pytest.raises(json.JSONDecodeError):
+        gemini_summary_service._generate_summary("prompt")
+
+
+def test_product_analysis_malformed_json_advances_fallback_chain(monkeypatch):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    providers = _multi_providers([MALFORMED_JSON, ANALYSIS_JSON])
+    monkeypatch.setattr(analyzer_service, "_gateway", _gateway(providers))
+
+    result = gemini_summary_service._generate_product_structured_analysis(
+        "prompt", "P12", "Kelto Gamer 16"
+    )
+
+    assert result.product_id == "P12"
+    assert result.pros == ["Performance"]
+    # First target's malformed JSON advanced to the second target; no abort.
+    assert len(providers["gemini"].requests) == 2
+
+
+def test_product_analysis_all_parse_failures_raise_after_exhaustion(monkeypatch):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    providers = _multi_providers([MALFORMED_JSON])
+    monkeypatch.setattr(analyzer_service, "_gateway", _gateway(providers))
+
+    with pytest.raises(json.JSONDecodeError):
+        gemini_summary_service._generate_product_structured_analysis(
+            "prompt", "P12", "Kelto Gamer 16"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 28-29. API safety + exhaustion
 # ---------------------------------------------------------------------------
 

@@ -608,7 +608,16 @@ class AIAnalyzerService:
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError as err:
-            raise ValueError(f"Failed to parse AI output as JSON: {err}. Raw output: {cleaned[:200]}")
+            # Privacy (ADR-012): this message is logged by the API layer, so it
+            # must never carry model output. Keep only a stable category, the
+            # JSON error position, the output length and a non-reversible
+            # digest prefix (same 12-hex convention as the RAG citation logs).
+            raise ValueError(
+                "Failed to parse AI output as JSON: "
+                f"{type(err).__name__} at line {err.lineno} column {err.colno} "
+                f"output_len={len(cleaned)} "
+                f"output_sha256_prefix={sha256_hex(cleaned)[:12]}"
+            )
 
         # Strict validation with Pydantic model
         return ReviewAnalysis.model_validate(data)

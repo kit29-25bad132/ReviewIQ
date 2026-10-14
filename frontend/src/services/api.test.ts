@@ -34,7 +34,7 @@ vi.mock('axios', () => {
   };
 });
 
-import { analyzeReview } from './api';
+import { analyzeReview, askProductQuestion } from './api';
 
 const fullAnalysis: ReviewAnalysis = {
   sentiment: 'mixed',
@@ -250,6 +250,143 @@ describe('getProductAnalysis and searchProducts with configurable timeouts', () 
     );
 
     await expect(getProductAnalysis('P12')).rejects.toThrow(
+      'Request timed out. The AI model is taking longer than expected.'
+    );
+  });
+});
+
+describe('askProductQuestion (Phase 7 rag-query client)', () => {
+  const groundedResponse = {
+    answer: 'Battery lasts two days. [R00669].',
+    evidence: [
+      {
+        review_id: 'R00669',
+        excerpt: 'the battery life is okay',
+        similarity_score: 0.72,
+        rating: 4,
+      },
+    ],
+    retrieval_count: 1,
+    context_token_estimate: 42,
+    model_used: 'gemini-2.0-flash',
+    rag_enabled: true,
+    fallback_used: false,
+  };
+
+  it('A. posts to the per-product rag-query endpoint with the query verbatim', async () => {
+    mocks.post.mockResolvedValue({ data: groundedResponse });
+
+    await askProductQuestion('P12', '  how is the battery life?  ');
+
+    // Verbatim pass-through: never trimmed or rewritten (backend contract
+    // rejects whitespace-only input itself with 422).
+    expect(mocks.post).toHaveBeenCalledWith(
+      '/api/products/P12/rag-query',
+      { query: '  how is the battery life?  ' },
+      expect.objectContaining({ timeout: 45000 })
+    );
+  });
+
+  it('B. returns every grounded response field unchanged, including evidence and empty-answer flags', async () => {
+    mocks.post.mockResolvedValue({ data: groundedResponse });
+
+    const result = await askProductQuestion('P12', 'how is the battery life?');
+
+    expect(result).toEqual(groundedResponse);
+    expect(result.answer).toBe('Battery lasts two days. [R00669].');
+    expect(result.evidence).toHaveLength(1);
+    expect(result.rag_enabled).toBe(true);
+
+    // Legitimate empty answers (disabled / empty retrieval / discarded) pass
+    // through untouched — the client must never fabricate content for them.
+    mocks.post.mockResolvedValue({
+      data: {
+        answer: '',
+        evidence: [],
+        retrieval_count: 0,
+        context_token_estimate: 0,
+        model_used: '',
+        rag_enabled: true,
+        fallback_used: false,
+      },
+    });
+    const empty = await askProductQuestion('P12', 'off topic question');
+    expect(empty.answer).toBe('');
+    expect(empty.evidence).toEqual([]);
+  });
+
+  it('C. surfaces a readable message from the real FastAPI array-shaped 422 detail', async () => {
+    mocks.post.mockRejectedValue(
+      makeAxiosError({
+        response: {
+          status: 422,
+          data: {
+            detail: [
+              {
+                type: 'value_error',
+                loc: ['body', 'query'],
+                msg: 'Value error, query must contain at least one non-whitespace character',
+                input: '   ',
+              },
+            ],
+          },
+        },
+      })
+    );
+
+    await expect(askProductQuestion('P12', '   ')).rejects.toThrow(
+      'Value error, query must contain at least one non-whitespace character'
+    );
+  });
+
+  it('C2. keeps plain-string validation details working unchanged', async () => {
+    mocks.post.mockRejectedValue(
+      makeAxiosError({
+        response: {
+          status: 422,
+          data: {
+            detail: 'query must contain at least one non-whitespace character.',
+          },
+        },
+      })
+    );
+
+    await expect(askProductQuestion('P12', '   ')).rejects.toThrow(
+      'query must contain at least one non-whitespace character.'
+    );
+  });
+
+  it('C3. malformed or empty validation details fall back safely without [object Object]', async () => {
+    const malformedPayloads: Array<Record<string, unknown>> = [
+      { detail: {} },
+      { detail: [] },
+      { detail: [{ nope: true }] },
+      { detail: [{ msg: '' }] },
+      {},
+    ];
+
+    for (const data of malformedPayloads) {
+      mocks.post.mockRejectedValue(
+        makeAxiosError({ response: { status: 422, data } })
+      );
+
+      const err = await askProductQuestion('P12', '   ').catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      const message = (err as Error).message;
+      expect(message).not.toContain('[object Object]');
+      expect(message.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('D. reports timeouts through the shared API error contract', async () => {
+    mocks.post.mockRejectedValue(
+      makeAxiosError({
+        code: 'ECONNABORTED',
+        message: 'timeout of 45000ms exceeded',
+      })
+    );
+
+    await expect(askProductQuestion('P12', 'battery life?')).rejects.toThrow(
       'Request timed out. The AI model is taking longer than expected.'
     );
   });

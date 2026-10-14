@@ -130,3 +130,20 @@ export interface PersonalizedRecommendationResponse {
   things_to_consider: string[];
   source_label: string;
 }
+
+export interface RAGEvidenceItem {
+  review_id: string;
+  excerpt: string;
+  similarity_score: number;
+  rating: number | null;
+}
+
+export interface RAGQueryResponse {
+  answer: string;
+  evidence: RAGEvidenceItem[];
+  retrieval_count: number;
+  context_token_estimate: number;
+  model_used: string;
+  rag_enabled: boolean;
+  fallback_used: boolean;
+}

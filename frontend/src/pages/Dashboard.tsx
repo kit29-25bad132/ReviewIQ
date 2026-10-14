@@ -17,6 +17,7 @@ import {
   X,
   RotateCcw,
   AlertCircle,
+  HelpCircle,
 } from 'lucide-react';
 import type { ReviewAnalysis, ReviewHistoryItem } from '../types/review';
 import type { ProductSummary, ReviewItem } from '../types/ecommerce';
@@ -52,6 +53,7 @@ import { ReviewInput } from '../components/ReviewInput';
 import { AnalysisResult } from '../components/AnalysisResult';
 import { ReviewHistory } from '../components/ReviewHistory';
 import { DatasetExplorer } from '../components/DatasetExplorer';
+import { RagQueryPanel } from '../components/RagQueryPanel';
 import { ProductInsights } from './ProductInsights';
 
 export type NavTabType =
@@ -59,6 +61,7 @@ export type NavTabType =
   | 'product_analysis'
   | 'compare'
   | 'reviews'
+  | 'ask_reviews'
   | 'analytics'
   | 'settings';
 
@@ -298,6 +301,7 @@ export const Dashboard: React.FC = () => {
     { id: 'compare', label: 'Compare Products', icon: Layers },
     { id: 'reviews', label: 'Explore Reviews', icon: MessageSquare },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'ask_reviews', label: 'Ask the Reviews', icon: HelpCircle },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -347,9 +351,9 @@ export const Dashboard: React.FC = () => {
           <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 space-y-2">
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-slate-500 font-medium">Backend Status</span>
-              <div className="flex items-center gap-1.5 font-semibold text-emerald-600">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>{healthStatus?.status === 'ok' ? 'API Online' : 'API Online'}</span>
+              <div className={`flex items-center gap-1.5 font-semibold ${healthStatus?.status === 'ok' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                <span className={`h-2 w-2 rounded-full ${healthStatus?.status === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <span>{healthStatus?.status === 'ok' ? 'API Online' : 'API Offline'}</span>
               </div>
             </div>
             <div className="text-[10px] text-slate-400 flex items-center justify-between">
@@ -371,8 +375,8 @@ export const Dashboard: React.FC = () => {
             <span className="font-black text-slate-900">ReviewIQ</span>
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto py-1">
-            {navItems.slice(0, 4).map((item) => (
+          <div className="flex items-center gap-2 overflow-x-auto py-1 min-w-0">
+            {navItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as NavTabType)}
@@ -691,17 +695,14 @@ export const Dashboard: React.FC = () => {
                         <span>Strengths</span>
                       </div>
                       <ul className="space-y-1.5 text-[11px] text-emerald-950 font-medium">
-                        {(homePros.length > 0 ? homePros : [
-                          'Quality & Durability',
-                          'Long Battery Life',
-                          'Excellent Performance',
-                          'User-friendly Experience',
-                        ]).map((pro, i) => (
+                        {homePros.length > 0 ? homePros.map((pro, i) => (
                           <li key={i} className="flex items-center gap-1.5">
                             <Check className="h-3 w-3 text-emerald-600 shrink-0" />
                             <span className="line-clamp-1">{pro}</span>
                           </li>
-                        ))}
+                        )) : (
+                          <li className="text-slate-400 italic">No data available</li>
+                        )}
                       </ul>
                     </div>
 
@@ -712,17 +713,14 @@ export const Dashboard: React.FC = () => {
                         <span>Complaints</span>
                       </div>
                       <ul className="space-y-1.5 text-[11px] text-rose-950 font-medium">
-                        {(homeCons.length > 0 ? homeCons : [
-                          'High Price Tag',
-                          'Packaging Bulk',
-                          'Minor Durability Complaints',
-                          'Setup Complexity',
-                        ]).map((con, i) => (
+                        {homeCons.length > 0 ? homeCons.map((con, i) => (
                           <li key={i} className="flex items-center gap-1.5">
                             <X className="h-3 w-3 text-rose-600 shrink-0" />
                             <span className="line-clamp-1">{con}</span>
                           </li>
-                        ))}
+                        )) : (
+                          <li className="text-slate-400 italic">No data available</li>
+                        )}
                       </ul>
                     </div>
                   </div>
@@ -1096,6 +1094,13 @@ export const Dashboard: React.FC = () => {
                   handleTriggerAnalyze(p);
                 }}
               />
+            </div>
+          )}
+
+          {/* VIEW 6.5: ASK THE REVIEWS (Phase 7 Gate 4 — /rag-query UI surface) */}
+          {activeTab === 'ask_reviews' && (
+            <div className="space-y-8 animate-fadeIn">
+              <RagQueryPanel />
             </div>
           )}
 

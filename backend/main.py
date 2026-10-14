@@ -19,6 +19,7 @@ from routes.products import router as products_router
 from routes.reviews import router as reviews_router
 from routes.intelligence import router as intelligence_router
 from routes.retrieval import router as retrieval_router
+from routes.rag_query import router as rag_query_router
 from services.ai_analyzer import analyzer_service
 from services.catalog.catalog_service import canonical_catalog
 from services.observability import RequestIdFilter, request_id_var
@@ -108,6 +109,7 @@ app.include_router(dataset_router)
 app.include_router(analytics_router)
 app.include_router(evaluation_router)
 app.include_router(retrieval_router)
+app.include_router(rag_query_router)
 
 
 @app.get("/health", tags=["Health"])
@@ -120,7 +122,7 @@ async def health_check():
     return {
         "status": "ok",
         "service": "Product Review Analyzer Backend",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "ai_provider": "Google Gemini",
         "ai_configured": analyzer_service.is_configured(),
     }

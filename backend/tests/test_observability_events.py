@@ -12,7 +12,8 @@ Fully offline and hermetic. Covers the P11 spec groups:
 8. ``ai_retry_exhausted`` log-only event (exhausted vs terminal),
 9. secret/content scan of every new log line,
 10. public API contracts unchanged (no observability fields leak),
-11. emission failures never break a request.
+11. emission failures never break a request,
+12. RAG answer pipeline emits the consolidated outcome event (Phase 7 gap).
 """
 
 import io
@@ -39,6 +40,7 @@ from services.observability import (
     reset_request_id,
     set_request_id,
 )
+from services.rag.answer_service import generate_rag_answer
 from services.rag.config import RAGConfig
 from tests.cache_fakes import (
     SUMMARY_JSON,
@@ -697,3 +699,86 @@ def test_outcome_emission_failure_never_breaks_the_request(monkeypatch):
     result = analyzer.analyze_review(REVIEW)
 
     assert isinstance(result, ReviewAnalysis)
+
+
+# ---------------------------------------------------------------------------
+# 12. RAG answer pipeline outcome event (Phase 7 gap)
+# ---------------------------------------------------------------------------
+
+RAG_CANARY = "CANARY_RAG_MARKER_77 "
+
+
+def test_rag_answer_outcome_event_success(monkeypatch, caplog):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    provider = FakeProvider(["Battery lasts two days. [R00001]"], name="gemini")
+    monkeypatch.setattr(
+        "services.rag.answer_service.analyzer_service._gateway",
+        _gateway({"gemini": provider}),
+    )
+
+    with caplog.at_level(logging.INFO, logger="services.observability"):
+        answer = generate_rag_answer("How is the battery?", "[R00001] lasts two days")
+
+    assert answer.answer == "Battery lasts two days. [R00001]"
+    (event,) = _outcome_events(caplog)
+    assert set(event) == OUTCOME_FIELDS
+    assert event["task"] == "rag_query_answer"
+    assert event["outcome"] == "success"
+    assert event["provider"] == "gemini"
+    assert event["fallback"] == "False"
+    assert event["cache"] == "disabled"
+    assert event["rag_status"] == "None"  # retrieval ran upstream in the route
+    assert float(event["total_ms"]) >= 0
+
+
+def test_rag_answer_outcome_event_failure(monkeypatch, caplog):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    provider = FakeProvider([RuntimeError("rag provider down")], name="gemini")
+    monkeypatch.setattr(
+        "services.rag.answer_service.analyzer_service._gateway",
+        _gateway({"gemini": provider}),
+    )
+
+    with caplog.at_level(logging.INFO, logger="services.observability"):
+        with pytest.raises(RuntimeError):
+            generate_rag_answer("How is the battery?", "[R00001] lasts two days")
+
+    (event,) = _outcome_events(caplog)
+    assert set(event) == OUTCOME_FIELDS
+    assert event["task"] == "rag_query_answer"
+    assert event["outcome"] == "failure"
+    assert event["provider"] == "gemini"
+
+
+def test_rag_answer_outcome_event_emitted_exactly_once(monkeypatch, caplog):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    provider = FakeProvider(["Battery lasts two days. [R00001]"], name="gemini")
+    monkeypatch.setattr(
+        "services.rag.answer_service.analyzer_service._gateway",
+        _gateway({"gemini": provider}),
+    )
+
+    with caplog.at_level(logging.INFO, logger="services.observability"):
+        generate_rag_answer("How is the battery?", "[R00001] lasts two days")
+
+    events = _outcome_events(caplog)
+    assert len(events) == 1  # one event per logical request, no duplicates
+
+
+def test_rag_answer_outcome_event_carries_no_query_or_context(monkeypatch, caplog):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    provider = FakeProvider(["Battery lasts two days. [R00001]"], name="gemini")
+    monkeypatch.setattr(
+        "services.rag.answer_service.analyzer_service._gateway",
+        _gateway({"gemini": provider}),
+    )
+
+    query = f"{RAG_CANARY}How is the battery?"
+    context = f"[R00001] (rating=5) {RAG_CANARY}lasts two days"
+    with caplog.at_level(logging.DEBUG):
+        generate_rag_answer(query, context)
+
+    everything = "\n".join(record.getMessage() for record in caplog.records)
+    assert RAG_CANARY not in everything
+    for event in _outcome_events(caplog):
+        assert RAG_CANARY not in " ".join(event.values())

@@ -13,7 +13,7 @@ Service health probe. Never returns secrets.
 {
   "status": "ok",
   "service": "Product Review Analyzer Backend",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "ai_provider": "Google Gemini",
   "ai_configured": true
 }
@@ -342,6 +342,7 @@ Personalized recommendation from user priorities.
 ```
 
 > **V2 note:** `budget` is accepted but ignored in V2; reserved for V3.
+> **Note:** `custom_requirements` is accepted for contract compatibility but ignored by the recommendation algorithm — it never affects ranking (see `RecommendationService`).
 
 ### Response
 `PersonalizedRecommendationResponse` (see `backend/models/ecommerce.py`).

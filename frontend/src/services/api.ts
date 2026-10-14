@@ -17,6 +17,7 @@ import {
   ProductSummary,
   UserRequirementRequest,
   PersonalizedRecommendationResponse,
+  RAGQueryResponse,
 } from '../types/ecommerce';
 import {
   AnalysisErrorResponse,
@@ -51,6 +52,36 @@ export interface HealthStatus {
 }
 
 /**
+ * Extracts a human-readable message from an API error payload without ever
+ * rendering `[object Object]`.
+ *
+ * FastAPI request-validation errors carry `detail` as an array of objects with
+ * a `msg` field; other endpoints return `detail`/`error` as plain strings.
+ * Missing, empty, malformed, or unexpected shapes return `null` so callers
+ * fall back to their status-based messages.
+ */
+function formatApiErrorMessage(payload: unknown): string | null {
+  if (typeof payload === 'string') {
+    return payload.length > 0 ? payload : null;
+  }
+  if (Array.isArray(payload)) {
+    const messages = payload
+      .map((item): string | null => {
+        if (item && typeof item === 'object' && 'msg' in item) {
+          const msg = (item as { msg?: unknown }).msg;
+          if (typeof msg === 'string' && msg.length > 0) {
+            return msg;
+          }
+        }
+        return null;
+      })
+      .filter((msg): msg is string => msg !== null);
+    return messages.length > 0 ? messages.join(' ') : null;
+  }
+  return null;
+}
+
+/**
  * Formats API errors into descriptive, user-facing error messages.
  */
 export function handleApiError(error: unknown, fallbackMessage = 'An unexpected error occurred.'): never {
@@ -59,12 +90,14 @@ export function handleApiError(error: unknown, fallbackMessage = 'An unexpected 
   }
 
   if (axios.isAxiosError(error)) {
-    const axiosErr = error as AxiosError<{ detail?: string; error?: string }>;
+    const axiosErr = error as AxiosError<{ detail?: unknown; error?: unknown }>;
 
     if (axiosErr.response) {
-      const detail = axiosErr.response.data?.detail || axiosErr.response.data?.error;
-      if (detail) {
-        throw new Error(detail);
+      const message =
+        formatApiErrorMessage(axiosErr.response.data?.detail) ??
+        formatApiErrorMessage(axiosErr.response.data?.error);
+      if (message) {
+        throw new Error(message);
       }
       if (axiosErr.response.status === 400) {
         throw new Error('Invalid review input. Please check the review text.');
@@ -512,5 +545,35 @@ export async function runEvaluation(
     return response.data;
   } catch (error) {
     return handleApiError(error, 'Evaluation run failed.');
+  }
+}
+
+/**
+ * Asks a free-text question about one product's stored reviews (Phase 7
+ * `POST /api/products/{product_id}/rag-query`).
+ *
+ * The query is sent verbatim — never trimmed or rewritten — matching the
+ * backend contract (whitespace-only input is rejected there with 422; the
+ * FastAPI array-shaped validation detail is converted to a readable message
+ * by `handleApiError`, which keeps plain-string details working too). An empty
+ * `answer` in the response is a legitimate result (RAG disabled, empty
+ * retrieval, or the answer discarded by citation/evidence validation);
+ * callers must render exactly what the backend returned and never invent
+ * content for it.
+ */
+export async function askProductQuestion(
+  productId: string,
+  query: string,
+  signal?: AbortSignal
+): Promise<RAGQueryResponse> {
+  try {
+    const response = await apiClient.post<RAGQueryResponse>(
+      `/api/products/${productId}/rag-query`,
+      { query },
+      { timeout: AI_ANALYSIS_TIMEOUT_MS, signal }
+    );
+    return response.data;
+  } catch (error) {
+    return handleApiError(error, 'Failed to answer the question from reviews.');
   }
 }
