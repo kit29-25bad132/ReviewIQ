@@ -76,11 +76,13 @@ def emit_ai_outcome(
 ) -> None:
     """Log one consolidated ``ai_request_outcome`` event (INFO, log-only).
 
-    ``task`` is ``"review_analysis"`` or ``"product_summary"``; ``outcome``
-    is ``"success"`` or ``"failure"``; ``cache`` is ``"hit"``, ``"miss"``,
-    ``"disabled"`` or ``"unknown"``. Fields that do not apply or could not
-    be safely determined are ``None`` — values are never guessed. The
-    emission itself must never raise.
+    ``task`` is the pipeline name (``"review_analysis"``, ``"product_summary"``,
+    ``"product_summary_enriched"``, ``"product_aspects"``,
+    ``"product_pros_cons"``, ``"product_analysis"``, ``"rag_query_answer"``);
+    ``outcome`` is ``"success"`` or ``"failure"``; ``cache`` is ``"hit"``,
+    ``"miss"``, ``"disabled"`` or ``"unknown"``. Fields that do not apply or
+    could not be safely determined are ``None`` — values are never guessed.
+    The emission itself must never raise.
     """
     try:
         logger.info(

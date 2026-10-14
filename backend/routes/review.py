@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, status
 from models.review import ReviewRequest, AnalyzeReviewResponse
 from services.ai.errors import AIErrorType, AIProviderError
 from services.ai_analyzer import analyzer_service
+from services.cache.keys import sha256_hex
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +61,22 @@ async def analyze_review_endpoint(payload: ReviewRequest):
             detail=_provider_error_message(provider_err.error_type),
         )
     except ValueError as val_err:
-        # Log the full detail server-side; never echo parser/model-output text
-        # (Pydantic ValidationError is a ValueError subclass and may embed raw output).
-        logger.warning(f"Validation or configuration error: {val_err}", exc_info=True)
+        # Privacy (ADR-012): Pydantic ValidationError (a ValueError subclass)
+        # and parser errors can embed raw model output, so neither the message
+        # nor the traceback is logged — a traceback frame would print it too.
+        # Log a fixed category, the exception class and a non-reversible
+        # digest prefix instead; the request correlation ID is added by the
+        # logging filter. Response semantics are unchanged.
         lowered = str(val_err).lower()
-        if "gemini api key" in lowered or "provider api key" in lowered:
+        is_config_error = "gemini api key" in lowered or "provider api key" in lowered
+        logger.warning(
+            "Review analysis validation error (category=%s, error_type=%s, "
+            "message_sha256_prefix=%s)",
+            "configuration" if is_config_error else "validation",
+            type(val_err).__name__,
+            sha256_hex(str(val_err))[:12],
+        )
+        if is_config_error:
             detail = _NO_KEY_DETAIL
         else:
             detail = "Review analysis failed validation. Please try again."
