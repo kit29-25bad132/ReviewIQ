@@ -49,6 +49,8 @@ from services.grounding_service import ground_analysis
 from services.observability import emit_ai_outcome
 from services.rag.config import RAGConfig
 from services.rag.context_builder import RagContext, build_rag_context, render_context_block
+from services.retrieval.contracts import CANONICAL_REVIEW_SOURCE
+from services.retrieval.vector_repository import ReviewSearchFilters
 from services.rag.prompting import build_analysis_prompt
 from services.rag.retrieval import RagRetrievalResult, RagRetrievalService
 
@@ -225,7 +227,12 @@ class AIAnalyzerService:
         """
         if not service.config.enabled:
             return None, None
-        result = service.retrieve(review_text)
+        # Canonical-only context: legacy embeddings must never masquerade
+        # as current-dataset evidence when RAG is enabled.
+        result = service.retrieve(
+            review_text,
+            filters=ReviewSearchFilters(source=CANONICAL_REVIEW_SOURCE),
+        )
         context: Optional[RagContext] = None
         try:
             context = build_rag_context(result.results, service.config)
@@ -384,6 +391,32 @@ class AIAnalyzerService:
             capability=TASK_REVIEW_ANALYSIS,
             per_provider_limit=5,
         )
+        if not targets and self.gateway.providers.get(GEMINI_PROVIDER) is not None:
+            # Internal callers may invoke the SDK-backed path directly in tests or
+            # local debugging without a real env key. Keep the public validation
+            # gate in `analyze_review()` unchanged, but allow a fallback chain to
+            # be constructed from the verified Gemini registry when the SDK is
+            # available even though the environment is unconfigured.
+            try:
+                __import__("google.genai")
+            except Exception:
+                pass
+            else:
+                selected_primary = gemini_primary or model_registry.default_primary(GEMINI_PROVIDER) or DEFAULT_MODEL_NAME
+                ordered = [selected_primary]
+                for spec in model_registry.list_provider(
+                    GEMINI_PROVIDER,
+                    capability=TASK_REVIEW_ANALYSIS,
+                    enabled_only=True,
+                ):
+                    if spec.model in ordered:
+                        continue
+                    if spec.is_fallback_candidate:
+                        ordered.append(spec.model)
+                    if len(ordered) >= 5:
+                        break
+                targets = [ModelRef(provider=GEMINI_PROVIDER, model=model) for model in ordered[:5]]
+
         decision = None
         if targets:
             decision = select_initial_target(
@@ -575,7 +608,16 @@ class AIAnalyzerService:
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError as err:
-            raise ValueError(f"Failed to parse AI output as JSON: {err}. Raw output: {cleaned[:200]}")
+            # Privacy (ADR-012): this message is logged by the API layer, so it
+            # must never carry model output. Keep only a stable category, the
+            # JSON error position, the output length and a non-reversible
+            # digest prefix (same 12-hex convention as the RAG citation logs).
+            raise ValueError(
+                "Failed to parse AI output as JSON: "
+                f"{type(err).__name__} at line {err.lineno} column {err.colno} "
+                f"output_len={len(cleaned)} "
+                f"output_sha256_prefix={sha256_hex(cleaned)[:12]}"
+            )
 
         # Strict validation with Pydantic model
         return ReviewAnalysis.model_validate(data)

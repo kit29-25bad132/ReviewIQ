@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from models.dataset import DatasetReview
-from services.dataset_service import DatasetUnavailableError, dataset_service
+from services.catalog.catalog_service import canonical_catalog
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -33,7 +33,9 @@ SAMPLE_ROWS = [
 
 
 def test_dataset_reviews_default_parameters():
-    with patch.object(dataset_service, "query", return_value=(SAMPLE_ROWS, 2)) as mock_query:
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "query_dataset_reviews", return_value=([r.model_dump() for r in SAMPLE_ROWS], 2)
+    ) as mock_query:
         resp = client.get("/api/dataset/reviews")
     assert resp.status_code == 200
     body = resp.json()
@@ -46,7 +48,9 @@ def test_dataset_reviews_default_parameters():
 
 
 def test_dataset_reviews_limit_and_offset():
-    with patch.object(dataset_service, "query", return_value=([], 0)) as mock_query:
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "query_dataset_reviews", return_value=([], 0)
+    ) as mock_query:
         resp = client.get("/api/dataset/reviews?limit=5&offset=10")
     assert resp.status_code == 200
     body = resp.json()
@@ -56,7 +60,9 @@ def test_dataset_reviews_limit_and_offset():
 
 
 def test_dataset_reviews_search_and_filters():
-    with patch.object(dataset_service, "query", return_value=([SAMPLE_ROWS[0]], 1)) as mock_query:
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "query_dataset_reviews", return_value=([SAMPLE_ROWS[0].model_dump()], 1)
+    ) as mock_query:
         resp = client.get(
             "/api/dataset/reviews?search=battery&rating=5&sentiment=positive&product=B00000"
         )
@@ -65,7 +71,9 @@ def test_dataset_reviews_search_and_filters():
 
 
 def test_dataset_reviews_empty_result():
-    with patch.object(dataset_service, "query", return_value=([], 0)):
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "query_dataset_reviews", return_value=([], 0)
+    ):
         resp = client.get("/api/dataset/reviews?search=nothing-matches-this")
     assert resp.status_code == 200
     body = resp.json()
@@ -74,20 +82,18 @@ def test_dataset_reviews_empty_result():
 
 
 def test_dataset_unavailable_returns_safe_503():
-    secret = "SQLITE_CORRUPT at /var/secrets/path table=reviews"
-    with patch.object(
-        dataset_service, "query", side_effect=DatasetUnavailableError(secret)
-    ):
+    with patch.object(canonical_catalog, "is_configured", return_value=False):
         resp = client.get("/api/dataset/reviews")
     assert resp.status_code == 503
     detail = resp.json()["detail"]
-    assert secret not in resp.text
     assert detail == "Review dataset is currently unavailable. Please try again later."
 
 
 def test_dataset_unexpected_error_returns_safe_503():
     secret = "UNEXPECTED internal dump token=sk-xyz"
-    with patch.object(dataset_service, "query", side_effect=RuntimeError(secret)):
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "query_dataset_reviews", side_effect=RuntimeError(secret)
+    ):
         resp = client.get("/api/dataset/reviews")
     assert resp.status_code == 503
     assert secret not in resp.text

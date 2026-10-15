@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -24,7 +24,10 @@ class ProductStatistics(BaseModel):
 
 
 class ReviewItem(BaseModel):
-    id: int
+    # Canonical reviews carry stable string IDs (e.g. "R00001"); legacy
+    # SQLite rows carry integer IDs. Both remain valid; consumers must
+    # treat id as opaque.
+    id: Union[int, str]
     product_id: str
     product_title: str
     category: Optional[str] = None
@@ -34,8 +37,21 @@ class ReviewItem(BaseModel):
 
 
 class ProductAnalysisResponse(BaseModel):
-    product: ProductSummary
-    statistics: ProductStatistics
+    product_id: str
+    product_title: str
+    category: Optional[str] = None
+    total_reviews: int = 0
+    average_rating: float = 0.0
+    rating_distribution: dict[str, int] = Field(default_factory=dict)
+    sentiment: dict[str, int] = Field(default_factory=dict)
+    pros: List[str] = Field(default_factory=list)
+    cons: List[str] = Field(default_factory=list)
+    summary: str = ""
+    insights: List[str] = Field(default_factory=list)
+    evidence: List[str] = Field(default_factory=list)
+    ai_available: bool = True
+    product: Optional[ProductSummary] = None
+    statistics: Optional[ProductStatistics] = None
     recent_reviews: List[ReviewItem] = Field(default_factory=list)
 
 
@@ -60,7 +76,9 @@ class ProConTheme(BaseModel):
     review_count: int
     percentage: float
     example_reviews: List[str] = Field(default_factory=list)
-    evidence_review_ids: List[int] = Field(default_factory=list)
+    # Canonical evidence uses stable string IDs (e.g. "R00001"); legacy
+    # SQLite rows use integer IDs. Both remain valid.
+    evidence_review_ids: List[Union[int, str]] = Field(default_factory=list)
 
 
 class ProsConsAnalysisResponse(BaseModel):
@@ -76,7 +94,7 @@ class ProsConsAnalysisResponse(BaseModel):
     average_rating: float
     sentiment_percentages: dict[str, float] = Field(default_factory=dict)
     authenticity_signals: List[str] = Field(default_factory=list)
-    source_label: str = "Derived strictly from actual dataset reviews"
+    source_label: str = "Derived strictly from canonical dataset reviews"
 
 
 class UserRequirementRequest(BaseModel):

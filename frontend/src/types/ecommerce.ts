@@ -20,7 +20,7 @@ export interface ProductStatistics {
 }
 
 export interface ReviewItem {
-  id: number;
+  id: number | string;
   product_id: string;
   product_title: string;
   category?: string | null;
@@ -30,10 +30,24 @@ export interface ReviewItem {
 }
 
 export interface ProductAnalysisResponse {
+  product_id?: string;
+  product_title?: string;
+  category?: string | null;
+  total_reviews?: number;
+  average_rating?: number;
+  rating_distribution?: Record<string, number>;
+  sentiment?: Record<string, number>;
+  pros?: string[];
+  cons?: string[];
+  summary?: string;
+  insights?: string[];
+  evidence?: string[];
+  ai_available?: boolean;
   product: ProductSummary;
   statistics: ProductStatistics;
   recent_reviews: ReviewItem[];
 }
+
 
 export interface ReviewsPaginationResponse {
   items: ReviewItem[];
@@ -77,9 +91,7 @@ export interface ProsConsAnalysisResponse {
 
 export interface UserRequirementRequest {
   persona?: string;
-  custom_requirements?: string;
   priorities?: string[];
-  budget?: string;
 }
 
 export interface ProductComparisonItem {
@@ -117,4 +129,21 @@ export interface PersonalizedRecommendationResponse {
   strengths_for_you: string[];
   things_to_consider: string[];
   source_label: string;
+}
+
+export interface RAGEvidenceItem {
+  review_id: string;
+  excerpt: string;
+  similarity_score: number;
+  rating: number | null;
+}
+
+export interface RAGQueryResponse {
+  answer: string;
+  evidence: RAGEvidenceItem[];
+  retrieval_count: number;
+  context_token_estimate: number;
+  model_used: string;
+  rag_enabled: boolean;
+  fallback_used: boolean;
 }

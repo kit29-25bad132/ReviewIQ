@@ -1,0 +1,341 @@
+{
+  "dataset_version": "hash_cc09d439b3c2",
+  "ingestion_run_id": null,
+  "validation_version": "v3.0.0",
+  "timestamp": "2026-10-03T16:59:20.688798+00:00",
+  "status": "PASS",
+  "total_rows": 1500,
+  "total_products": 20,
+  "total_reviews": 1500,
+  "exact_duplicate_count": 0,
+  "exact_duplicate_pct": 0.0,
+  "normalized_duplicate_count": 0,
+  "normalized_duplicate_pct": 0.0,
+  "near_duplicate_count": 0,
+  "near_duplicate_pct": 0.0,
+  "template_repetition_count": 0,
+  "template_repetition_pct": 0.0,
+  "missing_values_count": 0,
+  "invalid_ratings_count": 0,
+  "orphan_reviews_count": 0,
+  "provenance_coverage_pct": 100.0,
+  "trustworthiness_score": 100.0,
+  "rating_distribution": [
+    {
+      "rating": 1,
+      "count": 226,
+      "percentage": 15.07
+    },
+    {
+      "rating": 2,
+      "count": 129,
+      "percentage": 8.6
+    },
+    {
+      "rating": 3,
+      "count": 369,
+      "percentage": 24.6
+    },
+    {
+      "rating": 4,
+      "count": 254,
+      "percentage": 16.93
+    },
+    {
+      "rating": 5,
+      "count": 522,
+      "percentage": 34.8
+    }
+  ],
+  "product_distribution": [
+    {
+      "product_id": "P01",
+      "product_name": "Zyra Nova 5G",
+      "brand": "Zyra",
+      "category": "Smartphone",
+      "review_count": 74,
+      "avg_rating": 3.08
+    },
+    {
+      "product_id": "P02",
+      "product_name": "Kelto Pixel Lite",
+      "brand": "Kelto",
+      "category": "Smartphone",
+      "review_count": 85,
+      "avg_rating": 3.71
+    },
+    {
+      "product_id": "P03",
+      "product_name": "Orbix M14",
+      "brand": "Orbix",
+      "category": "Smartphone",
+      "review_count": 95,
+      "avg_rating": 3.14
+    },
+    {
+      "product_id": "P04",
+      "product_name": "Vanta X7 Pro",
+      "brand": "Vanta",
+      "category": "Smartphone",
+      "review_count": 71,
+      "avg_rating": 3.45
+    },
+    {
+      "product_id": "P05",
+      "product_name": "Sonaro BassPro 300",
+      "brand": "Sonaro",
+      "category": "Headphones",
+      "review_count": 69,
+      "avg_rating": 3.39
+    },
+    {
+      "product_id": "P06",
+      "product_name": "Aerobeat Buds Air",
+      "brand": "Aerobeat",
+      "category": "Headphones",
+      "review_count": 53,
+      "avg_rating": 3.3
+    },
+    {
+      "product_id": "P07",
+      "product_name": "Kelto SoundMax ANC",
+      "brand": "Kelto",
+      "category": "Headphones",
+      "review_count": 85,
+      "avg_rating": 3.8
+    },
+    {
+      "product_id": "P08",
+      "product_name": "Tunex Neckband Z",
+      "brand": "Tunex",
+      "category": "Headphones",
+      "review_count": 65,
+      "avg_rating": 3.29
+    },
+    {
+      "product_id": "P09",
+      "product_name": "Zephyr Air 14",
+      "brand": "Zephyr",
+      "category": "Laptop",
+      "review_count": 74,
+      "avg_rating": 3.58
+    },
+    {
+      "product_id": "P10",
+      "product_name": "Orbix ProBook 15",
+      "brand": "Orbix",
+      "category": "Laptop",
+      "review_count": 89,
+      "avg_rating": 3.4
+    },
+    {
+      "product_id": "P11",
+      "product_name": "Vanta Slim 3",
+      "brand": "Vanta",
+      "category": "Laptop",
+      "review_count": 79,
+      "avg_rating": 3.94
+    },
+    {
+      "product_id": "P12",
+      "product_name": "Kelto Gamer 16",
+      "brand": "Kelto",
+      "category": "Laptop",
+      "review_count": 95,
+      "avg_rating": 3.55
+    },
+    {
+      "product_id": "P13",
+      "product_name": "Zyra QuickBlend 500W Mixer Grinder",
+      "brand": "Zyra",
+      "category": "Kitchen",
+      "review_count": 76,
+      "avg_rating": 3.45
+    },
+    {
+      "product_id": "P14",
+      "product_name": "Aerochef AirFry 4L Air Fryer",
+      "brand": "Aerochef",
+      "category": "Kitchen",
+      "review_count": 73,
+      "avg_rating": 3.25
+    },
+    {
+      "product_id": "P15",
+      "product_name": "Steelo Cookware Set (5 pcs)",
+      "brand": "Steelo",
+      "category": "Kitchen",
+      "review_count": 94,
+      "avg_rating": 3.41
+    },
+    {
+      "product_id": "P16",
+      "product_name": "Tunex Induction Cooktop",
+      "brand": "Tunex",
+      "category": "Kitchen",
+      "review_count": 76,
+      "avg_rating": 3.5
+    },
+    {
+      "product_id": "P17",
+      "product_name": "FitPulse S2 Band",
+      "brand": "FitPulse",
+      "category": "Fitness Band",
+      "review_count": 77,
+      "avg_rating": 3.29
+    },
+    {
+      "product_id": "P18",
+      "product_name": "Zyra Band 5",
+      "brand": "Zyra",
+      "category": "Fitness Band",
+      "review_count": 90,
+      "avg_rating": 3.72
+    },
+    {
+      "product_id": "P19",
+      "product_name": "Vanta Watch Active",
+      "brand": "Vanta",
+      "category": "Fitness Band",
+      "review_count": 41,
+      "avg_rating": 3.54
+    },
+    {
+      "product_id": "P20",
+      "product_name": "Orbix Fit Lite",
+      "brand": "Orbix",
+      "category": "Fitness Band",
+      "review_count": 39,
+      "avg_rating": 3.85
+    }
+  ],
+  "category_distribution": [
+    {
+      "category": "Laptop",
+      "review_count": 337,
+      "product_count": 4,
+      "avg_rating": 3.61
+    },
+    {
+      "category": "Smartphone",
+      "review_count": 325,
+      "product_count": 4,
+      "avg_rating": 3.34
+    },
+    {
+      "category": "Kitchen",
+      "review_count": 319,
+      "product_count": 4,
+      "avg_rating": 3.4
+    },
+    {
+      "category": "Headphones",
+      "review_count": 272,
+      "product_count": 4,
+      "avg_rating": 3.48
+    },
+    {
+      "category": "Fitness Band",
+      "review_count": 247,
+      "product_count": 4,
+      "avg_rating": 3.57
+    }
+  ],
+  "brand_distribution": [
+    {
+      "brand": "Kelto",
+      "review_count": 265,
+      "product_count": 3,
+      "avg_rating": 3.68
+    },
+    {
+      "brand": "Zyra",
+      "review_count": 240,
+      "product_count": 3,
+      "avg_rating": 3.44
+    },
+    {
+      "brand": "Orbix",
+      "review_count": 223,
+      "product_count": 3,
+      "avg_rating": 3.37
+    },
+    {
+      "brand": "Vanta",
+      "review_count": 191,
+      "product_count": 3,
+      "avg_rating": 3.67
+    },
+    {
+      "brand": "Tunex",
+      "review_count": 141,
+      "product_count": 2,
+      "avg_rating": 3.4
+    },
+    {
+      "brand": "Steelo",
+      "review_count": 94,
+      "product_count": 1,
+      "avg_rating": 3.41
+    },
+    {
+      "brand": "FitPulse",
+      "review_count": 77,
+      "product_count": 1,
+      "avg_rating": 3.29
+    },
+    {
+      "brand": "Zephyr",
+      "review_count": 74,
+      "product_count": 1,
+      "avg_rating": 3.58
+    },
+    {
+      "brand": "Aerochef",
+      "review_count": 73,
+      "product_count": 1,
+      "avg_rating": 3.25
+    },
+    {
+      "brand": "Sonaro",
+      "review_count": 69,
+      "product_count": 1,
+      "avg_rating": 3.39
+    },
+    {
+      "brand": "Aerobeat",
+      "review_count": 53,
+      "product_count": 1,
+      "avg_rating": 3.3
+    }
+  ],
+  "review_length_statistics": {
+    "min_word_count": 3,
+    "max_word_count": 53,
+    "avg_word_count": 22.34,
+    "median_word_count": 22.0,
+    "p95_word_count": 38.0,
+    "min_char_len": 12,
+    "max_char_len": 312,
+    "avg_char_len": 138.37
+  },
+  "sentiment_distribution": [
+    {
+      "sentiment": "positive",
+      "count": 803,
+      "percentage": 53.53
+    },
+    {
+      "sentiment": "neutral",
+      "count": 360,
+      "percentage": 24.0
+    },
+    {
+      "sentiment": "negative",
+      "count": 337,
+      "percentage": 22.47
+    }
+  ],
+  "hard_failure_reasons": [],
+  "warnings": []
+}

@@ -9,6 +9,7 @@ from models.retrieval import (
     SemanticSearchResultItem,
 )
 from services.embeddings.errors import EmbeddingError, EmbeddingErrorType
+from services.retrieval.contracts import CANONICAL_REVIEW_SOURCE
 from services.retrieval.runtime import build_search_service, retrieval_status
 from services.retrieval.vector_repository import ReviewSearchFilters
 
@@ -58,16 +59,17 @@ def get_retrieval_status() -> RetrievalStatusResponse:
     ),
 )
 def semantic_search(payload: SemanticSearchRequest) -> SemanticSearchResponse:
+    # Default to the canonical corpus: an empty caller request must not
+    # silently search legacy/mixed rows. An explicit caller source still
+    # overrides the default; all other caller filters are preserved.
     filters = ReviewSearchFilters(
         product_id=payload.product_id,
         min_rating=payload.min_rating,
         max_rating=payload.max_rating,
-        source=payload.source,
+        source=payload.source or CANONICAL_REVIEW_SOURCE,
         review_date_from=payload.review_date_from,
         review_date_to=payload.review_date_to,
     )
-    if filters.is_empty():
-        filters = None
 
     try:
         outcome = build_search_service().search(

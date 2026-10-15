@@ -12,7 +12,8 @@ GEMINI_EMBEDDING_PROVIDER = "gemini"
 
 # Verified against the configured API key (models.list + embedContent smoke
 # tests, 2026-09-25): gemini-embedding-001 is the stable embedding model
-# available to this project. The older text-embedding-004 is retired.
+# available to this project. text-embedding-004 retired 2026-09-25 — verified
+# unavailable on this key. gemini-embedding-001 only.
 DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001"
 
 # gemini-embedding-001 supports MRL output dims: 768 (default choice), 1536, 3072.
