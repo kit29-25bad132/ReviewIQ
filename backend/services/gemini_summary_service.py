@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from models.ecommerce import AISummaryResponse
 from services.ai.contracts import AIGenerationRequest, ModelRef
-from services.ai.errors import AIProviderError
+from services.ai.errors import AIErrorType, AIProviderError
 from services.ai.registry import GEMINI_PROVIDER, TASK_DATASET_SUMMARY
 from services.ai.routing import (
     build_target_chain,
@@ -74,22 +74,23 @@ class GeminiSummaryService:
         self, product_title: str, category: Optional[str], sample_reviews: List[str]
     ) -> AISummaryResponse:
         if not sample_reviews:
+            # Explicit empty state: genuinely no source records. The label
+            # must not claim a summary was generated from reviews.
             return AISummaryResponse(
                 summary="No customer reviews are available in the dataset for this product.",
                 common_pros=[],
                 common_cons=[],
                 key_themes=[],
-                source_label="Summary generated from dataset reviews",
+                source_label="No reviews available in the dataset for this product",
             )
 
         if not analyzer_service.is_configured():
-            # Graceful fallback when no AI provider key is configured
-            return AISummaryResponse(
-                summary=f"Analysis based on {len(sample_reviews)} reviews in the dataset. Configure GEMINI_API_KEY (or GROQ_API_KEY / OPENROUTER_API_KEY) in backend/.env for AI executive insights.",
-                common_pros=["Dataset reviews available for manual inspection below"],
-                common_cons=[],
-                key_themes=[category or "General"],
-                source_label="Summary generated from dataset reviews",
+            # Gate 2 (Phase 4): a missing provider configuration is a real
+            # failure and must propagate as one — never converted into
+            # fabricated success-shaped summary text.
+            raise AIProviderError(
+                "AI summary unavailable: no provider API key is configured.",
+                AIErrorType.CONFIGURATION,
             )
 
         # Build prompt with exact reviews
@@ -104,17 +105,11 @@ Customer Reviews from Dataset:
 
 Synthesize these dataset reviews according to your system instructions into structured JSON."""
 
-        try:
-            return self._generate_summary(prompt)
-        except Exception as exc:
-            logger.warning(f"AI summarization error: {exc}", exc_info=True)
-            return AISummaryResponse(
-                summary=f"Analysis of {len(sample_reviews)} dataset reviews available. Full reviews listed below.",
-                common_pros=[],
-                common_cons=[],
-                key_themes=[category or "General"],
-                source_label="Summary generated from dataset reviews",
-            )
+        # Gate 2 (Phase 4): provider, parsing, and validation failures
+        # propagate as honest errors; the route maps them to safe client
+        # messages. A provider failure is never converted into canned text
+        # shaped like a successful summary.
+        return self._generate_summary(prompt)
 
     def _generate_summary(self, prompt: str) -> AISummaryResponse:
         """V2-P11 wrapper: one consolidated ``ai_request_outcome`` event per
@@ -326,7 +321,7 @@ Synthesize these dataset reviews according to your system instructions into stru
 
         if last_error:
             raise last_error
-        raise RuntimeError("Empty response from Gemini model.")
+        raise RuntimeError("Empty response from all configured AI models.")
 
     def _parse_json(self, raw_text: str) -> AISummaryResponse:
         cleaned = raw_text

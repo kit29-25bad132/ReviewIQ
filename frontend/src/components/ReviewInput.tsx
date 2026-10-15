@@ -70,7 +70,7 @@ export const ReviewInput: React.FC<ReviewInputProps> = ({
             Direct Review AI Analyzer
           </h2>
           <p className="text-xs text-[#74736E] mt-0.5">
-            Paste unstructured feedback to extract structured insights and ratings using Google Gemini.
+            Paste unstructured feedback to extract structured insights and ratings using AI analysis.
           </p>
         </div>
 
@@ -135,7 +135,7 @@ export const ReviewInput: React.FC<ReviewInputProps> = ({
           {isLoading ? (
             <>
               <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#111] border-t-transparent" />
-              <span>Analyzing with Gemini...</span>
+              <span>Analyzing with AI...</span>
             </>
           ) : (
             <>

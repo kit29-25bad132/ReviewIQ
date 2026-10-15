@@ -25,7 +25,7 @@ export const LoadingState: React.FC<LoadingStateProps> = ({
             {message}
           </h3>
           <p className="text-xs text-[#AAA79F] max-w-sm">
-            Extracting sentiment, rating, pros, cons, and summary using Gemini AI structured output.
+            Extracting sentiment, rating, pros, cons, and summary using AI structured output analysis.
           </p>
         </div>
 

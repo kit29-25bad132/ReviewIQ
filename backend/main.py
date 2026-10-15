@@ -18,6 +18,7 @@ from routes.products import router as products_router
 from routes.reviews import router as reviews_router
 from routes.retrieval import router as retrieval_router
 from services.ai_analyzer import analyzer_service
+from services.ai.registry import GEMINI_PROVIDER, GROQ_PROVIDER, OPENROUTER_PROVIDER
 from services.observability import RequestIdFilter, request_id_var
 
 # Setup logging (V2-P11: every line carries the request correlation ID).
@@ -33,10 +34,14 @@ for _handler in logging.getLogger().handlers:
         _handler.addFilter(RequestIdFilter())
 logger = logging.getLogger("product_review_analyzer")
 
+# Single source of truth for the API version (Gate 2): used both by the
+# FastAPI app and the /health response so they can never drift.
+APP_VERSION = "2.0.0"
+
 app = FastAPI(
     title="ReviewIQ - Product Review Intelligence API",
     description="Production-ready AI backend for dataset-based product search, review analytics, and ground-truth intelligence",
-    version="2.0.0",
+    version=APP_VERSION,
 )
 
 # CORS Configuration
@@ -91,17 +96,41 @@ app.include_router(evaluation_router)
 app.include_router(retrieval_router)
 
 
+# Provider name -> env var carrying its API key. Gate 2 (Phase 4): /health
+# reports only what is actually configured — never a hardcoded provider claim.
+_PROVIDER_ENV_KEYS = (
+    (GEMINI_PROVIDER, "GEMINI_API_KEY"),
+    (GROQ_PROVIDER, "GROQ_API_KEY"),
+    (OPENROUTER_PROVIDER, "OPENROUTER_API_KEY"),
+)
+
+
+def configured_ai_provider_label() -> str:
+    """Comma-separated list of configured AI providers (empty when none).
+
+    Truthful by construction: derived from which provider API keys are
+    actually present in the environment, not from a hardcoded label. Keys
+    themselves are never exposed — only provider names.
+    """
+    configured = [
+        name
+        for name, env_var in _PROVIDER_ENV_KEYS
+        if (os.getenv(env_var) or "").strip()
+    ]
+    return ", ".join(configured)
+
+
 @app.get("/health", tags=["Health"])
 async def health_check():
     """
-    Health check endpoint returning service and AI provider status.
+    Health check endpoint returning service and AI configuration status.
     Guarantees zero leakage of API secrets.
     """
     return {
         "status": "ok",
         "service": "Product Review Analyzer Backend",
-        "version": "1.0.0",
-        "ai_provider": "Google Gemini",
+        "version": APP_VERSION,
+        "ai_provider": configured_ai_provider_label(),
         "ai_configured": analyzer_service.is_configured(),
     }
 

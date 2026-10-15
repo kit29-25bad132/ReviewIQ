@@ -273,7 +273,13 @@ class RecommendationService:
                         PriorityMatchEvidence(
                             priority=prio,
                             evidence_level="Strong Evidence",
-                            details=f"Detected in {matched_pro.review_count:,} reviews ({matched_pro.percentage}% of analyzed dataset reviews).",
+                            details=(
+                                f"Matched review theme with an estimated "
+                                f"~{matched_pro.review_count:,} reviews "
+                                f"(~{matched_pro.percentage}% of the product's "
+                                f"{sel_pros_cons.review_volume:,} reviews; projected "
+                                f"from a keyword sample)."
+                            ),
                             supporting_reviews=matched_pro.example_reviews[:2],
                         )
                     )
@@ -281,8 +287,11 @@ class RecommendationService:
                     priority_matches.append(
                         PriorityMatchEvidence(
                             priority=prio,
-                            evidence_level="Moderate Evidence",
-                            details="General customer satisfaction aligns with this requirement.",
+                            evidence_level="No Direct Evidence",
+                            details=(
+                                "No matching review theme was found for this "
+                                "priority in the sampled keyword analysis."
+                            ),
                             supporting_reviews=[],
                         )
                     )
@@ -302,51 +311,100 @@ class RecommendationService:
 
             is_selected_the_best = (best_candidate.product_id == str(product_id))
 
+            # Gate 2 (Phase 4): every comparative claim below must trace to a
+            # computation over the clearly-defined peer set (the selected
+            # product plus its discovered similar products).
+            selected_item = next(
+                (item for item in comparison_items if item.is_selected), None
+            )
+            peer_avg_rating = (
+                round(
+                    sum(item.average_rating for item in comparison_items)
+                    / len(comparison_items),
+                    2,
+                )
+                if comparison_items
+                else None
+            )
+
             # Suitability
-            top_pros_titles = sel_pros_cons.top_pros if sel_pros_cons else ["Quality"]
-            top_cons_titles = sel_pros_cons.top_cons if sel_pros_cons else ["Minor complaints"]
+            top_pros_titles = sel_pros_cons.top_pros if sel_pros_cons else []
+            top_cons_titles = sel_pros_cons.top_cons if sel_pros_cons else []
 
             suitable_for = [
                 f"Users prioritizing {', '.join(user_priorities[:2])}.",
-                f"Customers seeking high rating confidence ({sel_summary.average_rating} ★ across {sel_summary.review_count:,} reviews).",
-                f"Verified strengths: {', '.join(top_pros_titles)}.",
+                f"Strong average rating ({sel_summary.average_rating} ★ across {sel_summary.review_count:,} dataset reviews).",
             ]
+            if top_pros_titles:
+                suitable_for.append(
+                    f"Matched positive themes: {', '.join(top_pros_titles)}."
+                )
 
-            consider_before_buying = [
-                f"Common dissatisfaction themes: {', '.join(top_cons_titles)}.",
-                f"Negative feedback rate is {comparison_items[0].negative_percentage}% in the dataset.",
-                "Review evidence reflects real consumer experiences in historical dataset.",
-            ]
+            consider_before_buying = []
+            if top_cons_titles:
+                consider_before_buying.append(
+                    f"Matched negative themes: {', '.join(top_cons_titles)}."
+                )
+            if selected_item is not None:
+                consider_before_buying.append(
+                    f"Negative feedback rate for this product is "
+                    f"{selected_item.negative_percentage}% in the dataset."
+                )
+            consider_before_buying.append(
+                "Theme mentions are keyword projections over a review sample, "
+                "not exact full-pool counts."
+            )
 
             if is_selected_the_best:
                 suitability_verdict = (
-                    f"Based on your stated priorities ({', '.join(user_priorities)}) and the available review dataset, "
-                    f"'{sel_summary.product_title}' is a suitable match with the highest composite satisfaction score in its category."
+                    f"Based on your stated priorities ({', '.join(user_priorities)}) and the "
+                    f"{len(comparison_items)} dataset products compared, "
+                    f"'{sel_summary.product_title}' ranks highest on the computed composite "
+                    f"score (60% average rating + 40% positive-sentiment share) within "
+                    f"this compared peer set."
                 )
                 recommendation_headline = f"'{sel_summary.product_title}' is the closest match for your requirements."
             else:
                 suitability_verdict = (
-                    f"'{sel_summary.product_title}' satisfies your criteria, but '{best_candidate.product_title}' "
-                    f"in the same category exhibits slightly higher average ratings ({best_candidate.average_rating} ★ vs {sel_summary.average_rating} ★)."
+                    f"'{sel_summary.product_title}' satisfies your criteria, but "
+                    f"'{best_candidate.product_title}' scores higher on the computed "
+                    f"composite measure in this compared peer set "
+                    f"({best_candidate.average_rating} ★ / {best_candidate.positive_percentage}% positive "
+                    f"vs {sel_summary.average_rating} ★ / {selected_item.positive_percentage if selected_item else 'n/a'}% positive)."
                 )
                 recommendation_headline = f"Consider '{best_candidate.product_title}' as a top alternative in {sel_summary.category}."
 
             recommendation_reasons = [
-                f"Supported by {best_candidate.review_count:,} verified dataset reviews with {best_candidate.positive_percentage}% positive sentiment.",
-                f"Consistently demonstrates strengths in {', '.join(best_candidate.common_pros[:2])}.",
-                f"Category benchmark: Outperforms peer average in customer satisfaction ({best_candidate.average_rating} / 5.0 ★).",
+                f"Supported by {best_candidate.review_count:,} dataset reviews with {best_candidate.positive_percentage}% positive sentiment.",
             ]
+            if best_candidate.common_pros:
+                recommendation_reasons.append(
+                    f"Top matched positive themes: {', '.join(best_candidate.common_pros[:2])}."
+                )
+            if peer_avg_rating is not None:
+                recommendation_reasons.append(
+                    f"Computed rating: {best_candidate.average_rating} / 5.0 ★ vs "
+                    f"{peer_avg_rating} ★ average across the {len(comparison_items)} compared peers."
+                )
 
             strengths_for_you = [
                 f"Directly matches your interest in: {', '.join(user_priorities)}.",
-                f"Solid positive sentiment ratio ({best_candidate.positive_percentage}% positive).",
-                f"Documented strengths: {', '.join(best_candidate.common_pros)}.",
+                f"Positive sentiment ratio ({best_candidate.positive_percentage}% positive).",
             ]
+            if best_candidate.common_pros:
+                strengths_for_you.append(
+                    f"Matched positive themes: {', '.join(best_candidate.common_pros)}."
+                )
 
-            things_to_consider = [
-                f"Keep in mind reported negative themes: {', '.join(best_candidate.common_cons) if best_candidate.common_cons else 'Minor complaints'}.",
-                "Recommendation is strictly derived from historical dataset review patterns.",
-            ]
+            things_to_consider = []
+            if best_candidate.common_cons:
+                things_to_consider.append(
+                    f"Keep in mind reported negative themes: {', '.join(best_candidate.common_cons)}."
+                )
+            things_to_consider.append(
+                "Recommendation is derived from historical dataset review patterns "
+                "via a deterministic computed score."
+            )
 
             return PersonalizedRecommendationResponse(
                 selected_product=sel_summary,

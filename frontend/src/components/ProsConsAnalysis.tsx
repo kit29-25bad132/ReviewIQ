@@ -20,6 +20,43 @@ interface ProsConsAnalysisProps {
   productTitle: string;
 }
 
+/**
+ * Truthful label for theme mention counts. The backend extrapolates these
+ * counts from a sample of the product's reviews, so they are estimates —
+ * never measured full-pool counts.
+ */
+export const estimatedMentionLabel = (reviewCount: number, percentage: number): string =>
+  `Estimated mentions: ~${reviewCount.toLocaleString()} reviews (~${percentage}% of all reviews)`;
+
+const isPositiveInt = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+/**
+ * Truthful label distinguishing the actually-analyzed sample from the
+ * available review pool. Missing, zero, or inconsistent values degrade to
+ * statements that remain true — the sample size is never guessed from the
+ * pool. (Gate 3)
+ */
+export const sampleSizeLabel = (
+  analyzed: number | null | undefined,
+  pool: number | null | undefined
+): string => {
+  const analyzedValid = isPositiveInt(analyzed);
+  const poolValid = isPositiveInt(pool);
+  if (analyzedValid && poolValid) {
+    return analyzed <= pool
+      ? `Analyzed sample: ${analyzed.toLocaleString()} of ${pool.toLocaleString()} available reviews`
+      : `Analyzed sample: ${analyzed.toLocaleString()} reviews (available pool reported as ${pool.toLocaleString()})`;
+  }
+  if (analyzedValid) {
+    return `Analyzed sample: ${analyzed.toLocaleString()} reviews (available pool not reported)`;
+  }
+  if (poolValid) {
+    return `${pool.toLocaleString()} available reviews (analyzed sample size not reported)`;
+  }
+  return 'Sample size not reported';
+};
+
 export const ProsConsAnalysis: React.FC<ProsConsAnalysisProps> = ({
   productId,
   productTitle,
@@ -127,7 +164,8 @@ export const ProsConsAnalysis: React.FC<ProsConsAnalysisProps> = ({
             Pros & Cons Intelligence
           </h2>
           <p className="text-xs text-[#74736E]">
-            Quantified from {data.total_analyzed_reviews.toLocaleString()} actual reviews for{' '}
+            {sampleSizeLabel(data.total_analyzed_reviews, data.review_volume)} · theme
+            counts are estimates projected from the analyzed sample for{' '}
             <strong className="text-[#AAA79F] font-medium">{productTitle}</strong>
           </p>
         </div>
@@ -168,7 +206,7 @@ export const ProsConsAnalysis: React.FC<ProsConsAnalysisProps> = ({
                         <span>{pro.theme}</span>
                       </h4>
                       <p className="text-[11px] text-[#AAA79F]">
-                        Mentioned in: <strong className="text-emerald-400">{pro.review_count.toLocaleString()} reviews</strong> ({pro.percentage}% of reviews)
+                        {estimatedMentionLabel(pro.review_count, pro.percentage)}
                       </p>
                     </div>
 
@@ -229,7 +267,7 @@ export const ProsConsAnalysis: React.FC<ProsConsAnalysisProps> = ({
                         <span>{con.theme}</span>
                       </h4>
                       <p className="text-[11px] text-[#AAA79F]">
-                        Mentioned in: <strong className="text-rose-400">{con.review_count.toLocaleString()} reviews</strong> ({con.percentage}% of reviews)
+                        {estimatedMentionLabel(con.review_count, con.percentage)}
                       </p>
                     </div>
 
@@ -291,7 +329,7 @@ export const ProsConsAnalysis: React.FC<ProsConsAnalysisProps> = ({
                   </span>
                   <span className="text-[#74736E]">·</span>
                   <span className="text-xs text-[#74736E]">
-                    {activeThemeModal.theme.review_count.toLocaleString()} verified mentions
+                    ~{activeThemeModal.theme.review_count.toLocaleString()} estimated mentions (sample projection)
                   </span>
                 </div>
                 <h3 className="text-lg font-medium text-[#F5F2EA]">

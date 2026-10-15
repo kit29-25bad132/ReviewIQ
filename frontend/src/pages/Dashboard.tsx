@@ -85,6 +85,10 @@ export const Dashboard: React.FC = () => {
 
   // Home page featured preview product analysis
   const [featuredAnalysis, setFeaturedAnalysis] = useState<ProductAnalysisResponse | null>(null);
+  // Truthful state for the hero preview card: real data, loading, or unavailable.
+  const [featuredStatus, setFeaturedStatus] = useState<'loading' | 'ready' | 'unavailable'>(
+    'loading'
+  );
 
   // Load reviews on mount
   const refreshHistory = async () => {
@@ -108,45 +112,58 @@ export const Dashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Load featured preview product for Hero card
+  // Load featured preview product for Hero card (real dataset analysis only).
+  // On failure the card shows an unavailable state — never a fabricated value.
   useEffect(() => {
+    let isMounted = true;
     getProductAnalysis('9640962')
       .then((res) => {
-        setFeaturedAnalysis(res);
+        if (isMounted) {
+          setFeaturedAnalysis(res);
+          setFeaturedStatus('ready');
+        }
       })
       .catch(() => {
-        // Fallback if not ready
+        if (isMounted) setFeaturedStatus('unavailable');
       });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // Handle product selection in Analyze tab
-  const handleSelectProduct = async (product: ProductSummary) => {
-    setSelectedProduct(product);
+  // Fetch real product analytics by id. Every displayed product metric comes
+  // from this API response — no seeded or fallback values are ever shown.
+  const loadProductById = async (productId: string) => {
     setLoadingProduct(true);
     setProductError(null);
     try {
-      const analysisData = await getProductAnalysis(product.product_id);
+      const analysisData = await getProductAnalysis(productId);
       setProductAnalysis(analysisData);
+      setSelectedProduct(analysisData.product);
     } catch (err: unknown) {
       setProductError(
         err instanceof Error ? err.message : 'Failed to retrieve product intelligence.'
       );
       setProductAnalysis(null);
+      setSelectedProduct(null);
     } finally {
       setLoadingProduct(false);
     }
   };
 
-  // Load initial product when switching to Analyze tab if none selected
+  // Handle product selection in Analyze tab. The summary passed in comes from
+  // real API responses (search results / comparison tables); metrics are
+  // re-fetched from the dataset before being displayed.
+  const handleSelectProduct = (product: ProductSummary) => {
+    setSelectedProduct(product);
+    return loadProductById(product.product_id);
+  };
+
+  // Load the default featured product by id when switching to Analyze tab.
+  // Only the identifier is seeded — all displayed metrics are fetched.
   useEffect(() => {
     if (activeTab === 'analyze' && !selectedProduct) {
-      handleSelectProduct({
-        product_id: '9640962',
-        product_title: 'Electric Toothbrush',
-        category: 'Health & Personal Care',
-        review_count: 11,
-        average_rating: 3.64,
-      });
+      loadProductById('9640962');
     }
   }, [activeTab]);
 
@@ -351,41 +368,50 @@ export const Dashboard: React.FC = () => {
                               Product analysis
                             </p>
                             <p className="mt-1.5 text-sm font-medium text-[#F5F2EA]">
-                              {featuredAnalysis?.product.product_title || 'Electric Toothbrush'}
+                              {featuredStatus === 'ready'
+                                ? featuredAnalysis!.product.product_title
+                                : 'Featured dataset product'}
                             </p>
                           </div>
 
                           <span className="rounded-full border border-[#D4AF5A]/20 bg-[#1B1915] px-2.5 py-1 text-[9px] uppercase tracking-[0.12em] text-[#D4AF5A]">
-                            AI analyzed
+                            From review dataset
                           </span>
                         </div>
 
-                        <div className="py-6">
-                          <p className="text-xs text-[#74736E]">Overall rating</p>
-                          <div className="mt-1.5 flex items-end gap-3">
-                            <span className="text-4xl font-medium text-[#F5F2EA]">
-                              {featuredAnalysis?.statistics.average_rating.toFixed(1) || '4.5'}
-                            </span>
-                            <span className="mb-1 text-xs text-[#D4AF5A]">/ 5</span>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3 border-t border-[#292A2B] pt-5">
-                          {[
-                            ['Quality & Durability', '4.7', 'Positive'],
-                            ['Value for Money', '4.5', 'Positive'],
-                            ['Battery Life', '3.8', 'Mixed'],
-                            ['Ease of Use', '4.6', 'Positive'],
-                          ].map(([name, rating, sentiment]) => (
-                            <div key={name} className="flex items-center justify-between text-xs">
-                              <span className="text-[#AAA79F]">{name}</span>
-                              <div className="flex items-center gap-3">
-                                <span className="text-[#F5F2EA] font-mono">{rating}</span>
-                                <span className="text-[10px] text-[#D4AF5A] font-medium">{sentiment}</span>
-                              </div>
+                        {featuredStatus === 'ready' ? (
+                          <div className="py-6">
+                            <p className="text-xs text-[#74736E]">Average rating</p>
+                            <div className="mt-1.5 flex items-end gap-3">
+                              <span className="text-4xl font-medium text-[#F5F2EA]">
+                                {featuredAnalysis!.statistics.average_rating.toFixed(1)}
+                              </span>
+                              <span className="mb-1 text-xs text-[#D4AF5A]">/ 5</span>
                             </div>
-                          ))}
-                        </div>
+                            <p className="mt-3 text-xs text-[#74736E]">
+                              Computed from{' '}
+                              <span className="text-[#AAA79F]">
+                                {featuredAnalysis!.statistics.review_count.toLocaleString()}
+                              </span>{' '}
+                              real customer reviews in the dataset.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="py-6 space-y-2">
+                            {featuredStatus === 'loading' ? (
+                              <>
+                                <div className="h-9 w-24 animate-pulse rounded bg-[#292A2B]" />
+                                <p className="text-xs text-[#74736E]">
+                                  Loading featured product analysis…
+                                </p>
+                              </>
+                            ) : (
+                              <p className="text-xs text-[#AAA79F]">
+                                Featured product analysis is unavailable right now.
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -394,7 +420,9 @@ export const Dashboard: React.FC = () => {
                         Reviews analyzed
                       </p>
                       <p className="mt-0.5 text-lg font-medium text-[#F5F2EA]">
-                        {featuredAnalysis?.statistics.review_count.toLocaleString() || '156'}
+                        {featuredStatus === 'ready'
+                          ? featuredAnalysis!.statistics.review_count.toLocaleString()
+                          : '—'}
                       </p>
                     </div>
                   </div>
@@ -483,7 +511,7 @@ export const Dashboard: React.FC = () => {
                   Ready to turn customer feedback into intelligence?
                 </h2>
                 <p className="text-xs sm:text-sm text-[#AAA79F] max-w-xl mx-auto">
-                  Start searching products in the verified review dataset or analyze raw customer review text with Google Gemini AI.
+                  Start searching products in the verified review dataset or analyze raw customer review text with AI analysis.
                 </p>
                 <div className="pt-2">
                   <button
@@ -531,7 +559,7 @@ export const Dashboard: React.FC = () => {
                 <p className="mt-1 text-xs text-[#AAA79F]">
                   {analyzeMode === 'product_search'
                     ? 'Search real products from the review dataset to extract structured insights and comparisons.'
-                    : 'Paste any unstructured customer review to extract sentiment, ratings, pros, and cons with Gemini.'}
+                    : 'Paste any unstructured customer review to extract sentiment, ratings, pros, and cons with AI analysis.'}
                 </p>
               </div>
 
@@ -630,7 +658,7 @@ export const Dashboard: React.FC = () => {
                   onClearError={() => setLiveErrorMessage(null)}
                 />
 
-                {isLoadingLive && <LoadingState message="Extracting structured intelligence with Gemini..." />}
+                {isLoadingLive && <LoadingState message="Extracting structured intelligence with AI analysis..." />}
 
                 {currentAnalysis && !isLoadingLive && (
                   <div className="animate-fadeIn">

@@ -42,39 +42,34 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
   const [datasetProducts, setDatasetProducts] = useState<ProductAnalytics[]>([]);
   const [loadingDataset, setLoadingDataset] = useState<boolean>(false);
 
-  const loadProduct = async (product: ProductSummary) => {
-    setSelectedProduct(product);
+  // Fetch real product analytics by id. Every displayed metric comes from
+  // this API response — no seeded or fallback values are ever shown.
+  const loadProductById = async (productId: string) => {
     setLoading(true);
     setError('');
     try {
-      const res = await getProductAnalysis(product.product_id);
+      const res = await getProductAnalysis(productId);
       setAnalysis(res);
+      setSelectedProduct(res.product);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load product analytics.');
+      setAnalysis(null);
+      setSelectedProduct(null);
     } finally {
       setLoading(false);
     }
   };
 
+  // Selection from real API responses (search results / comparison tables);
+  // metrics are re-fetched from the dataset before being displayed.
+  const loadProduct = (product: ProductSummary) => {
+    setSelectedProduct(product);
+    return loadProductById(product.product_id);
+  };
+
   useEffect(() => {
-    if (initialProductId) {
-      loadProduct({
-        product_id: initialProductId,
-        product_title: 'Loading Product...',
-        category: 'Product',
-        review_count: 0,
-        average_rating: 0,
-      });
-    } else {
-      // Default to Electric Toothbrush
-      loadProduct({
-        product_id: '9640962',
-        product_title: 'Electric Toothbrush',
-        category: 'Health & Personal Care',
-        review_count: 11,
-        average_rating: 3.64,
-      });
-    }
+    // Only the product identifier is seeded — all metrics are fetched.
+    loadProductById(initialProductId ?? '9640962');
   }, [initialProductId]);
 
   const loadDatasetAnalytics = async () => {

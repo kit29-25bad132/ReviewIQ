@@ -34,7 +34,7 @@ vi.mock('axios', () => {
   };
 });
 
-import { analyzeReview } from './api';
+import { analyzeReview, checkBackendHealth } from './api';
 
 const fullAnalysis: ReviewAnalysis = {
   sentiment: 'mixed',
@@ -48,6 +48,29 @@ const fullAnalysis: ReviewAnalysis = {
   pros: [{ point: 'Excellent camera', evidence: 'camera is excellent' }],
   cons: [{ point: 'Poor battery life', evidence: 'battery life is poor' }],
 };
+
+describe('checkBackendHealth (Gate 1 truthfulness)', () => {
+  it('H1. returns the backend-reported health payload on success', async () => {
+    mocks.get.mockResolvedValue({
+      data: { status: 'ok', ai_configured: true, ai_provider: 'X' },
+    });
+
+    const status = await checkBackendHealth();
+
+    expect(status.status).toBe('ok');
+    expect(status.ai_configured).toBe(true);
+    expect(mocks.get).toHaveBeenCalledWith('/health', { timeout: 4000 });
+  });
+
+  it('H2. offline fallback makes no specific provider claim', async () => {
+    mocks.get.mockRejectedValue(new Error('connection refused'));
+
+    const status = await checkBackendHealth();
+
+    expect(status).toEqual({ status: 'offline', ai_configured: false, ai_provider: '' });
+    expect(status.ai_provider).not.toMatch(/gemini|google|groq|openrouter/i);
+  });
+});
 
 const makeAxiosError = (
   overrides: {

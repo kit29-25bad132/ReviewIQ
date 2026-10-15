@@ -83,10 +83,12 @@ export async function checkBackendHealth(): Promise<HealthStatus> {
     const response = await apiClient.get<HealthStatus>('/health', { timeout: 4000 });
     return response.data;
   } catch {
+    // The backend cannot be reached, so no provider information is available.
+    // Do not claim a specific provider here.
     return {
       status: 'offline',
       ai_configured: false,
-      ai_provider: 'Google Gemini',
+      ai_provider: '',
     };
   }
 }

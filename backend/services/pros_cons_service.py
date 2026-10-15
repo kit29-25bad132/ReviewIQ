@@ -105,7 +105,13 @@ class ProsConsService:
                             matching_rows.append(row)
 
                 if matching_rows:
-                    # Extrapolate count proportionally if sample pool is smaller than total reviews
+                    # Projection methodology (unchanged; now documented):
+                    #   scaling_factor = total_reviews / analyzed_pool_size
+                    #   estimated_count = max(raw_matches, raw_matches * scaling_factor)
+                    #   percentage denominator = total_reviews (the full product
+                    #   review pool, NOT the sample).
+                    # The result is an ESTIMATE of full-pool mentions derived
+                    # from the sampled matches — never a measured full-pool count.
                     scaling_factor = total_reviews / analyzed_pool_size if analyzed_pool_size > 0 else 1.0
                     raw_count = len(matching_rows)
                     estimated_count = max(raw_count, int(raw_count * scaling_factor))
@@ -139,6 +145,7 @@ class ProsConsService:
                             matching_rows.append(row)
 
                 if matching_rows:
+                    # Same documented projection methodology as pros above.
                     scaling_factor = total_reviews / analyzed_pool_size if analyzed_pool_size > 0 else 1.0
                     raw_count = len(matching_rows)
                     estimated_count = max(raw_count, int(raw_count * scaling_factor))
@@ -161,25 +168,32 @@ class ProsConsService:
             cons.sort(key=lambda x: x.review_count, reverse=True)
             cons = cons[:4]
 
-            # Fallback if no specific cons/pros found
+            # Fallback when no theme matched. Only real aggregated counts are
+            # reported; no evidence quote is invented (Gate 2, Phase 4) —
+            # example_reviews stays empty because no source review supports
+            # any specific theme.
+            pros_from_fallback = False
             if not pros and pos_count > 0:
+                pros_from_fallback = True
                 pros.append(
                     ProConTheme(
                         theme="Overall Customer Satisfaction",
                         review_count=pos_count,
                         percentage=round((pos_count / total_reviews) * 100, 1),
-                        example_reviews=["Satisfied with the overall purchase."],
+                        example_reviews=[],
                         evidence_review_ids=[],
                     )
                 )
 
+            cons_from_fallback = False
             if not cons and neg_count > 0:
+                cons_from_fallback = True
                 cons.append(
                     ProConTheme(
                         theme="General Customer Dissatisfaction",
                         review_count=neg_count,
                         percentage=round((neg_count / total_reviews) * 100, 1),
-                        example_reviews=["Did not meet customer expectations."],
+                        example_reviews=[],
                         evidence_review_ids=[],
                     )
                 )
@@ -195,25 +209,56 @@ class ProsConsService:
                 "negative": round((neg_count / total_reviews) * 100, 1),
             }
 
-            # Authenticity signals
+            # Source-provenance signals: only statements backed by the actual
+            # computation are reported (Gate 2, Phase 4). Fabricated
+            # detection/correlation claims are deliberately absent.
             authenticity_signals = [
-                f"Statistical sample analyzed across {total_reviews:,} verified dataset reviews.",
-                f"Rating spread spans all 5 tiers (Mean: {avg_rating} / 5.0).",
-                f"Sentiment correlates consistently with numerical ratings ({sentiment_percentages['positive']}% Positive).",
-                "Zero synthetic or external review injection detected.",
+                f"Theme keyword analysis sampled {analyzed_pool_size:,} of {total_reviews:,} available product reviews; mention counts are projections onto the full pool.",
+                f"Average rating: {avg_rating} / 5.0 across {total_reviews:,} dataset reviews.",
+                f"Sentiment distribution: {sentiment_percentages['positive']}% positive, {sentiment_percentages['neutral']}% neutral, {sentiment_percentages['negative']}% negative.",
             ]
 
-            summary_text = (
+            summary_parts = [
                 f"Based on {total_reviews:,} customer reviews in the dataset, {product_title} has an average rating of "
                 f"{avg_rating} / 5.0 with {sentiment_percentages['positive']}% positive feedback. "
-                f"Customers most frequently praise {', '.join(top_pros) if top_pros else 'its performance'}, "
-                f"while negative feedback primarily focuses on {', '.join(top_cons) if top_cons else 'minor durability concerns'}."
-            )
+            ]
+            if top_pros:
+                if pros_from_fallback:
+                    summary_parts.append(
+                        f"No recurring positive themes were matched in the sampled reviews; "
+                        f"overall sentiment aggregates to {', '.join(top_pros)}. "
+                    )
+                else:
+                    summary_parts.append(
+                        f"The most frequently matched positive themes are {', '.join(top_pros)}. "
+                    )
+            else:
+                summary_parts.append(
+                    "No recurring positive themes were matched in the sampled reviews. "
+                )
+            if top_cons:
+                if cons_from_fallback:
+                    summary_parts.append(
+                        f"No recurring negative themes were matched in the sampled reviews; "
+                        f"overall sentiment aggregates to {', '.join(top_cons)}."
+                    )
+                else:
+                    summary_parts.append(
+                        f"The most frequently matched negative themes are {', '.join(top_cons)}."
+                    )
+            else:
+                summary_parts.append(
+                    "No recurring negative themes were matched in the sampled reviews."
+                )
+            summary_text = "".join(summary_parts)
 
             return ProsConsAnalysisResponse(
                 product_id=str(product_id),
                 product_title=product_title,
-                total_analyzed_reviews=total_reviews,
+                # Gate 2 (Phase 4): the number of reviews ACTUALLY analyzed
+                # (the sampled pool), which may be far smaller than the
+                # available review pool reported in review_volume.
+                total_analyzed_reviews=len(sample_rows),
                 pros=pros,
                 cons=cons,
                 summary=summary_text,

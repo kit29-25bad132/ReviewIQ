@@ -1,5 +1,11 @@
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
+
+from services.ai.errors import AIProviderError
+# Established user-safe provider-failure messages (single source of truth
+# shared with the review-analysis route; Gate 2).
+from routes.review import _PROVIDER_ERROR_MESSAGES
 
 from models.ecommerce import (
     ProductSummary,
@@ -15,6 +21,8 @@ from services.ecommerce_db_service import ecommerce_db_service
 from services.gemini_summary_service import gemini_summary_service
 from services.pros_cons_service import pros_cons_service
 from services.recommendation_service import recommendation_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/products", tags=["Product Search & Intelligence"])
 
@@ -98,7 +106,7 @@ def get_product_pros_cons(product_id: str):
     - Common Pros with review counts & percentages
     - Common Cons with review counts & percentages
     - Real evidence review examples
-    - Overall customer synthesis & authenticity signals
+    - Overall customer synthesis & source-provenance signals
     """
     if not ecommerce_db_service.is_ready():
         raise HTTPException(
@@ -201,8 +209,8 @@ def get_personalized_recommendation(
 )
 def generate_ai_summary(product_id: str):
     """
-    Uses Google Gemini to synthesize ONLY reviews retrieved from the dataset for this product.
-    Zero hallucination or fabricated reviews allowed.
+    Uses AI synthesis constrained ONLY to reviews retrieved from the dataset
+    for this product. Fails honestly when no provider is available.
     """
     if not ecommerce_db_service.is_ready():
         raise HTTPException(
@@ -218,8 +226,40 @@ def generate_ai_summary(product_id: str):
         )
 
     sample_reviews = ecommerce_db_service.get_sample_reviews(product_id, limit=40)
-    return gemini_summary_service.summarize_product_reviews(
-        product_title=analysis.product.product_title,
-        category=analysis.product.category,
-        sample_reviews=sample_reviews,
-    )
+    try:
+        return gemini_summary_service.summarize_product_reviews(
+            product_title=analysis.product.product_title,
+            category=analysis.product.category,
+            sample_reviews=sample_reviews,
+        )
+    except AIProviderError as provider_err:
+        # Gate 2 (Phase 4): provider/transport/configuration failures are
+        # honest errors — never converted into success-shaped summary text.
+        # Only the normalized failure category is logged; raw provider
+        # exception text, prompts, and credentials never cross into the
+        # response body.
+        logger.warning(
+            "AI summary provider failure (type=%s, provider=%s)",
+            provider_err.error_type,
+            provider_err.provider,
+        )
+        detail = _PROVIDER_ERROR_MESSAGES.get(
+            provider_err.error_type,
+            "AI summary generation failed. Please try again.",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail,
+        ) from None
+    except ValueError as val_err:
+        # Parsing/Pydantic-validation failure of generated output. Logged by
+        # exception category only: a ValidationError can embed raw model
+        # output, which must never reach logs or clients.
+        logger.warning(
+            "AI summary failed output validation (category=%s)",
+            type(val_err).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AI summary failed validation. Please try again.",
+        ) from None

@@ -325,3 +325,104 @@ def test_ai_summary_uses_canonical_verified_model_pool(monkeypatch):
     assert "gemini-3-flash-preview" not in attempted
     assert "gemini-2.5-flash" not in attempted
     assert len(attempted) <= 5
+
+
+# ---------------------------------------------------------------------------
+# Gate 2 (Phase 4): honest AI-summary failure semantics.
+# Provider/transport/validation failures must surface as real errors with
+# safe messages — never as canned success-shaped summary text.
+# ---------------------------------------------------------------------------
+
+from services.ai.errors import AIErrorType, AIProviderError  # noqa: E402
+
+
+def _summary_patches():
+    return (
+        patch.object(ecommerce_db_service, "is_ready", return_value=True),
+        patch.object(ecommerce_db_service, "get_product_analysis", return_value=ANALYSIS),
+        patch.object(ecommerce_db_service, "get_sample_reviews", return_value=["Great brush"]),
+    )
+
+
+def test_ai_summary_provider_failure_returns_honest_error():
+    canary = "sk-live-canary-123 provider internals=/var/log/x"
+    p1, p2, p3 = _summary_patches()
+    with p1, p2, p3, patch.object(
+        gemini_summary_service,
+        "summarize_product_reviews",
+        side_effect=AIProviderError(canary, AIErrorType.TRANSIENT),
+    ):
+        resp = client.post("/api/products/9640962/ai-summary")
+    assert resp.status_code == 500
+    body = resp.json()
+    # Safe, fixed, actionable message — no raw provider text.
+    assert body["detail"] == (
+        "Connection to AI service timed out or unavailable. Please verify your network connection."
+    )
+    assert canary not in resp.text
+    assert "sk-live-canary-123" not in resp.text
+    assert "Traceback" not in resp.text
+
+
+def test_ai_summary_configuration_failure_maps_to_safe_message():
+    p1, p2, p3 = _summary_patches()
+    with p1, p2, p3, patch.object(
+        gemini_summary_service,
+        "summarize_product_reviews",
+        side_effect=AIProviderError("no key configured", AIErrorType.CONFIGURATION),
+    ):
+        resp = client.post("/api/products/9640962/ai-summary")
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == (
+        "AI analysis is unavailable. Please check the server configuration."
+    )
+
+
+def test_ai_summary_invalid_output_returns_safe_400():
+    canary = "raw model output sk-live-xyz malformed={"
+    p1, p2, p3 = _summary_patches()
+    with p1, p2, p3, patch.object(
+        gemini_summary_service,
+        "summarize_product_reviews",
+        side_effect=ValueError(canary),
+    ):
+        resp = client.post("/api/products/9640962/ai-summary")
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "AI summary failed validation. Please try again."
+    assert canary not in resp.text
+    assert "sk-live-xyz" not in resp.text
+
+
+def test_ai_summary_unconfigured_service_raises_honest_error():
+    """Missing configuration is an honest CONFIGURATION failure, not text."""
+    from services.ai_analyzer import analyzer_service
+
+    with patch.object(analyzer_service, "is_configured", return_value=False):
+        with pytest.raises(AIProviderError) as exc_info:
+            gemini_summary_service.summarize_product_reviews(
+                "Title", None, ["Great brush"]
+            )
+    assert exc_info.value.error_type == AIErrorType.CONFIGURATION
+
+
+def test_ai_summary_empty_reviews_returns_truthful_empty_state():
+    """Genuinely empty source -> explicit empty state whose label does not
+    claim a summary was generated from reviews."""
+    result = gemini_summary_service.summarize_product_reviews("Title", None, [])
+    assert "No customer reviews are available" in result.summary
+    assert result.source_label != "Summary generated from dataset reviews"
+    assert result.common_pros == []
+    assert result.common_cons == []
+
+
+def test_ai_summary_service_contains_no_canned_fallback_text():
+    """Static canary: the fabricated fallback strings must not exist anywhere
+    in the service module (they cannot be relocated, either)."""
+    import inspect
+
+    import services.gemini_summary_service as summary_module
+
+    source = inspect.getsource(summary_module)
+    assert "Analysis based on" not in source
+    assert "Full reviews listed below" not in source
+    assert "Dataset reviews available for manual inspection" not in source

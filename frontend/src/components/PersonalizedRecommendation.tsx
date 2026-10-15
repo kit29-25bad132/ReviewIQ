@@ -21,6 +21,17 @@ interface PersonalizedRecommendationProps {
   onSelectAlternativeProduct?: (product: ProductSummary) => void;
 }
 
+/**
+ * Presentation tone for a priority-match evidence level. Only the backend's
+ * documented "Strong Evidence" value receives the positive treatment;
+ * "No Direct Evidence" and any unknown/missing value are rendered as a
+ * neutral state and never promoted to a positive or verified-looking state.
+ * (Gate 3)
+ */
+export const evidenceTone = (
+  evidenceLevel: string | null | undefined
+): 'strong' | 'neutral' => (evidenceLevel === 'Strong Evidence' ? 'strong' : 'neutral');
+
 const PERSONA_OPTIONS = [
   { id: 'General User', label: '🌟 General User', desc: 'Balanced everyday use & reliability' },
   { id: 'Student', label: '🎓 Student', desc: 'Value for money, budget & durability' },
@@ -118,7 +129,7 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
             Personalized Product Recommendation & Decision Engine
           </h2>
           <p className="text-xs text-[#74736E]">
-            Tailored analysis based strictly on your stated priorities and verified dataset review evidence.
+            Tailored analysis based strictly on your stated priorities and dataset review evidence.
           </p>
         </div>
 
@@ -274,8 +285,14 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-[#F5F2EA]">{pm.priority}</span>
-                          <span className="rounded px-1.5 py-0.5 text-[10px] uppercase font-semibold bg-[#1B1915] text-[#D4AF5A] border border-[#D4AF5A]/30">
-                            {pm.evidence_level}
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] uppercase font-semibold border ${
+                              evidenceTone(pm.evidence_level) === 'strong'
+                                ? 'bg-[#1B1915] text-[#D4AF5A] border-[#D4AF5A]/30'
+                                : 'bg-[#151617] text-[#92908A] border-[#292A2B]'
+                            }`}
+                          >
+                            {pm.evidence_level?.trim() || 'No Evidence Reported'}
                           </span>
                         </div>
                         <p className="text-[11px] text-[#74736E]">{pm.details}</p>
