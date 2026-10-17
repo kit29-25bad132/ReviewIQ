@@ -545,6 +545,16 @@ Synthesize ONLY these supplied reviews according to your system instructions int
                 return summary
 
         if last_error:
+            # Ensure the last error is a properly classified AIProviderError.
+            # If it isn't already (e.g. a plain Exception from parse/validation),
+            # wrap it with the appropriate AIErrorType.
+            if not isinstance(last_error, AIProviderError):
+                last_error = AIProviderError(
+                    str(last_error) or "Summary generation failed after all targets exhausted.",
+                    AIErrorType.INVALID_RESPONSE,
+                    provider=getattr(last_error, "provider", None),
+                    model=getattr(last_error, "model", None),
+                )
             raise last_error
         raise RuntimeError("Empty response from Gemini model.")
 

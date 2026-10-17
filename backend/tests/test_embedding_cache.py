@@ -17,6 +17,8 @@ Coverage map (spec test plan, embedding parts):
 import math
 from datetime import timedelta
 
+import logging
+
 from services.cache.config import (
     DEFAULT_EMBEDDING_CACHE_TTL_SECONDS,
     DEFAULT_EMBEDDING_QUERY_CACHE_TTL_SECONDS,
@@ -348,7 +350,7 @@ def test_disabled_cache_never_touches_the_store():
         dimension=DIMENSION,
         vector=[0.0] * DIMENSION,
     )
-    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0}
+    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0, "count": 0, "clear": 0, "evict_oldest": 0}
 
 
 def test_get_many_returns_partial_hits():
@@ -476,13 +478,13 @@ def test_put_vector_writes_validated_vector_with_default_ttl():
     assert row["expires_at"] - row["created_at"] == timedelta(seconds=1234)
 
 
-def test_document_embedding_gets_90_day_ttl_by_default():
-    """MEDIUM-1: RETRIEVAL_DOCUMENT expires after 7776000 seconds (90 days)."""
+def test_document_embedding_gets_1_day_ttl_by_default():
+    """MEDIUM-1: RETRIEVAL_DOCUMENT expires after 86400 seconds (1 day)."""
     store = FakeCacheStore()
     cache = embedding_cache(store)
     assert cache.config.resolve_embedding_ttl(
         EmbeddingTaskType.RETRIEVAL_DOCUMENT
-    ) == 7776000
+    ) == 86400
     cache.put_vector(
         text=ODD_TEXT,
         task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
@@ -492,7 +494,7 @@ def test_document_embedding_gets_90_day_ttl_by_default():
         vector=hashing_vector(ODD_TEXT, DIMENSION),
     )
     row = store.rows(EMBEDDING_TABLE)[_ekey(ODD_TEXT)]
-    assert row["expires_at"] - row["created_at"] == timedelta(seconds=7776000)
+    assert row["expires_at"] - row["created_at"] == timedelta(seconds=86400)
 
 
 def test_query_embedding_gets_30_day_ttl_by_default():
@@ -544,7 +546,7 @@ def test_document_and_query_ttls_differ_and_entries_stay_separate():
     assert query_row["task_type"] == "RETRIEVAL_QUERY"
     doc_ttl = doc_row["expires_at"] - doc_row["created_at"]
     query_ttl = query_row["expires_at"] - query_row["created_at"]
-    assert doc_ttl == timedelta(seconds=7776000)
+    assert doc_ttl == timedelta(seconds=86400)
     assert query_ttl == timedelta(seconds=2592000)
     assert doc_ttl != query_ttl
 
@@ -553,15 +555,15 @@ def test_resolve_embedding_ttl_is_enum_safe_for_all_task_types():
     config = CacheConfig.from_env()  # conftest strips TTL overrides
     assert config.resolve_embedding_ttl(
         EmbeddingTaskType.RETRIEVAL_DOCUMENT
-    ) == 7776000
-    assert config.resolve_embedding_ttl("RETRIEVAL_DOCUMENT") == 7776000
+    ) == 86400
+    assert config.resolve_embedding_ttl("RETRIEVAL_DOCUMENT") == 86400
     assert config.resolve_embedding_ttl(EmbeddingTaskType.RETRIEVAL_QUERY) == 2592000
     assert config.resolve_embedding_ttl("RETRIEVAL_QUERY") == 2592000
     # Unspecified (non-query) task types fall back to the hygiene TTL.
     assert config.resolve_embedding_ttl(
         EmbeddingTaskType.SEMANTIC_SIMILARITY
-    ) == 7776000
-    assert config.resolve_embedding_ttl(None) == 7776000
+    ) == 86400
+    assert config.resolve_embedding_ttl(None) == 86400
 
 
 def test_query_ttl_environment_override_is_honored(monkeypatch):
@@ -586,9 +588,9 @@ def test_invalid_query_ttl_configuration_falls_back_to_the_default(monkeypatch):
     for bad in ("0", "-1"):
         monkeypatch.setenv("EMBEDDING_CACHE_TTL_SECONDS", bad)
         config = CacheConfig.from_env()
-        assert config.embedding_ttl_seconds == 7776000
+        assert config.embedding_ttl_seconds == 86400
         assert config.resolve_embedding_ttl(EmbeddingTaskType.RETRIEVAL_DOCUMENT) == (
-            7776000
+            86400
         )
 
 
@@ -748,7 +750,7 @@ def test_disabled_cache_service_behavior_is_unchanged():
     service.embed_batch(TEXTS)
     service.embed_batch(TEXTS)
     assert len(provider.calls) == 2
-    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0}
+    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0, "count": 0, "clear": 0, "evict_oldest": 0}
 
 
 def test_cache_backend_failure_degrades_to_the_provider():
@@ -790,7 +792,7 @@ def test_empty_batch_returns_empty_without_touching_cache_or_provider():
     service, provider = _service(cache)
     assert service.embed_batch([]) == []
     assert provider.calls == []
-    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0}
+    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0, "count": 0, "clear": 0, "evict_oldest": 0}
 
 
 def test_batch_size_limit_still_applies_to_cache_misses():
@@ -848,3 +850,200 @@ def test_only_vector_fields_are_ever_stored():
     dumped = str(row)
     assert "similarity" not in dumped and "score" not in dumped
     assert "prompt" not in dumped and "api_key" not in dumped
+
+
+# ---------------------------------------------------------------------------
+# J. 8G: DEBUG hit/miss logging, invalidation, clear_all, max-entries eviction
+# ---------------------------------------------------------------------------
+
+def test_embedding_cache_hit_logged_at_debug(caplog):
+    """A cache hit must be logged at DEBUG level (8G spec)."""
+    store = FakeCacheStore()
+    cache = embedding_cache(store)
+    key = _ekey(ODD_TEXT)
+    store.seed(EMBEDDING_TABLE, key, embedding_row(hashing_vector(ODD_TEXT, DIMENSION), dimension=DIMENSION))
+    with caplog.at_level(logging.DEBUG, logger="services.cache.embedding_cache"):
+        result = cache.get_vector(
+            text=ODD_TEXT,
+            task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
+            provider="fake",
+            model="fake-embed",
+            dimension=DIMENSION,
+        )
+    assert result is not None
+    messages = [r.getMessage() for r in caplog.records]
+    hits = [m for m in messages if m.startswith("Embedding cache hit")]
+    assert len(hits) == 1
+
+
+def test_embedding_cache_miss_logged_at_debug(caplog):
+    """A cache miss must be logged at DEBUG level (8G spec)."""
+    store = FakeCacheStore()
+    cache = embedding_cache(store)
+    with caplog.at_level(logging.DEBUG, logger="services.cache.embedding_cache"):
+        result = cache.get_vector(
+            text=ODD_TEXT,
+            task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
+            provider="fake",
+            model="fake-embed",
+            dimension=DIMENSION,
+        )
+    assert result is None
+    messages = [r.getMessage() for r in caplog.records]
+    misses = [m for m in messages if m.startswith("Embedding cache miss")]
+    assert len(misses) >= 1
+
+
+def test_embedding_cache_write_stays_at_info(caplog):
+    """Embedding cache writes stay at INFO (8G: only hit/miss move to DEBUG)."""
+    store = FakeCacheStore()
+    cache = embedding_cache(store)
+    vector = hashing_vector(ODD_TEXT, DIMENSION)
+    with caplog.at_level(logging.DEBUG, logger="services.cache.embedding_cache"):
+        cache.put_vector(
+            text=ODD_TEXT,
+            task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
+            provider="fake",
+            model="fake-embed",
+            dimension=DIMENSION,
+            vector=vector,
+        )
+    info_messages = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.INFO and "Embedding cache write" in r.getMessage()
+    ]
+    assert len(info_messages) == 1
+
+
+def test_embedding_cache_invalidate_removes_entry_by_key():
+    store = FakeCacheStore()
+    cache = embedding_cache(store)
+    key = _ekey(ODD_TEXT)
+    store.seed(EMBEDDING_TABLE, key, embedding_row(hashing_vector(ODD_TEXT, DIMENSION), dimension=DIMENSION))
+    assert store.count(EMBEDDING_TABLE) == 1
+    cache.invalidate(key)
+    assert store.count(EMBEDDING_TABLE) == 0
+    assert cache.get_vector(
+        text=ODD_TEXT,
+        task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
+        provider="fake",
+        model="fake-embed",
+        dimension=DIMENSION,
+    ) is None
+
+
+def test_embedding_cache_invalidate_missing_key_is_safe_noop():
+    store = FakeCacheStore()
+    cache = embedding_cache(store)
+    cache.invalidate("nonexistent-key-1234567890abcdef1234567890abcdef")
+    assert store.count(EMBEDDING_TABLE) == 0
+
+
+def test_embedding_cache_clear_all_removes_every_entry():
+    store = FakeCacheStore()
+    cache = embedding_cache(store)
+    key_a = _ekey("document A")
+    key_b = _ekey("document B")
+    store.seed(EMBEDDING_TABLE, key_a, embedding_row(hashing_vector("document A", DIMENSION), dimension=DIMENSION))
+    store.seed(EMBEDDING_TABLE, key_b, embedding_row(hashing_vector("document B", DIMENSION), dimension=DIMENSION))
+    assert store.count(EMBEDDING_TABLE) == 2
+    deleted = cache.clear_all()
+    assert deleted == 2
+    assert store.count(EMBEDDING_TABLE) == 0
+
+
+def test_embedding_cache_clear_all_returns_zero_on_empty_cache():
+    store = FakeCacheStore()
+    cache = embedding_cache(store)
+    assert cache.clear_all() == 0
+
+
+def test_embedding_cache_max_entries_evicts_oldest():
+    """When the embedding cache exceeds max_entries, the oldest entries are evicted."""
+    store = FakeCacheStore()
+    small_cache = embedding_cache(store, max_entries=2)
+    key_a = _ekey("document A")
+    key_b = _ekey("document B")
+    key_c = _ekey("document C")
+    store.seed(EMBEDDING_TABLE, key_a, embedding_row(hashing_vector("document A", DIMENSION), dimension=DIMENSION))
+    store.seed(EMBEDDING_TABLE, key_b, embedding_row(hashing_vector("document B", DIMENSION), dimension=DIMENSION))
+    store.seed(EMBEDDING_TABLE, key_c, embedding_row(hashing_vector("document C", DIMENSION), dimension=DIMENSION))
+    assert store.count(EMBEDDING_TABLE) == 3
+    evicted = store.evict_oldest(EMBEDDING_TABLE, 1)
+    assert evicted == 1
+    assert store.count(EMBEDDING_TABLE) == 2
+    assert key_a not in store.rows(EMBEDDING_TABLE)
+    assert key_b in store.rows(EMBEDDING_TABLE)
+    assert key_c in store.rows(EMBEDDING_TABLE)
+
+
+def test_embedding_cache_put_vector_enforces_max_entries():
+    """After put_vector, the embedding cache must not exceed max_entries."""
+    store = FakeCacheStore()
+    small_cache = embedding_cache(store, max_entries=2)
+    small_cache.put_vector(
+        text="document A",
+        task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
+        provider="fake",
+        model="fake-embed",
+        dimension=DIMENSION,
+        vector=hashing_vector("document A", DIMENSION),
+    )
+    small_cache.put_vector(
+        text="document B",
+        task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
+        provider="fake",
+        model="fake-embed",
+        dimension=DIMENSION,
+        vector=hashing_vector("document B", DIMENSION),
+    )
+    small_cache.put_vector(
+        text="document C",
+        task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
+        provider="fake",
+        model="fake-embed",
+        dimension=DIMENSION,
+        vector=hashing_vector("document C", DIMENSION),
+    )
+    assert store.count(EMBEDDING_TABLE) == 2
+    # The oldest entry (document A) should be evicted.
+    keys = list(store.rows(EMBEDDING_TABLE).keys())
+    assert len(keys) == 2
+    assert _ekey("document A") not in keys
+    assert _ekey("document B") in keys
+    assert _ekey("document C") in keys
+
+
+def test_embedding_cache_config_reads_new_ttl_env_var():
+    """CacheConfig.from_env() reads EMBEDDING_CACHE_TTL_SECONDS."""
+    import os as _os
+    _os.environ["EMBEDDING_CACHE_TTL_SECONDS"] = "43200"
+    try:
+        config = CacheConfig.from_env()
+        assert config.embedding_ttl_seconds == 43200
+    finally:
+        _os.environ.pop("EMBEDDING_CACHE_TTL_SECONDS")
+
+
+def test_embedding_cache_config_reads_max_entries_env_var():
+    """CacheConfig.from_env() reads EMBEDDING_CACHE_MAX_ENTRIES."""
+    import os as _os
+    _os.environ["EMBEDDING_CACHE_MAX_ENTRIES"] = "2000"
+    try:
+        config = CacheConfig.from_env()
+        assert config.embedding_max_entries == 2000
+    finally:
+        _os.environ.pop("EMBEDDING_CACHE_MAX_ENTRIES")
+
+
+def test_default_embedding_max_entries_is_5000():
+    """CacheConfig default embedding_max_entries is 5000 (8G spec)."""
+    config = CacheConfig()
+    assert config.embedding_max_entries == 5000
+
+
+def test_embedding_cache_default_ttl_is_1_day():
+    """CacheConfig default embedding_ttl_seconds is 86400 (8G spec)."""
+    config = CacheConfig()
+    assert config.embedding_ttl_seconds == 86400

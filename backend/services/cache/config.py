@@ -37,20 +37,26 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_LLM_CACHE_ENABLED = False
 DEFAULT_EMBEDDING_CACHE_ENABLED = False
-DEFAULT_AI_CACHE_TTL_SECONDS = 604800  # 7 days
+DEFAULT_AI_CACHE_TTL_SECONDS = 604800  # 7 days (legacy env var)
+DEFAULT_AI_RESPONSE_CACHE_TTL_SECONDS = 3600  # 1 hour (8E spec default)
 DEFAULT_AI_CACHE_TTL_RAG_SECONDS = 3600  # 1 hour
-DEFAULT_EMBEDDING_CACHE_TTL_SECONDS = 7776000  # 90 days (documents)
+DEFAULT_EMBEDDING_CACHE_TTL_SECONDS = 86400  # 1 day (8G spec default)
+DEFAULT_EMBEDDING_CACHE_MAX_ENTRIES = 5000  # 8G spec default
 DEFAULT_EMBEDDING_QUERY_CACHE_TTL_SECONDS = 2592000  # 30 days (queries)
+DEFAULT_AI_RESPONSE_CACHE_MAX_ENTRIES = 1000  # 8E spec default
 
 # Floor for TTLs: a non-positive TTL would make every entry dead on arrival.
 _MIN_TTL_SECONDS = 1
 
 LLM_CACHE_ENABLED_ENV_VAR = "LLM_CACHE_ENABLED"
 EMBEDDING_CACHE_ENABLED_ENV_VAR = "EMBEDDING_CACHE_ENABLED"
+AI_RESPONSE_CACHE_TTL_SECONDS_ENV_VAR = "AI_RESPONSE_CACHE_TTL_SECONDS"
 AI_CACHE_TTL_SECONDS_ENV_VAR = "AI_CACHE_TTL_SECONDS"
 AI_CACHE_TTL_RAG_SECONDS_ENV_VAR = "AI_CACHE_TTL_RAG_SECONDS"
 EMBEDDING_CACHE_TTL_SECONDS_ENV_VAR = "EMBEDDING_CACHE_TTL_SECONDS"
 EMBEDDING_QUERY_CACHE_TTL_SECONDS_ENV_VAR = "EMBEDDING_QUERY_CACHE_TTL_SECONDS"
+AI_RESPONSE_CACHE_MAX_ENTRIES_ENV_VAR = "AI_RESPONSE_CACHE_MAX_ENTRIES"
+EMBEDDING_CACHE_MAX_ENTRIES_ENV_VAR = "EMBEDDING_CACHE_MAX_ENTRIES"
 
 #: Task namespace whose entries use the shorter query TTL (enum ``.value`` or
 #: plain string both normalize to this exact name).
@@ -58,6 +64,37 @@ _QUERY_TASK_NAME = "RETRIEVAL_QUERY"
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
+
+
+def _env_int_with_legacy_fallback(
+    new_name: str, legacy_name: str, default: int
+) -> int:
+    """Read an integer env var, falling back from new to legacy to default.
+
+    Used for ``llm_ttl_seconds``: ``AI_RESPONSE_CACHE_TTL_SECONDS`` takes
+    precedence, with ``AI_CACHE_TTL_SECONDS`` as the backwards-compat fallback.
+    The max-entries var has no legacy equivalent, so ``legacy_name`` may be
+    empty/falsy in that case.
+    """
+    raw = os.getenv(new_name)
+    if raw is None or not raw.strip():
+        if legacy_name:
+            raw = os.getenv(legacy_name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid %s/%s value; using default %d.", new_name, legacy_name, default,
+        )
+        return default
+    if value < _MIN_TTL_SECONDS:
+        logger.warning(
+            "Out-of-range %s/%s; using default %d.", new_name, legacy_name, default,
+        )
+        return default
+    return value
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -94,10 +131,12 @@ class CacheConfig:
 
     llm_enabled: bool = DEFAULT_LLM_CACHE_ENABLED
     embedding_enabled: bool = DEFAULT_EMBEDDING_CACHE_ENABLED
-    llm_ttl_seconds: int = DEFAULT_AI_CACHE_TTL_SECONDS
+    llm_ttl_seconds: int = DEFAULT_AI_RESPONSE_CACHE_TTL_SECONDS
     llm_rag_ttl_seconds: int = DEFAULT_AI_CACHE_TTL_RAG_SECONDS
     embedding_ttl_seconds: int = DEFAULT_EMBEDDING_CACHE_TTL_SECONDS
     embedding_query_ttl_seconds: int = DEFAULT_EMBEDDING_QUERY_CACHE_TTL_SECONDS
+    max_entries: int = DEFAULT_AI_RESPONSE_CACHE_MAX_ENTRIES
+    embedding_max_entries: int = DEFAULT_EMBEDDING_CACHE_MAX_ENTRIES
 
     @classmethod
     def from_env(cls) -> "CacheConfig":
@@ -109,8 +148,10 @@ class CacheConfig:
             embedding_enabled=_env_flag(
                 EMBEDDING_CACHE_ENABLED_ENV_VAR, DEFAULT_EMBEDDING_CACHE_ENABLED
             ),
-            llm_ttl_seconds=_env_ttl(
-                AI_CACHE_TTL_SECONDS_ENV_VAR, DEFAULT_AI_CACHE_TTL_SECONDS
+            llm_ttl_seconds=_env_int_with_legacy_fallback(
+                AI_RESPONSE_CACHE_TTL_SECONDS_ENV_VAR,
+                AI_CACHE_TTL_SECONDS_ENV_VAR,
+                DEFAULT_AI_RESPONSE_CACHE_TTL_SECONDS,
             ),
             llm_rag_ttl_seconds=_env_ttl(
                 AI_CACHE_TTL_RAG_SECONDS_ENV_VAR, DEFAULT_AI_CACHE_TTL_RAG_SECONDS
@@ -122,6 +163,16 @@ class CacheConfig:
             embedding_query_ttl_seconds=_env_ttl(
                 EMBEDDING_QUERY_CACHE_TTL_SECONDS_ENV_VAR,
                 DEFAULT_EMBEDDING_QUERY_CACHE_TTL_SECONDS,
+            ),
+            max_entries=_env_int_with_legacy_fallback(
+                AI_RESPONSE_CACHE_MAX_ENTRIES_ENV_VAR,
+                "",
+                DEFAULT_AI_RESPONSE_CACHE_MAX_ENTRIES,
+            ),
+            embedding_max_entries=_env_int_with_legacy_fallback(
+                EMBEDDING_CACHE_MAX_ENTRIES_ENV_VAR,
+                "",
+                DEFAULT_EMBEDDING_CACHE_MAX_ENTRIES,
             ),
         )
 

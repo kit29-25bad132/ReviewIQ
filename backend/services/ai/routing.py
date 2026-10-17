@@ -10,6 +10,8 @@ stays single-shot; LangGraph stays the analysis orchestrator).
 
 from typing import Callable, List, Optional
 
+from services.ai.circuit_breaker import CircuitBreaker, CircuitState, _get_circuit_breaker
+
 from services.ai.contracts import ModelRef
 from services.ai.errors import AIErrorType
 from services.ai.gateway import AIGateway
@@ -41,7 +43,14 @@ def provider_configured_checker(gateway: AIGateway) -> Callable[[str], bool]:
 
     def _is_configured(provider_name: str) -> bool:
         provider = gateway.providers.get(provider_name)
-        return bool(provider is not None and provider.is_configured())
+        if provider is None:
+            return False
+        configured = provider.is_configured()
+        if not configured:
+            return False
+        # If circuit breaker is OPEN, treat as unconfigured (skip provider)
+        cb = _get_circuit_breaker(provider_name)
+        return cb.state() != CircuitState.OPEN
 
     return _is_configured
 

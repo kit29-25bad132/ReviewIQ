@@ -172,8 +172,8 @@ def _analyzer(providers):
 def test_policy_defaults():
     policy = RetryPolicy()
     assert policy.max_attempts == DEFAULT_MAX_ATTEMPTS == 2
-    assert policy.base_delay_seconds == DEFAULT_BASE_DELAY_SECONDS == 0.5
-    assert policy.max_delay_seconds == DEFAULT_MAX_DELAY_SECONDS == 8.0
+    assert policy.base_delay_seconds == DEFAULT_BASE_DELAY_SECONDS == 1.0
+    assert policy.max_delay_seconds == DEFAULT_MAX_DELAY_SECONDS == 10.0
     assert policy.jitter is DEFAULT_JITTER is True
     assert policy.max_retries == 1
 

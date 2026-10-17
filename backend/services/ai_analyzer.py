@@ -23,6 +23,11 @@ from services.ai.registry import (
     TASK_REVIEW_ANALYSIS,
     model_registry,
 )
+from services.ai.circuit_breaker import (
+    CircuitState,
+    _get_circuit_breaker,
+    reset_circuit_breakers,
+)
 from services.ai.routing import (
     build_target_chain,
     provider_configured_checker,
@@ -391,31 +396,6 @@ class AIAnalyzerService:
             capability=TASK_REVIEW_ANALYSIS,
             per_provider_limit=5,
         )
-        if not targets and self.gateway.providers.get(GEMINI_PROVIDER) is not None:
-            # Internal callers may invoke the SDK-backed path directly in tests or
-            # local debugging without a real env key. Keep the public validation
-            # gate in `analyze_review()` unchanged, but allow a fallback chain to
-            # be constructed from the verified Gemini registry when the SDK is
-            # available even though the environment is unconfigured.
-            try:
-                __import__("google.genai")
-            except Exception:
-                pass
-            else:
-                selected_primary = gemini_primary or model_registry.default_primary(GEMINI_PROVIDER) or DEFAULT_MODEL_NAME
-                ordered = [selected_primary]
-                for spec in model_registry.list_provider(
-                    GEMINI_PROVIDER,
-                    capability=TASK_REVIEW_ANALYSIS,
-                    enabled_only=True,
-                ):
-                    if spec.model in ordered:
-                        continue
-                    if spec.is_fallback_candidate:
-                        ordered.append(spec.model)
-                    if len(ordered) >= 5:
-                        break
-                targets = [ModelRef(provider=GEMINI_PROVIDER, model=model) for model in ordered[:5]]
 
         decision = None
         if targets:
@@ -527,6 +507,11 @@ class AIAnalyzerService:
             outcome["provider_latency_ms"] = getattr(
                 response, "latency_ms", None
             )
+            # Record circuit breaker state after each attempt.
+            if response.success:
+                _get_circuit_breaker(target.provider).record_success()
+            else:
+                _get_circuit_breaker(target.provider).record_failure()
             if not response.success:
                 if skips_remaining_provider_models(response.error_type):
                     skipped_providers.add(target.provider)
@@ -620,7 +605,16 @@ class AIAnalyzerService:
             )
 
         # Strict validation with Pydantic model
-        return ReviewAnalysis.model_validate(data)
+        try:
+            return ReviewAnalysis.model_validate(data)
+        except Exception as exc:
+            # Privacy (ADR-012): Pydantic ValidationError messages can embed
+            # raw model output. Convert to a sanitized ValueError that never
+            # leaks model text, prompts, or credentials.
+            raise ValueError(
+                "Failed to validate AI output against schema: "
+                f"{type(exc).__name__}"
+            )
 
 
 # Global singleton service instance

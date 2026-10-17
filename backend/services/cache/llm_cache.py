@@ -57,6 +57,7 @@ from services.cache.keys import (
     analysis_cache_key,
     summary_cache_key,
 )
+from services.cache.store import RESPONSE_TABLE
 
 logger = logging.getLogger(__name__)
 
@@ -211,24 +212,24 @@ class LLMCache:
 
             row = self.store.get(RESPONSE_TABLE, key)
             if row is None:
-                logger.info("LLM cache miss (%s, key=%s).", task, key[:12])
+                logger.debug("LLM cache miss (%s, key=%s).", task, key[:12])
                 return None
             if not self._is_fresh(row):
                 self._delete(RESPONSE_TABLE, key)
-                logger.info("LLM cache miss/expired (%s, key=%s).", task, key[:12])
+                logger.debug("LLM cache miss/expired (%s, key=%s).", task, key[:12])
                 return None
             if rag_enabled and not self._rag_token_matches(row):
                 # Fail CLOSED: never serve a possibly-stale RAG result. The
                 # row is kept — it stays valid for an unchanged corpus.
-                logger.info(
+                logger.debug(
                     "LLM cache miss/rag-corpus (%s, key=%s).", task, key[:12]
                 )
                 return None
             result = self._decode(row, kind=kind, model=model, key=key)
             if result is None:
-                logger.info("LLM cache miss/malformed (%s, key=%s).", task, key[:12])
+                logger.debug("LLM cache miss/malformed (%s, key=%s).", task, key[:12])
                 return None
-            logger.info("LLM cache hit (%s, key=%s).", task, key[:12])
+            logger.debug("LLM cache hit (%s, key=%s).", task, key[:12])
             return result
         except Exception as exc:  # fail open: any failure == cache miss
             logger.warning("LLM cache read failed (%s).", type(exc).__name__)
@@ -320,8 +321,25 @@ class LLMCache:
                 rag_context_digest=rag_context_digest if rag_enabled else None,
                 corpus_token=corpus_token,
             )
+            # 8E: enforce max-entries cap (LRU eviction by created_at ASC).
+            self._enforce_max_entries()
         except Exception as exc:  # a failed write must never block a request
             logger.warning("LLM cache write failed (%s).", type(exc).__name__)
+
+    def _enforce_max_entries(self) -> None:
+        """Evict oldest entries when the cache exceeds ``max_entries``.
+
+        Best-effort: a store failure is silently ignored (fail open).
+        """
+        try:
+            config = self.config
+            current = self.store.count(RESPONSE_TABLE)
+            if current > config.max_entries:
+                self.store.evict_oldest(
+                    RESPONSE_TABLE, current - config.max_entries
+                )
+        except Exception as exc:
+            logger.warning("LLM cache eviction failed (%s).", type(exc).__name__)
 
     def put_summary(
         self,
@@ -359,6 +377,8 @@ class LLMCache:
                 rag_context_digest=None,
                 corpus_token=None,
             )
+            # 8E: enforce max-entries cap (LRU eviction by created_at ASC).
+            self._enforce_max_entries()
         except Exception as exc:  # a failed write must never block a request
             logger.warning("LLM cache write failed (%s).", type(exc).__name__)
 
@@ -403,6 +423,25 @@ class LLMCache:
             self.store.delete(table, key)
         except Exception as exc:
             logger.warning("LLM cache delete failed (%s).", type(exc).__name__)
+
+    def invalidate(self, key: str) -> None:
+        """Public API: remove a single cached entry by its cache key.
+
+        A missing key or a store failure is silently ignored (fail open):
+        invalidation never blocks a request.
+        """
+        self._delete(RESPONSE_TABLE, key)
+
+    def clear_all(self) -> int:
+        """Public API: delete every LLM response-cache row and return the count.
+
+        On any store failure returns 0 and logs a warning — never raises.
+        """
+        try:
+            return self.store.clear(RESPONSE_TABLE)
+        except Exception as exc:
+            logger.warning("LLM cache clear_all failed (%s).", type(exc).__name__)
+            return 0
 
 
 __all__ = ["ANALYSIS_KIND", "SUMMARY_KIND", "LLMCache"]

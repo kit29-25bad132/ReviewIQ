@@ -104,6 +104,9 @@ class FakeCacheStore(CacheStore):
             "put": 0,
             "delete": 0,
             "corpus_token": 0,
+            "count": 0,
+            "clear": 0,
+            "evict_oldest": 0,
         }
 
     # -- introspection helpers ---------------------------------------------
@@ -156,6 +159,36 @@ class FakeCacheStore(CacheStore):
         if "corpus_token" in self.fail_ops:
             raise RuntimeError("cache backend unavailable")
         return self.corpus_token_value
+
+    def count(self, table: str) -> int:
+        self.calls["count"] += 1
+        if "count" in self.fail_ops:
+            raise RuntimeError("cache backend unavailable")
+        return len(self.tables.get(table, {}))
+
+    def clear(self, table: str) -> int:
+        self.calls["clear"] += 1
+        if "clear" in self.fail_ops:
+            raise RuntimeError("cache backend unavailable")
+        count = len(self.tables.get(table, {}))
+        self.tables[table] = {}
+        return count
+
+    def evict_oldest(self, table: str, n: int) -> int:
+        self.calls["evict_oldest"] += 1
+        if "evict_oldest" in self.fail_ops:
+            raise RuntimeError("cache backend unavailable")
+        if n <= 0:
+            return 0
+        bucket = list(self.tables.get(table, {}).items())
+        # Sort by created_at ASC to find oldest.
+        bucket.sort(
+            key=lambda item: item[1].get("created_at", datetime.min.replace(tzinfo=timezone.utc)),
+        )
+        evicted = bucket[:n]
+        for key, _row in evicted:
+            self.tables[table].pop(key, None)
+        return len(evicted)
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +260,12 @@ def summary_row(
     }
 
 
+def _default_embedding_ttl() -> int:
+    """Default embedding TTL used by the test row builder (1 day, 8G spec)."""
+    from services.cache.config import DEFAULT_EMBEDDING_CACHE_TTL_SECONDS
+    return DEFAULT_EMBEDDING_CACHE_TTL_SECONDS
+
+
 def embedding_row(
     vector: Sequence[float],
     *,
@@ -235,8 +274,10 @@ def embedding_row(
     model: str = "fake-embed",
     created_at: Optional[datetime] = None,
     expires_at: Optional[datetime] = None,
+    ttl_seconds: Optional[int] = None,
 ) -> Dict[str, Any]:
     created = created_at or utcnow()
+    ttl = ttl_seconds if ttl_seconds is not None else _default_embedding_ttl()
     return {
         "cache_key": "seeded-key",
         "vector": list(vector),
@@ -244,7 +285,7 @@ def embedding_row(
         "model": model,
         "dimension": dimension,
         "created_at": created,
-        "expires_at": expires_at or (created + timedelta(seconds=7776000)),
+        "expires_at": expires_at or (created + timedelta(seconds=ttl)),
     }
 
 
@@ -258,6 +299,7 @@ def llm_cache(
     enabled: bool = True,
     ttl_seconds: int = 604800,
     rag_ttl_seconds: int = 3600,
+    max_entries: int = 1000,
 ) -> LLMCache:
     return LLMCache(
         store=store,
@@ -266,6 +308,7 @@ def llm_cache(
             embedding_enabled=False,
             llm_ttl_seconds=ttl_seconds,
             llm_rag_ttl_seconds=rag_ttl_seconds,
+            max_entries=max_entries,
         ),
     )
 
@@ -274,8 +317,9 @@ def embedding_cache(
     store: FakeCacheStore,
     *,
     enabled: bool = True,
-    ttl_seconds: int = 7776000,
+    ttl_seconds: int = 86400,
     query_ttl_seconds: int = 2592000,
+    max_entries: int = 5000,
 ) -> EmbeddingCache:
     return EmbeddingCache(
         store=store,
@@ -284,6 +328,8 @@ def embedding_cache(
             embedding_enabled=enabled,
             embedding_ttl_seconds=ttl_seconds,
             embedding_query_ttl_seconds=query_ttl_seconds,
+            max_entries=5000,
+            embedding_max_entries=max_entries,
         ),
     )
 

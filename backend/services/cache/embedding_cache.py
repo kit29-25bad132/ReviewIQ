@@ -132,7 +132,20 @@ class EmbeddingCache:
             model=model,
             dimension=dimension,
         )
-        return self._get(key=key, dimension=dimension)
+        vector = self._get(key=key, dimension=dimension)
+        if vector is not None:
+            logger.debug(
+                "Embedding cache hit (%s, key=%s).",
+                _task_name(task_type),
+                str(key)[:12],
+            )
+        else:
+            logger.debug(
+                "Embedding cache miss (%s, key=%s).",
+                _task_name(task_type),
+                str(key)[:12],
+            )
+        return vector
 
     def get_many(
         self,
@@ -179,12 +192,26 @@ class EmbeddingCache:
             logger.warning("Embedding cache batch read returned an unexpected size.")
             return [None] * len(texts)
         results: List[Optional[List[float]]] = []
-        for row in rows:
+        for index, row in enumerate(rows):
             if row is None:
                 results.append(None)
+                logger.debug(
+                    "Embedding cache miss (%s, key=%s).",
+                    _task_name(task_type),
+                    str(keys[index])[:12],
+                )
                 continue
             try:
-                results.append(self._row_to_vector(row, dimension=dimension))
+                vector = self._row_to_vector(row, dimension=dimension)
+                if vector is not None:
+                    results.append(vector)
+                    logger.debug(
+                        "Embedding cache hit (%s, key=%s).",
+                        _task_name(task_type),
+                        str(keys[index])[:12],
+                    )
+                else:
+                    results.append(None)
             except Exception as exc:  # one bad row must not sink the batch
                 logger.warning(
                     "Embedding cache read failed (%s).", type(exc).__name__
@@ -288,6 +315,8 @@ class EmbeddingCache:
                 _task_name(task_type),
                 key[:12],
             )
+            # 8G: enforce max-entries cap (LRU eviction by created_at ASC).
+            self._enforce_max_entries()
         except Exception as exc:  # a failed write must never block embedding
             logger.warning("Embedding cache write failed (%s).", type(exc).__name__)
 
@@ -321,6 +350,46 @@ class EmbeddingCache:
             self.store.delete(table, key)
         except Exception as exc:
             logger.warning("Embedding cache delete failed (%s).", type(exc).__name__)
+
+    def invalidate(self, key: str) -> None:
+        """Public API: remove a single cached embedding vector by its cache key.
+
+        A missing key or a store failure is silently ignored (fail open):
+        invalidation never blocks embedding.
+        """
+        from services.cache.store import EMBEDDING_TABLE
+
+        self._delete(EMBEDDING_TABLE, key)
+
+    def clear_all(self) -> int:
+        """Public API: delete every embedding-cache row and return the count.
+
+        On any store failure returns 0 and logs a warning — never raises.
+        """
+        try:
+            from services.cache.store import EMBEDDING_TABLE
+
+            return self.store.clear(EMBEDDING_TABLE)
+        except Exception as exc:
+            logger.warning("Embedding cache clear_all failed (%s).", type(exc).__name__)
+            return 0
+
+    def _enforce_max_entries(self) -> None:
+        """Evict oldest entries when the embedding cache exceeds max_entries.
+
+        Best-effort: a store failure is silently ignored (fail open).
+        """
+        try:
+            from services.cache.store import EMBEDDING_TABLE
+
+            current = self.store.count(EMBEDDING_TABLE)
+            limit = self.config.embedding_max_entries
+            if current > limit:
+                self.store.evict_oldest(EMBEDDING_TABLE, current - limit)
+        except Exception as exc:
+            logger.warning(
+                "Embedding cache eviction failed (%s).", type(exc).__name__
+            )
 
 
 __all__ = ["EmbeddingCache", "validate_cached_vector"]

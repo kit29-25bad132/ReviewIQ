@@ -36,6 +36,7 @@ from typing import Callable, FrozenSet, Mapping, Optional
 
 from services.ai.contracts import AIGenerationRequest, AIResponse
 from services.ai.errors import AIErrorType
+from services.ai.registry import GEMINI_PROVIDER, GROQ_PROVIDER, OPENROUTER_PROVIDER
 
 logger = logging.getLogger(__name__)
 
@@ -50,16 +51,23 @@ RETRYABLE_ERROR_TYPES: FrozenSet[AIErrorType] = frozenset(
 
 # Defaults (documented in backend/.env.example).
 DEFAULT_MAX_ATTEMPTS = 2  # total attempts per target: original + one retry
-DEFAULT_BASE_DELAY_SECONDS = 0.5
-DEFAULT_MAX_DELAY_SECONDS = 8.0
-DEFAULT_JITTER = True
+DEFAULT_BASE_DELAY_SECONDS = 1.0
+DEFAULT_MAX_DELAY_SECONDS = 10.0
+DEFAULT_JITTER = True  # full jitter: uniform [0, delay]
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 30.0
+DEFAULT_GLOBAL_DEADLINE_SECONDS = 120
+DEFAULT_MAX_RETRIES_TOTAL = 4  # total retries across all providers+targets per request
 
 RETRY_MAX_ATTEMPTS_ENV_VAR = "RETRY_MAX_ATTEMPTS"
 RETRY_BASE_DELAY_SECONDS_ENV_VAR = "RETRY_BASE_DELAY_SECONDS"
 RETRY_MAX_DELAY_SECONDS_ENV_VAR = "RETRY_MAX_DELAY_SECONDS"
 RETRY_JITTER_ENV_VAR = "RETRY_JITTER"
 REQUEST_TIMEOUT_ENV_VAR = "AI_REQUEST_TIMEOUT_SECONDS"
+GLOBAL_DEADLINE_ENV_VAR = "AI_GLOBAL_DEADLINE_SECONDS"
+GEMINI_TIMEOUT_ENV_VAR = "GEMINI_TIMEOUT_SECONDS"
+GROQ_TIMEOUT_ENV_VAR = "GROQ_TIMEOUT_SECONDS"
+OPENROUTER_TIMEOUT_ENV_VAR = "OPENROUTER_TIMEOUT_SECONDS"
+MAX_RETRIES_TOTAL_ENV_VAR = "RETRY_MAX_TOTAL_RETRIES"
 
 
 @dataclass(frozen=True)
@@ -280,6 +288,81 @@ def resolve_request_timeout(source: Optional[Mapping[str, str]] = None) -> float
 
 
 # ---------------------------------------------------------------------------
+# Global deadline + per-provider timeout resolution
+# ---------------------------------------------------------------------------
+
+def resolve_global_deadline(source: Optional[Mapping[str, str]] = None) -> float:
+    """Resolve the global deadline for the entire request (seconds).
+
+    Includes all retries AND all provider attempts across the fallback chain.
+    Invalid / non-positive values fall back to the default with a
+    server-side warning; never raises.
+    """
+    env = _env(source)
+    raw = env.get(GLOBAL_DEADLINE_ENV_VAR)
+    if raw is None or str(raw).strip() == "":
+        return DEFAULT_GLOBAL_DEADLINE_SECONDS
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid %s=%r; using default %r.",
+            GLOBAL_DEADLINE_ENV_VAR,
+            raw,
+            DEFAULT_GLOBAL_DEADLINE_SECONDS,
+        )
+        return DEFAULT_GLOBAL_DEADLINE_SECONDS
+    if value <= 0:
+        logger.warning(
+            "Out-of-range %s=%r; using default %r.",
+            GLOBAL_DEADLINE_ENV_VAR,
+            raw,
+            DEFAULT_GLOBAL_DEADLINE_SECONDS,
+        )
+        return DEFAULT_GLOBAL_DEADLINE_SECONDS
+    return value
+
+def resolve_per_provider_timeout(provider: str, source: Optional[Mapping[str, str]] = None) -> float:
+    """Resolve the per-provider timeout for a given provider (seconds).
+
+    Reads provider-specific env vars: GEMINI_TIMEOUT_SECONDS,
+    GROQ_TIMEOUT_SECONDS, OPENROUTER_TIMEOUT_SECONDS.
+    Invalid / non-positive values fall back to defaults with a
+    server-side warning; never raises.
+    """
+    env = _env(source)
+    mapping = {
+        GEMINI_PROVIDER: GEMINI_TIMEOUT_ENV_VAR,
+        GROQ_PROVIDER: GROQ_TIMEOUT_ENV_VAR,
+        OPENROUTER_PROVIDER: OPENROUTER_TIMEOUT_ENV_VAR,
+    }
+    env_var = mapping.get(provider)
+    if env_var is None:
+        return resolve_request_timeout(source)
+    raw = env.get(env_var)
+    if raw is None or str(raw).strip() == "":
+        return resolve_request_timeout(source)
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid %s=%r; using default %r.",
+            env_var,
+            raw,
+            DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        )
+        return resolve_request_timeout(source)
+    if value <= 0:
+        logger.warning(
+            "Out-of-range %s=%r; using default %r.",
+            env_var,
+            raw,
+            DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        )
+        return resolve_request_timeout(source)
+    return value
+
+# ---------------------------------------------------------------------------
 # Execution helper
 # ---------------------------------------------------------------------------
 
@@ -391,6 +474,8 @@ __all__ = [
     "DEFAULT_MAX_ATTEMPTS",
     "DEFAULT_MAX_DELAY_SECONDS",
     "DEFAULT_REQUEST_TIMEOUT_SECONDS",
+    "DEFAULT_GLOBAL_DEADLINE_SECONDS",
+    "DEFAULT_MAX_RETRIES_TOTAL",
     "RETRYABLE_ERROR_TYPES",
     "RetryPolicy",
     "compute_delay",
@@ -398,4 +483,8 @@ __all__ = [
     "is_retryable",
     "resolve_request_timeout",
     "resolve_retry_policy",
-]
+    "resolve_global_deadline",
+    "resolve_per_provider_timeout",
+    "resolve_max_retries_total",
+],
+

@@ -335,6 +335,63 @@ class PostgresCacheStore(CacheStore):
         except Exception as exc:
             logger.warning("Cache store delete failed (%s).", type(exc).__name__)
 
+    def count(self, table: str) -> int:
+        """Return the current row count for a cache table (0 on any failure)."""
+        validated = _validate_table(table)
+        if validated is None:
+            return 0
+        try:
+            with self._database.connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(f"SELECT COUNT(*) FROM {validated}")
+                    row = cursor.fetchone()
+                    return int(row[0]) if row else 0
+        except Exception as exc:
+            logger.warning("Cache store count failed (%s).", type(exc).__name__)
+            return 0
+
+    def clear(self, table: str) -> int:
+        """Delete all rows in a cache table and return the count deleted.
+
+        Runs DELETE atomically and reports ``cursor.rowcount`` — no separate
+        COUNT round-trip, no race between count and delete.
+        """
+        validated = _validate_table(table)
+        if validated is None:
+            return 0
+        try:
+            with self._database.connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(f"DELETE FROM {validated}")
+                    connection.commit()
+                    return cursor.rowcount
+        except Exception as exc:
+            logger.warning("Cache store clear failed (%s).", type(exc).__name__)
+            return 0
+
+    def evict_oldest(self, table: str, n: int) -> int:
+        """Delete the ``n`` oldest rows (by ``created_at`` ASC) and return the
+        count actually evicted. A non-positive ``n`` is a safe no-op.
+        """
+        validated = _validate_table(table)
+        if validated is None or n <= 0:
+            return 0
+        try:
+            with self._database.connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        f"DELETE FROM {validated} WHERE cache_key IN ("
+                        f"SELECT cache_key FROM {validated} "
+                        f"ORDER BY created_at ASC LIMIT %s"
+                        f")",
+                        (n,),
+                    )
+                    connection.commit()
+                    return cursor.rowcount
+        except Exception as exc:
+            logger.warning("Cache store evict_oldest failed (%s).", type(exc).__name__)
+            return 0
+
 
 def build_cache_store() -> CacheStore:
     """Default production store (Postgres; every failure degrades to a miss)."""

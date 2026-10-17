@@ -56,3 +56,6 @@ def hermetic_provider_env(monkeypatch):
     monkeypatch.delenv("AI_CACHE_TTL_RAG_SECONDS", raising=False)
     monkeypatch.delenv("EMBEDDING_CACHE_TTL_SECONDS", raising=False)
     monkeypatch.delenv("EMBEDDING_QUERY_CACHE_TTL_SECONDS", raising=False)
+    # V2-P10 circuit breaker isolation: clear module-level circuit state between tests.
+    from services.ai.circuit_breaker import reset_circuit_breakers
+    reset_circuit_breakers()

@@ -892,8 +892,11 @@ def test_product_summary_all_parse_failures_raise_after_exhaustion(monkeypatch):
     providers = _multi_providers([MALFORMED_JSON])
     monkeypatch.setattr(analyzer_service, "_gateway", _gateway(providers))
 
-    with pytest.raises(json.JSONDecodeError):
+    # V2-P11: after all targets exhaust, malformed JSON is classified as
+    # AIProviderError(INVALID_RESPONSE) rather than leaking raw JSONDecodeError.
+    with pytest.raises(AIProviderError) as excinfo:
         gemini_summary_service._generate_summary("prompt")
+    assert excinfo.value.error_type is AIErrorType.INVALID_RESPONSE
 
 
 def test_product_analysis_malformed_json_advances_fallback_chain(monkeypatch):

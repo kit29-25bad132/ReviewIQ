@@ -45,6 +45,7 @@ from services.cache.config import (
     DEFAULT_AI_CACHE_TTL_RAG_SECONDS,
     DEFAULT_AI_CACHE_TTL_SECONDS,
     DEFAULT_EMBEDDING_CACHE_TTL_SECONDS,
+    DEFAULT_AI_RESPONSE_CACHE_TTL_SECONDS,
     CacheConfig,
 )
 from services.cache.keys import (
@@ -370,7 +371,7 @@ def test_disabled_cache_never_touches_the_store():
         rag_config=_rag(),
         analysis=make_analysis(),
     )
-    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0}
+    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0, "count": 0, "clear": 0, "evict_oldest": 0}
     assert store.rows(RESPONSE_TABLE) == {}
 
 
@@ -383,7 +384,7 @@ def test_default_env_configuration_is_disabled():
     config = CacheConfig.from_env()  # conftest forces both flags off
     assert config.llm_enabled is False
     assert config.embedding_enabled is False
-    assert config.llm_ttl_seconds == DEFAULT_AI_CACHE_TTL_SECONDS
+    assert config.llm_ttl_seconds == DEFAULT_AI_RESPONSE_CACHE_TTL_SECONDS
     assert config.llm_rag_ttl_seconds == DEFAULT_AI_CACHE_TTL_RAG_SECONDS
     assert config.embedding_ttl_seconds == DEFAULT_EMBEDDING_CACHE_TTL_SECONDS
 
@@ -544,7 +545,7 @@ def test_non_rag_write_stores_no_token_and_no_digest():
 
 def test_put_analysis_uses_default_non_rag_ttl():
     store = FakeCacheStore()
-    llm_cache(store).put_analysis(
+    llm_cache(store, ttl_seconds=3600).put_analysis(
         review_text=REVIEW,
         task=TASK_REVIEW_ANALYSIS,
         system_instruction=SYSTEM_INSTRUCTION,
@@ -554,7 +555,7 @@ def test_put_analysis_uses_default_non_rag_ttl():
     )
     row = _only_row(store)
     assert row["expires_at"] - row["created_at"] == timedelta(
-        seconds=DEFAULT_AI_CACHE_TTL_SECONDS
+        seconds=DEFAULT_AI_RESPONSE_CACHE_TTL_SECONDS
     )
 
 
@@ -718,7 +719,7 @@ def test_analyzer_disabled_cache_never_reads_or_writes():
     result = analyzer._call_google_genai(REVIEW)
     assert result is not None
     assert len(provider.requests) == 1
-    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0}
+    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0, "count": 0, "clear": 0, "evict_oldest": 0}
 
 
 def test_analyzer_cache_backend_failure_still_returns_the_analysis():
@@ -998,7 +999,7 @@ def test_summary_disabled_cache_never_touches_the_store(monkeypatch):
     service = _summary_service(monkeypatch, cache, {"gemini": provider})
     service._generate_summary(SUMMARY_PROMPT)
     assert len(provider.requests) == 1
-    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0}
+    assert store.calls == {"get": 0, "get_many": 0, "put": 0, "delete": 0, "corpus_token": 0, "count": 0, "clear": 0, "evict_oldest": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -1165,3 +1166,203 @@ def test_provenance_is_never_returned_through_the_public_result():
     assert "fallback" not in dumped
     assert "cache" not in dumped
     assert "provenance" not in dumped
+
+
+# ---------------------------------------------------------------------------
+# J. 8E: DEBUG-level hit/miss logging, invalidation, clear_all, eviction
+# ---------------------------------------------------------------------------
+
+def test_cache_hit_logged_at_debug(caplog):
+    """A cache hit must be logged at DEBUG level (8E spec)."""
+    store = FakeCacheStore()
+    cache = llm_cache(store)
+    key = _key(cache)
+    store.seed(RESPONSE_TABLE, key, analysis_row(make_analysis()))
+    with caplog.at_level(logging.DEBUG, logger="services.cache"):
+        result = _get_analysis(cache)
+    assert result is not None
+    messages = [r.getMessage() for r in caplog.records]
+    hits = [m for m in messages if m.startswith("LLM cache hit")]
+    assert len(hits) == 1
+    assert hits[0] == f"LLM cache hit ({TASK_REVIEW_ANALYSIS}, key={key[:12]})."
+
+
+def test_cache_miss_logged_at_debug(caplog):
+    """A cache miss must be logged at DEBUG level (8E spec)."""
+    store = FakeCacheStore()
+    cache = llm_cache(store)
+    with caplog.at_level(logging.DEBUG, logger="services.cache"):
+        result = _get_analysis(cache)
+    assert result is None
+    messages = [r.getMessage() for r in caplog.records]
+    misses = [m for m in messages if m.startswith("LLM cache miss")]
+    assert len(misses) >= 1
+    assert all(m.startswith("LLM cache miss") for m in misses)
+
+
+def test_cache_write_stays_at_info(caplog):
+    """Cache writes stay at INFO (8E: only hit/miss move to DEBUG)."""
+    store = FakeCacheStore()
+    cache = llm_cache(store)
+    with caplog.at_level(logging.DEBUG, logger="services.cache"):
+        cache.put_analysis(
+            review_text=REVIEW,
+            task=TASK_REVIEW_ANALYSIS,
+            system_instruction=SYSTEM_INSTRUCTION,
+            temperature=ANALYSIS_TEMPERATURE,
+            rag_config=_rag(),
+            analysis=make_analysis(),
+        )
+    info_messages = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.INFO and "LLM cache write" in r.getMessage()
+    ]
+    assert len(info_messages) == 1
+
+
+def test_invalidate_removes_entry_by_key():
+    store = FakeCacheStore()
+    cache = llm_cache(store)
+    key = _key(cache)
+    store.seed(RESPONSE_TABLE, key, analysis_row(make_analysis()))
+    assert _get_analysis(cache) is not None
+    assert store.count(RESPONSE_TABLE) == 1
+    cache.invalidate(key)
+    assert store.count(RESPONSE_TABLE) == 0
+    assert _get_analysis(cache) is None
+
+
+def test_invalidate_missing_key_is_safe_noop():
+    store = FakeCacheStore()
+    cache = llm_cache(store)
+    cache.invalidate("nonexistent-key-1234567890abcdef1234567890abcdef")
+    assert store.count(RESPONSE_TABLE) == 0
+
+
+def test_clear_all_removes_every_entry():
+    store = FakeCacheStore()
+    cache = llm_cache(store)
+    key_a = _key(cache, review_text=REVIEW)
+    key_b = _key(cache, review_text="A different review text entirely.")
+    store.seed(RESPONSE_TABLE, key_a, analysis_row(make_analysis()))
+    store.seed(RESPONSE_TABLE, key_b, analysis_row(make_analysis()))
+    assert store.count(RESPONSE_TABLE) == 2
+    deleted = cache.clear_all()
+    assert deleted == 2
+    assert store.count(RESPONSE_TABLE) == 0
+    assert _get_analysis(cache) is None
+
+
+def test_clear_all_returns_zero_on_empty_cache():
+    store = FakeCacheStore()
+    cache = llm_cache(store)
+    assert cache.clear_all() == 0
+
+
+def test_max_entries_evicts_oldest():
+    """When the cache exceeds max_entries, the oldest entries are evicted."""
+    store = FakeCacheStore()
+    small_cache = llm_cache(store, max_entries=2)
+    key_a = _key(small_cache, review_text="review A")
+    key_b = _key(small_cache, review_text="review B")
+    key_c = _key(small_cache, review_text="review C")
+    store.seed(RESPONSE_TABLE, key_a, analysis_row(make_analysis()))
+    store.seed(RESPONSE_TABLE, key_b, analysis_row(make_analysis()))
+    store.seed(RESPONSE_TABLE, key_c, analysis_row(make_analysis()))
+    assert store.count(RESPONSE_TABLE) == 3
+    # Evict oldest 1 (review A was written first).
+    evicted = store.evict_oldest(RESPONSE_TABLE, 1)
+    assert evicted == 1
+    assert store.count(RESPONSE_TABLE) == 2
+    assert key_a not in store.rows(RESPONSE_TABLE)
+    assert key_b in store.rows(RESPONSE_TABLE)
+    assert key_c in store.rows(RESPONSE_TABLE)
+
+
+def test_put_analysis_enforces_max_entries():
+    """After put_analysis, the cache must not exceed max_entries."""
+    store = FakeCacheStore()
+    small_cache = llm_cache(store, max_entries=2)
+    small_cache.put_analysis(
+        review_text="review A",
+        task=TASK_REVIEW_ANALYSIS,
+        system_instruction=SYSTEM_INSTRUCTION,
+        temperature=ANALYSIS_TEMPERATURE,
+        rag_config=_rag(),
+        analysis=make_analysis(),
+    )
+    small_cache.put_analysis(
+        review_text="review B",
+        task=TASK_REVIEW_ANALYSIS,
+        system_instruction=SYSTEM_INSTRUCTION,
+        temperature=ANALYSIS_TEMPERATURE,
+        rag_config=_rag(),
+        analysis=make_analysis(),
+    )
+    small_cache.put_analysis(
+        review_text="review C",
+        task=TASK_REVIEW_ANALYSIS,
+        system_instruction=SYSTEM_INSTRUCTION,
+        temperature=ANALYSIS_TEMPERATURE,
+        rag_config=_rag(),
+        analysis=make_analysis(),
+    )
+    assert store.count(RESPONSE_TABLE) == 2
+    # The oldest entry (review A) should be evicted.
+    keys = list(store.rows(RESPONSE_TABLE).keys())
+    assert len(keys) == 2
+    assert all("review A" not in k for k in keys)  # key material hashes review text
+
+
+def test_cache_config_reads_new_env_var():
+    """CacheConfig.from_env() reads AI_RESPONSE_CACHE_TTL_SECONDS."""
+    import os as _os
+    _os.environ["AI_RESPONSE_CACHE_TTL_SECONDS"] = "1800"
+    try:
+        config = CacheConfig.from_env()
+        assert config.llm_ttl_seconds == 1800
+    finally:
+        _os.environ.pop("AI_RESPONSE_CACHE_TTL_SECONDS")
+
+
+def test_cache_config_reads_max_entries_env_var():
+    """CacheConfig.from_env() reads AI_RESPONSE_CACHE_MAX_ENTRIES."""
+    import os as _os
+    _os.environ["AI_RESPONSE_CACHE_MAX_ENTRIES"] = "500"
+    try:
+        config = CacheConfig.from_env()
+        assert config.max_entries == 500
+    finally:
+        _os.environ.pop("AI_RESPONSE_CACHE_MAX_ENTRIES")
+
+
+def test_cache_config_legacy_ttl_fallback():
+    """When AI_RESPONSE_CACHE_TTL_SECONDS is unset, fall back to AI_CACHE_TTL_SECONDS."""
+    import os as _os
+    _os.environ["AI_CACHE_TTL_SECONDS"] = "900"
+    _os.environ.pop("AI_RESPONSE_CACHE_TTL_SECONDS", None)
+    try:
+        config = CacheConfig.from_env()
+        assert config.llm_ttl_seconds == 900
+    finally:
+        _os.environ.pop("AI_CACHE_TTL_SECONDS")
+
+
+def test_cache_config_new_var_takes_precedence_over_legacy():
+    """When both vars are set, AI_RESPONSE_CACHE_TTL_SECONDS wins."""
+    import os as _os
+    _os.environ["AI_RESPONSE_CACHE_TTL_SECONDS"] = "1200"
+    _os.environ["AI_CACHE_TTL_SECONDS"] = "900"
+    try:
+        config = CacheConfig.from_env()
+        assert config.llm_ttl_seconds == 1200
+    finally:
+        _os.environ.pop("AI_RESPONSE_CACHE_TTL_SECONDS")
+        _os.environ.pop("AI_CACHE_TTL_SECONDS")
+
+
+def test_default_max_entries_is_1000():
+    """CacheConfig default max_entries is 1000 (8E spec)."""
+    config = CacheConfig()
+    assert config.max_entries == 1000
