@@ -141,10 +141,60 @@ Use the actual variable names referenced by the current code and deployment conf
 |---|---|---|
 | `VITE_API_BASE_URL` | Vercel frontend | Public base URL for the backend API |
 | `GEMINI_API_KEY` | Render backend | Authentication for Gemini API calls |
-| `DATABASE_URL` or the database variable expected by the code | Render backend | Supabase PostgreSQL connection string |
-| CORS allowed origins setting, if supported by the backend | Render backend | Allow requests from the deployed Vercel origin |
+| `DATABASE_URL` (first) / `SUPABASE_DB_URL` (fallback) | Render backend | Direct Postgres (Supabase) connection string |
+| `ALLOWED_ORIGINS` | Render backend | Allowed CORS origins — see [CORS and production origins](#cors-and-production-origins) below |
 
-**Do not assume `DATABASE_URL` is the exact variable name:** inspect the current database configuration code and set the variable it actually reads. Use the appropriate Supabase connection string and SSL settings for the chosen connection mode. Keep all secrets in Vercel/Render environment settings, never in committed files.
+**Variable names verified against the current code:** the backend reads `DATABASE_URL` first and falls back to `SUPABASE_DB_URL`, and CORS reads `ALLOWED_ORIGINS`. The complete list of backend variables with defaults is documented under [CORS and production origins](#cors-and-production-origins) below. Use the appropriate Supabase connection string and SSL settings for the chosen connection mode. Keep all secrets in Vercel/Render environment settings, never in committed files.
+
+### CORS and production origins
+
+The backend allows cross-origin browser requests based on the `ALLOWED_ORIGINS` environment variable (`backend/main.py`):
+
+- **Default (development):** loopback origins only — `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:5174`, `http://127.0.0.1:5174`, `http://localhost:3000`, `http://127.0.0.1:3000` — plus a host regex that matches only loopback hosts with any port: `^http://(localhost|127\.0\.0\.1)(:\d+)?$`.
+- **Production:** the deployed frontend origin does not match those loopback defaults, so it must be set explicitly to the actual frontend URL (Render environment setting). Example:
+
+```text
+ALLOWED_ORIGINS=https://reviewiq-final.vercel.app
+```
+
+- The value is a comma-separated list of full origins (scheme + host, no path, no trailing slash). The loopback regex always applies regardless of the list.
+- Preflight (`OPTIONS`) requests are answered by FastAPI's CORS middleware, and its headers also wrap normal and error responses. The frontend sends JSON requests, so every cross-origin call requires a successful preflight.
+
+#### Required backend (Render) environment variables
+
+None of these are required for the process to boot or for `GET /health` to return 200 — each powers a specific feature, so a missing variable degrades or disables that feature instead of blocking startup.
+
+| Variable | Requirement | Purpose / default |
+|---|---|---|
+| `ALLOWED_ORIGINS` | Required in production | Comma-separated allowed CORS origins (default: loopback development origins only) |
+| `DATABASE_URL` | Required for DB-backed features | Direct Postgres connection string (checked first) |
+| `SUPABASE_DB_URL` | Optional | Fallback connection string used only when `DATABASE_URL` is unset |
+| `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | At least one required for any AI feature | Provider keys in fallback order (Gemini → Groq → OpenRouter); unconfigured providers are skipped |
+| `GEMINI_MODEL` | Optional | Primary Gemini model override (default: `gemini-3.8-flash`) |
+| `ROUTING_STRATEGY` | Optional | `gemini_first` (default) or `cost_aware` |
+| `AI_REQUEST_TIMEOUT_SECONDS` | Optional | Per-request AI timeout in seconds (default: `30`) |
+| `RETRY_MAX_ATTEMPTS`, `RETRY_BASE_DELAY_SECONDS`, `RETRY_MAX_DELAY_SECONDS`, `RETRY_JITTER` | Optional | Bounded retry tuning (defaults: `2`, `0.5`, `8`, `true`) |
+| `EMBEDDING_MODEL`, `EMBEDDING_DIMENSION`, `EMBEDDING_BATCH_SIZE` | Optional (embeddings) | Defaults: `gemini-embedding-001`, `768`, `100`; dimension must match the pgvector column |
+| `RAG_ENABLED` plus RAG context settings | Optional (analysis RAG) | Disabled by default; see `backend/.env.example` |
+| `RAG_INTELLIGENCE_ENABLED` | Optional | Phase 5 pros/cons grounding RAG (default: enabled) |
+| `LLM_CACHE_ENABLED`, `EMBEDDING_CACHE_ENABLED` plus cache TTLs | Optional | Postgres-backed result caches, disabled by default |
+| `PRODUCT_ANALYSIS_CACHE_TTL_SECONDS`, `PRODUCT_ANALYSIS_CACHE_MAX_ENTRIES` | Optional | In-memory product-analysis cache (defaults: `3600` seconds, `500` entries) |
+| `HOST`, `PORT` | Optional | Bind address (defaults: `127.0.0.1`, `8000`) |
+
+The full commented template with defaults lives in `backend/.env.example`. Frontend-side variables (`VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` / `VITE_SUPABASE_PUBLISHABLE_KEY`) are set in Vercel, never here.
+
+#### What `/health` checks — and what it does not
+
+| `/health` checks (200 OK means...) | `/health` does NOT check |
+|---|---|
+| The API process is reachable | Postgres/DSN validity — a database-backed request can still fail |
+| The reported app `version` | Schema, migrations, extensions, required tables |
+| `ai_provider`: which provider **keys are configured** (environment presence only) | Whether provider credentials are valid, quota remains, or a model responds |
+| `ai_configured`: at least one provider key is present | Embeddings, pgvector, and the retrieval index |
+| — | The evaluation cache and dataset files |
+| — | Frontend Supabase browser configuration |
+
+**Warning:** a `200` from `/health` proves only that the process is up and configuration is present — it does **not** prove that database-backed product search, RAG, AI analysis, or any other feature works. Verify the actual database-backed routes end-to-end (see [Testing and verification](#testing-and-verification)).
 
 ## Run locally
 

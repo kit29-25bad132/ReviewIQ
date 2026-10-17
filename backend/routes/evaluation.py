@@ -17,7 +17,7 @@ def get_evaluation(source: Optional[EvaluationSource] = Query(None, description=
     return evaluation_service.metrics(source=source or "benchmark")
 
 
-@router.post("/run", response_model=EvaluationMetrics, summary="Explicitly run cached Gemini evaluation")
+@router.post("/run", response_model=EvaluationMetrics, summary="Explicitly run AI evaluation")
 def run_evaluation(limit: int | None = Query(None, ge=1, le=4915), reanalyze: bool = False, source: Optional[EvaluationSource] = Query(None, description="Evaluation source ('benchmark' or 'canonical'). Omitted means benchmark.")):
     try:
         return evaluation_service.run(limit=limit, reanalyze=reanalyze, source=source or "benchmark")

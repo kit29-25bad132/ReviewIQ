@@ -248,7 +248,7 @@ export const ProductInsights: React.FC<ProductInsightsProps> = ({
                 <h3 className="text-sm font-bold text-slate-900">AI Intelligence Core</h3>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                ReviewIQ analyzes dataset-derived sentiment using grounded Google Gemini and Groq AI models. Scores are derived from the canonical review dataset.
+                ReviewIQ analyzes dataset-derived sentiment using grounded AI models selected from the configured providers. Scores are derived from the canonical review dataset.
               </p>
               <div className="space-y-2.5 pt-2 text-xs">
                 <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">

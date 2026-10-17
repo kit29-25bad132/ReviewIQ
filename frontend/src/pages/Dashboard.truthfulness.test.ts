@@ -54,11 +54,18 @@ describe('Dashboard hero preview truthfulness (Gate 1)', () => {
   });
 
   it('shows a truthful loading state instead of placeholder metrics', () => {
-    expect(html).toContain('Featured dataset product');
-    expect(html).toContain('Loading featured product analysis');
+    // The Phase 5/7 home layout replaced the old featured-product panel; its
+    // stats tiles and feeds now start as explicit placeholders/loading copy.
+    expect(html).toContain('Products Analyzed');
+    expect(html).toContain('No data available');
+    expect(html).toContain('Loading canonical dataset reviews...');
   });
 
   it('uses provider-neutral wording while provider identity is unavailable', () => {
     expect(html).not.toContain('Gemini');
+    expect(html).not.toContain('Groq');
+    expect(html).not.toContain('Llama');
+    expect(html).not.toContain('gemini-3.8-flash');
+    expect(html).not.toContain('OSS 120B');
   });
 });

@@ -1,5 +1,12 @@
-"""Phase 5: Product / retrieval API coverage (mocked services, offline)."""
+"""Product API coverage on the current canonical-catalog architecture (offline).
 
+Covers search, analysis, pros/cons, theme reviews, recommendations, reviews,
+and the Phase 4 AI-summary truthfulness contract using mocked services only.
+"""
+
+import inspect
+import sys
+from unittest import mock
 from unittest.mock import patch
 
 import pytest
@@ -17,7 +24,10 @@ from models.ecommerce import (
     ReviewsPaginationResponse,
     UserRequirementRequest,
 )
+from services.ai.errors import AIErrorType, AIProviderError
+from services.ai_analyzer import _build_model_list, analyzer_service
 from services.catalog.catalog_service import canonical_catalog
+import services.gemini_summary_service as summary_module
 from services.gemini_summary_service import gemini_summary_service
 from services.pros_cons_service import pros_cons_service
 from services.recommendation_service import recommendation_service
@@ -309,11 +319,6 @@ def test_product_analysis_unexpected_exception_returns_safe_500():
 
 def test_ai_summary_uses_canonical_verified_model_pool(monkeypatch):
     """AI summary attempts models via _build_model_list (analyzer-verified pool)."""
-    import sys
-    from unittest import mock
-
-    from services.ai_analyzer import _build_model_list
-
     attempted: list = []
 
     class _Resp:
@@ -355,14 +360,32 @@ def test_ai_summary_uses_canonical_verified_model_pool(monkeypatch):
 # safe messages — never as canned success-shaped summary text.
 # ---------------------------------------------------------------------------
 
-from services.ai.errors import AIErrorType, AIProviderError  # noqa: E402
-
 
 def _summary_patches():
+    """Route preconditions on the current canonical-catalog architecture:
+    catalog configured, product 9640962 present, and one real review row so
+    the route reaches the summary service call."""
     return (
-        patch.object(ecommerce_db_service, "is_ready", return_value=True),
-        patch.object(ecommerce_db_service, "get_product_analysis", return_value=ANALYSIS),
-        patch.object(ecommerce_db_service, "get_sample_reviews", return_value=["Great brush"]),
+        patch.object(canonical_catalog, "is_configured", return_value=True),
+        patch.object(
+            canonical_catalog, "get_product_statistics", return_value=_canonical_stats()
+        ),
+        patch.object(
+            canonical_catalog,
+            "get_reviews",
+            return_value=(
+                [
+                    {
+                        "source_review_id": "R1",
+                        "source_product_id": "9640962",
+                        "review_text": "Great brush",
+                        "rating": 5,
+                        "sentiment": "positive",
+                    }
+                ],
+                1,
+            ),
+        ),
     )
 
 
@@ -417,8 +440,6 @@ def test_ai_summary_invalid_output_returns_safe_400():
 
 def test_ai_summary_unconfigured_service_raises_honest_error():
     """Missing configuration is an honest CONFIGURATION failure, not text."""
-    from services.ai_analyzer import analyzer_service
-
     with patch.object(analyzer_service, "is_configured", return_value=False):
         with pytest.raises(AIProviderError) as exc_info:
             gemini_summary_service.summarize_product_reviews(
@@ -440,10 +461,6 @@ def test_ai_summary_empty_reviews_returns_truthful_empty_state():
 def test_ai_summary_service_contains_no_canned_fallback_text():
     """Static canary: the fabricated fallback strings must not exist anywhere
     in the service module (they cannot be relocated, either)."""
-    import inspect
-
-    import services.gemini_summary_service as summary_module
-
     source = inspect.getsource(summary_module)
     assert "Analysis based on" not in source
     assert "Full reviews listed below" not in source

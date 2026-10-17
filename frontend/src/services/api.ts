@@ -62,7 +62,10 @@ export interface HealthStatus {
  */
 function formatApiErrorMessage(payload: unknown): string | null {
   if (typeof payload === 'string') {
-    return payload.length > 0 ? payload : null;
+    // Whitespace-only details carry no message; trim before testing so a
+    // blank or padded string can never surface as the rendered error.
+    const trimmed = payload.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
   if (Array.isArray(payload)) {
     const messages = payload
@@ -255,7 +258,7 @@ export async function searchProducts(
 }
 
 /**
- * Retrieves complete canonical dataset statistics and grounded Gemini AI analysis for a product.
+ * Retrieves complete canonical dataset statistics and grounded AI analysis for a product.
  */
 export async function getProductAnalysis(
   productId: string,
@@ -276,7 +279,7 @@ export async function getProductAnalysis(
 }
 
 /**
- * Explicitly requests complete grounded Gemini AI analysis and factual dataset metrics for a product.
+ * Explicitly requests complete grounded AI analysis and factual dataset metrics for a product.
  */
 export async function analyzeProduct(
   productId: string,
@@ -527,7 +530,10 @@ export async function getEvaluation(signal?: AbortSignal): Promise<EvaluationMet
 }
 
 /**
- * Triggers AI evaluation over a subset of canonical dataset reviews.
+ * Triggers an AI evaluation run over a subset of benchmark dataset reviews.
+ * The request deliberately omits `source`, so the backend defaults to the
+ * benchmark CSV dataset; only records lacking a valid cached prediction are
+ * analyzed (results are cached server-side to avoid redundant calls).
  */
 export async function runEvaluation(
   limit: number = 10,

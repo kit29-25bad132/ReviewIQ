@@ -43,6 +43,17 @@ const POPULAR_PRIORITIES = [
   'Fast Shipping',
 ];
 
+/**
+ * Presentation tone for a priority-match evidence level. Only the backend's
+ * documented "Strong Evidence" value receives the positive treatment;
+ * "No Direct Evidence", "Moderate Evidence", and any unknown/missing value
+ * are rendered as a neutral state and never promoted to a positive or
+ * verified-looking state. (Gate 3)
+ */
+export const evidenceTone = (
+  evidenceLevel: string | null | undefined
+): 'strong' | 'neutral' => (evidenceLevel === 'Strong Evidence' ? 'strong' : 'neutral');
+
 export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProps> = ({
   productId,
   productTitle,
@@ -136,7 +147,7 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
             <span>Personalized Suitability & Recommendation Engine</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Evaluate product fit and explore alternative peer recommendations grounded strictly in verified buyer reviews.
+            Evaluate product fit and explore alternative peer recommendations grounded strictly in canonical dataset reviews.
           </p>
         </div>
 
@@ -385,8 +396,14 @@ export const PersonalizedRecommendation: React.FC<PersonalizedRecommendationProp
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-bold text-slate-800">{pm.priority}</span>
-                          <span className="rounded-md px-2 py-0.5 text-[10px] uppercase font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                            {pm.evidence_level}
+                          <span
+                            className={`rounded-md px-2 py-0.5 text-[10px] uppercase font-bold border ${
+                              evidenceTone(pm.evidence_level) === 'strong'
+                                ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
+                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}
+                          >
+                            {pm.evidence_level?.trim() || 'No Evidence Reported'}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-600 leading-relaxed">{pm.details}</p>

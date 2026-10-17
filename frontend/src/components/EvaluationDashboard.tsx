@@ -53,7 +53,10 @@ export const EvaluationDashboard: React.FC = () => {
       setError(
         err.response?.data?.detail ||
           err.message ||
-          'Failed to run evaluation. Please verify Gemini API key in backend/.env'
+          // Gate 11: provider-neutral fallback — most run failures (timeout,
+          // network, dataset, generic backend errors) have nothing to do with a
+          // single provider's API key, so never attribute them to one.
+          'Failed to run evaluation. Please check the backend configuration and try again.'
       );
     } finally {
       setRunning(false);
@@ -94,7 +97,7 @@ export const EvaluationDashboard: React.FC = () => {
               AI Model Evaluation & Benchmarking
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Quantify Gemini's predicted rating and sentiment accuracy against real ground-truth Amazon reviews.
+              Quantify the AI model's predicted rating and sentiment accuracy against real ground-truth Amazon reviews.
             </p>
           </div>
 
@@ -134,7 +137,7 @@ export const EvaluationDashboard: React.FC = () => {
               {running ? (
                 <>
                   <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  <span>Evaluating with Gemini...</span>
+                  <span>Evaluating...</span>
                 </>
               ) : (
                 <>
@@ -150,7 +153,7 @@ export const EvaluationDashboard: React.FC = () => {
         <div className="flex items-start gap-2.5 rounded-xl border border-indigo-500/20 bg-indigo-950/20 p-3.5 text-xs text-indigo-300">
           <Info className="h-4 w-4 shrink-0 text-indigo-400 mt-0.5" />
           <div className="leading-relaxed">
-            <strong>Evaluation Pipeline:</strong> Evaluates dataset reviews through Gemini AI structured output.
+            <strong>Evaluation Pipeline:</strong> Evaluates dataset reviews through AI structured output.
             Actual ground truth rating from Kaggle is compared directly against AI predicted rating (1–5) and sentiment. Results are cached locally in <code className="font-mono bg-indigo-950/80 px-1 py-0.5 rounded">backend/evaluation_results/</code> to avoid redundant API calls.
           </div>
         </div>
@@ -176,7 +179,7 @@ export const EvaluationDashboard: React.FC = () => {
           </div>
           <h3 className="text-sm font-semibold text-slate-300">Evaluation not run yet</h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            No cached evaluation records found. Click <strong className="text-purple-400">"Run AI Evaluation"</strong> above to benchmark Gemini on a sample of canonical dataset reviews.
+            No cached evaluation records found. Click <strong className="text-purple-400">"Run AI Evaluation"</strong> above to benchmark the AI analysis pipeline on a sample of benchmark dataset reviews.
           </p>
         </div>
       ) : (
@@ -297,7 +300,7 @@ export const EvaluationDashboard: React.FC = () => {
                 </p>
                 <div className="mt-4 space-y-2 text-xs text-slate-400">
                   <p>
-                    • <strong>Exact Star Accuracy:</strong> Percentage of reviews where Gemini's rating exactly matches the customer's submitted rating.
+                    • <strong>Exact Star Accuracy:</strong> Percentage of reviews where the AI's rating exactly matches the customer's submitted rating.
                   </p>
                   <p>
                     • <strong>MAE (Mean Absolute Error):</strong> Average star deviation. An MAE of 0.2 means AI predictions deviate by only 0.2 stars on average.

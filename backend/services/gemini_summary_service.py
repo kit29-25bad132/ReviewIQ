@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from models.ecommerce import AISummaryResponse, ProductAnalysisResponse
 from pydantic import BaseModel, Field
 from services.ai.contracts import AIGenerationRequest, ModelRef
-from services.ai.errors import AIProviderError
+from services.ai.errors import AIErrorType, AIProviderError
 from services.ai.registry import GEMINI_PROVIDER, TASK_DATASET_SUMMARY
 from services.ai.routing import (
     build_target_chain,
@@ -47,7 +47,7 @@ Strict Rules:
 3. common_pros: List 2-5 positive points repeatedly mentioned by customers in these reviews.
 4. common_cons: List 2-5 negative complaints or issues repeatedly mentioned by customers. If no cons are mentioned, return [].
 5. key_themes: List 3-6 key attributes discussed (e.g., "Build Quality", "Battery Life", "Value for Money", "Ease of Use").
-6. source_label: Must be exactly "Summary generated from dataset reviews".
+6. source_label: For a successful grounded summary, must be exactly "Summary generated from dataset reviews". (When no reviews are available the service returns "No reviews available in the dataset for this product", and when generation or parsing fails it returns "AI summary unavailable".)
 7. Return strictly structured JSON matching the requested schema.
 """
 
@@ -183,22 +183,24 @@ class GeminiSummaryService:
         self, product_title: str, category: Optional[str], sample_reviews: List[str]
     ) -> AISummaryResponse:
         if not sample_reviews:
+            # Explicit empty state: genuinely no source records. The label
+            # must not claim a summary was generated from reviews.
+            # (Gate 2, Phase 4)
             return AISummaryResponse(
-                summary="Insufficient review data available for this product.",
+                summary="No customer reviews are available in the dataset for this product.",
                 common_pros=[],
                 common_cons=[],
                 key_themes=[],
-                source_label="Summary generated from dataset reviews",
+                source_label="No reviews available in the dataset for this product",
             )
 
         if not analyzer_service.is_configured():
-            # Clean fallback when no AI provider key is configured
-            return AISummaryResponse(
-                summary=f"Analysis based on {len(sample_reviews)} reviews in the dataset. Configure GEMINI_API_KEY (or GROQ_API_KEY / OPENROUTER_API_KEY) in backend/.env for AI executive insights.",
-                common_pros=[],
-                common_cons=[],
-                key_themes=[category] if category else [],
-                source_label="Summary generated from dataset reviews",
+            # Gate 2 (Phase 4): a missing provider configuration is a real
+            # failure and must propagate as one — never converted into
+            # fabricated success-shaped summary text.
+            raise AIProviderError(
+                "AI summary unavailable: no provider API key is configured.",
+                AIErrorType.CONFIGURATION,
             )
 
         # Build prompt with exact reviews (limit to 20 representative items)
@@ -225,12 +227,19 @@ Synthesize these dataset reviews according to your system instructions into stru
                 type(exc).__name__,
                 sha256_hex(str(exc))[:12],
             )
+            # Gate 2 (Phase 4, reconciled with ADR-012): a failed generation is
+            # reported as an explicit unavailable state — never as canned text
+            # pretending an AI analysis succeeded, and the source label states
+            # plainly that no AI summary was generated.
             return AISummaryResponse(
-                summary=f"Analysis of {len(sample_reviews)} dataset reviews available for {product_title}.",
+                summary=(
+                    "The AI summary could not be generated for this product. "
+                    "No AI-generated content is available."
+                ),
                 common_pros=[],
                 common_cons=[],
-                key_themes=[category] if category else [],
-                source_label="Summary generated from dataset reviews",
+                key_themes=[],
+                source_label="AI summary unavailable",
             )
 
     def generate_product_analysis(
@@ -253,14 +262,13 @@ Synthesize these dataset reviews according to your system instructions into stru
             )
 
         if not analyzer_service.is_configured():
-            return AIStructuredProductAnalysis(
-                product_id=product_id,
-                product_title=product_title,
-                summary=f"Analysis based on {len(sample_reviews)} database customer reviews for {product_title}.",
-                pros=[],
-                cons=[],
-                insights=[],
-                evidence=[],
+            # Gate 2 (Phase 4): a missing provider configuration is a real
+            # failure and must propagate as one — never converted into
+            # fabricated success-shaped analysis text. The /analysis route
+            # already catches this and marks ai_available=False.
+            raise AIProviderError(
+                "Product analysis unavailable: no provider API key is configured.",
+                AIErrorType.CONFIGURATION,
             )
 
         gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
@@ -317,8 +325,9 @@ Synthesize ONLY these supplied reviews according to your system instructions int
         """V2-P11 wrapper: one consolidated ``ai_request_outcome`` event per
         pipeline run (success AND final failure) in ``finally``, with fixed
         safe metadata only (ADR-012). Emission failures never break the
-        request. Configuration/empty-input early returns in
-        ``summarize_product_reviews`` run no AI pipeline and emit no event.
+        request. Configuration failures and empty-input early returns in
+        ``summarize_product_reviews`` raise/return before any AI pipeline
+        runs and emit no event.
         """
         started = time.perf_counter()
         outcome: Dict[str, Any] = {

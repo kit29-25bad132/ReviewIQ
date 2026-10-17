@@ -37,11 +37,15 @@ describe('ProductInsights truthfulness (Gate 1)', () => {
     expect(html).not.toContain('Loading Product...');
   });
 
-  it('shows an explicit empty state until a product is loaded', () => {
-    expect(html).toContain('No product selected');
+  it('shows an explicit loading state until real metrics are loaded', () => {
+    // The Phase 7 rewrite replaced the product panel with dataset analytics;
+    // until the fetch resolves the page must show an explicit loading state,
+    // never seeded or fabricated metrics.
+    expect(html).toContain('Aggregating live dataset metrics from database...');
   });
 
   it('uses provider-neutral wording', () => {
     expect(html).not.toContain('Gemini');
+    expect(html).not.toContain('Groq');
   });
 });

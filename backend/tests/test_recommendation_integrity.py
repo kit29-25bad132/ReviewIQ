@@ -1,14 +1,13 @@
 """Gate 2 (Phase 4): recommendation claim integrity.
 
-Uses an in-memory SQLite database and patched peer discovery (no writes to
-any real database, no live providers). Proves that:
+Uses mocked canonical-catalog statistics and patched peer discovery (no
+writes to any real database, no live providers). Proves that:
 - the selected product's metrics are associated with the correct product;
 - no uncomputed peer-average claim is emitted (the average IS computed);
 - ranking/confidence wording only appears when supported by a computation;
 - previously unsupported phrases are gone.
 """
 
-import sqlite3
 from unittest.mock import patch
 
 from models.ecommerce import (
@@ -17,7 +16,7 @@ from models.ecommerce import (
     ProductSummary,
     UserRequirementRequest,
 )
-from services.ecommerce_db_service import ecommerce_db_service
+from services.catalog.catalog_service import canonical_catalog
 from services.pros_cons_service import pros_cons_service
 from services.recommendation_service import recommendation_service
 
@@ -31,21 +30,31 @@ UNSUPPORTED_PHRASES = (
 )
 
 
-def _make_connection(products):
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.execute(
-        """
-        CREATE TABLE products (
-            product_id TEXT, product_title TEXT, category TEXT,
-            review_count INTEGER, average_rating REAL,
-            positive_count INTEGER, neutral_count INTEGER, negative_count INTEGER
-        )
-        """
-    )
-    conn.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?, ?)", products)
-    conn.commit()
-    return conn
+def _catalog_stats(
+    product_id, title, average_rating, positive, neutral, negative, total=100
+):
+    return {
+        "product": {
+            "id": product_id,
+            "source_product_id": product_id,
+            "product_title": title,
+            "category": "Category",
+        },
+        "total_reviews": total,
+        "average_rating": average_rating,
+        "rating_distribution": {
+            "star_1": 0,
+            "star_2": 0,
+            "star_3": 0,
+            "star_4": 0,
+            "star_5": 0,
+        },
+        "sentiment_distribution": {
+            "positive": positive,
+            "neutral": neutral,
+            "negative": negative,
+        },
+    }
 
 
 def _pros_cons_fixture():
@@ -76,10 +85,10 @@ def _pros_cons_fixture():
 
 # P1 (selected): 4.0★, 50/30/20 of 100 -> composite 4.0*0.6 + 0.50*0.4 = 2.60
 # P2 (peer):     4.5★, 80/10/10 of 100 -> composite 4.5*0.6 + 0.80*0.4 = 3.02
-_PRODUCTS = [
-    ("P1", "Selected Product", "Category", 100, 4.0, 50, 30, 20),
-    ("P2", "Peer Product", "Category", 100, 4.5, 80, 10, 10),
-]
+_PRODUCTS_STATS = {
+    "P1": _catalog_stats("P1", "Selected Product", 4.0, 50, 30, 20),
+    "P2": _catalog_stats("P2", "Peer Product", 4.5, 80, 10, 10),
+}
 
 _PEER = ProductSummary(
     product_id="P2",
@@ -90,17 +99,21 @@ _PEER = ProductSummary(
 )
 
 
-def _generate(products=_PRODUCTS):
-    conn = _make_connection(products)
-    with patch.object(ecommerce_db_service, "is_ready", return_value=True), patch.object(
-        ecommerce_db_service, "_get_connection", return_value=conn
+def _generate(stats_by_id=None, priorities=("Battery Life",)):
+    stats_by_id = _PRODUCTS_STATS if stats_by_id is None else stats_by_id
+    with patch.object(canonical_catalog, "is_configured", return_value=True), patch.object(
+        canonical_catalog, "get_product_by_id", return_value=stats_by_id["P1"]["product"]
+    ), patch.object(
+        canonical_catalog,
+        "get_product_statistics",
+        side_effect=lambda pid: stats_by_id.get(str(pid)),
     ), patch.object(
         recommendation_service, "get_similar_products", return_value=[_PEER]
     ), patch.object(
         pros_cons_service, "analyze_product_pros_cons", return_value=_pros_cons_fixture()
     ):
         return recommendation_service.generate_recommendation(
-            "P1", UserRequirementRequest(priorities=["Battery Life"])
+            "P1", UserRequirementRequest(priorities=list(priorities))
         )
 
 
@@ -139,11 +152,11 @@ def test_verdict_describes_the_computed_composite_measure():
 
 def test_selected_product_ranking_verdict_when_it_actually_wins():
     # P1: 5.0★, 100% positive -> composite 3.40 > P2's 3.02.
-    products = [
-        ("P1", "Selected Product", "Category", 100, 5.0, 100, 0, 0),
-        ("P2", "Peer Product", "Category", 100, 4.5, 80, 10, 10),
-    ]
-    result = _generate(products)
+    products = {
+        "P1": _catalog_stats("P1", "Selected Product", 5.0, 100, 0, 0),
+        "P2": _catalog_stats("P2", "Peer Product", 4.5, 80, 10, 10),
+    }
+    result = _generate(stats_by_id=products)
     assert "ranks highest on the computed composite score" in result.suitability_verdict
     assert result.recommendation_headline.startswith("'Selected Product'")
 
@@ -158,17 +171,7 @@ def test_matched_priority_reports_sample_projected_estimate():
 
 
 def test_unmatched_priority_reports_no_evidence_instead_of_fabricated_alignment():
-    conn = _make_connection(_PRODUCTS)
-    with patch.object(ecommerce_db_service, "is_ready", return_value=True), patch.object(
-        ecommerce_db_service, "_get_connection", return_value=conn
-    ), patch.object(
-        recommendation_service, "get_similar_products", return_value=[_PEER]
-    ), patch.object(
-        pros_cons_service, "analyze_product_pros_cons", return_value=_pros_cons_fixture()
-    ):
-        result = recommendation_service.generate_recommendation(
-            "P1", UserRequirementRequest(priorities=["Quantum Zzz"])
-        )
+    result = _generate(priorities=("Quantum Zzz",))
     match = result.priority_matches[0]
     # Previously: "Moderate Evidence" + "General customer satisfaction aligns
     # with this requirement." — a fabricated alignment claim.

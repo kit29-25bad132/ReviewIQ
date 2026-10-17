@@ -113,7 +113,13 @@ class ProsConsService:
                         matching_rows.append(row)
 
             if matching_rows:
-                # Extrapolate count proportionally if sample pool is smaller than total reviews
+                # Projection methodology (unchanged; now documented):
+                #   scaling_factor = total_reviews / analyzed_pool_size
+                #   estimated_count = max(raw_matches, raw_matches * scaling_factor)
+                #   percentage denominator = total_reviews (the full product
+                #   review pool, NOT the sample).
+                # The result is an ESTIMATE of full-pool mentions derived
+                # from the sampled matches — never a measured full-pool count.
                 scaling_factor = total_reviews / analyzed_pool_size if analyzed_pool_size > 0 else 1.0
                 raw_count = len(matching_rows)
                 estimated_count = max(raw_count, int(raw_count * scaling_factor))
@@ -147,6 +153,9 @@ class ProsConsService:
                         matching_rows.append(row)
 
             if matching_rows:
+                # Same documented projection methodology as pros above: the
+                # count is an ESTIMATE of full-pool mentions, never a measured
+                # full-pool count.
                 scaling_factor = total_reviews / analyzed_pool_size if analyzed_pool_size > 0 else 1.0
                 raw_count = len(matching_rows)
                 estimated_count = max(raw_count, int(raw_count * scaling_factor))
@@ -169,7 +178,11 @@ class ProsConsService:
         cons = cons[:4]
 
         # If no specific themed clusters matched, ground fallback in actual review text from database
+        # (Gate 4 flags: when a fallback aggregate stands in for unmatched
+        # themes, the summary must say so instead of inventing theme names.)
+        pros_from_fallback = False
         if not pros and pos_count > 0:
+            pros_from_fallback = True
             pos_reviews = [r for r in sample_rows if r["sentiment"].lower() == "positive" or r["rating"] >= 4]
             real_examples = [r["review_text"] for r in pos_reviews[:2]]
             real_ids = [r["id"] for r in pos_reviews[:5]]
@@ -183,7 +196,9 @@ class ProsConsService:
                 )
             )
 
+        cons_from_fallback = False
         if not cons and neg_count > 0:
+            cons_from_fallback = True
             neg_reviews = [r for r in sample_rows if r["sentiment"].lower() == "negative" or r["rating"] <= 2]
             real_examples = [r["review_text"] for r in neg_reviews[:2]]
             real_ids = [r["id"] for r in neg_reviews[:5]]
@@ -208,24 +223,51 @@ class ProsConsService:
             "negative": round((neg_count / total_reviews) * 100, 1) if total_reviews else 0.0,
         }
 
-        # Authenticity signals
+        # Source-provenance signals: only statements backed by the actual
+        # computation are reported (Gate 2/Gate 4, Phase 4): the sampled size,
+        # the available pool, and the fact that mention counts are projections
+        # onto that pool. No fabricated detection/correlation claims.
         authenticity_signals = [
-                f"Statistical sample analyzed across {total_reviews:,} canonical dataset reviews.",
-            f"Mean customer rating: {avg_rating} / 5.0 stars ({sentiment_percentages['positive']}% positive feedback).",
-            f"Evidence gathered from {analyzed_pool_size:,} retrieved database reviews.",
+            f"Theme keyword analysis sampled {len(sample_rows):,} of {total_reviews:,} available product reviews; mention counts are projections onto the full pool.",
+            f"Average rating: {avg_rating} / 5.0 across {total_reviews:,} dataset reviews.",
+            f"Sentiment distribution: {sentiment_percentages['positive']}% positive, {sentiment_percentages['neutral']}% neutral, {sentiment_percentages['negative']}% negative.",
         ]
 
         summary_text = (
             f"Based on {total_reviews:,} customer reviews in the database, {product_title} has an average rating of "
             f"{avg_rating} / 5.0 with {sentiment_percentages['positive']}% positive feedback. "
-            f"Customers most frequently praise {', '.join(top_pros) if top_pros else 'its performance'}, "
-            f"while negative feedback focuses on {', '.join(top_cons) if top_cons else 'noted concerns'}."
         )
+        # Never invent theme names when no theme matched (Gate 4): report the
+        # unmatched state plainly, or name only themes actually matched.
+        if top_pros:
+            if pros_from_fallback:
+                summary_text += (
+                    f"No recurring positive themes were matched in the sampled reviews; "
+                    f"overall sentiment aggregates to {', '.join(top_pros)}. "
+                )
+            else:
+                summary_text += f"The most frequently matched positive themes are {', '.join(top_pros)}. "
+        else:
+            summary_text += "No recurring positive themes were matched in the sampled reviews. "
+        if top_cons:
+            if cons_from_fallback:
+                summary_text += (
+                    f"No recurring negative themes were matched in the sampled reviews; "
+                    f"overall sentiment aggregates to {', '.join(top_cons)}."
+                )
+            else:
+                summary_text += f"The most frequently matched negative themes are {', '.join(top_cons)}."
+        else:
+            summary_text += "No recurring negative themes were matched in the sampled reviews."
 
         return ProsConsAnalysisResponse(
             product_id=str(product_id),
             product_title=product_title,
-            total_analyzed_reviews=total_reviews,
+            # Gate 4 (Phase 4): the number of reviews ACTUALLY analyzed (the
+            # sampled rows), which may be far smaller than the available review
+            # pool reported in review_volume — sample size is never conflated
+            # with the full pool.
+            total_analyzed_reviews=len(sample_rows),
             pros=pros,
             cons=cons,
             summary=summary_text,

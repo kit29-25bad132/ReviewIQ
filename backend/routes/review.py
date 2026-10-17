@@ -35,7 +35,7 @@ def _provider_error_message(error_type) -> str:
     "/analyze-review",
     response_model=AnalyzeReviewResponse,
     summary="Analyze a customer review",
-    description="Extracts structured sentiment, star rating (1-5), pros, cons, and summary using Gemini AI.",
+    description="Extracts structured sentiment, star rating (1-5), pros, cons, and summary using AI.",
 )
 async def analyze_review_endpoint(payload: ReviewRequest):
     """
@@ -91,7 +91,7 @@ async def analyze_review_endpoint(payload: ReviewRequest):
         if "quota" in exc_str or "rate limit" in exc_str or "resourceexhausted" in exc_str or "429" in exc_str:
             error_msg = "API rate limit reached. Please try again in a few moments."
         elif "api_key" in exc_str or "auth" in exc_str or "permission" in exc_str or "unauthenticated" in exc_str or "invalid argument" in exc_str or "403" in exc_str or "401" in exc_str:
-            error_msg = "Invalid or unauthenticated Gemini API key. Please check backend/.env"
+            error_msg = "AI provider authentication failed. Please check your API key configuration in backend/.env"
         elif "timeout" in exc_str or "connection" in exc_str or "unavailable" in exc_str:
             error_msg = "Connection to AI service timed out or unavailable. Please verify your network connection."
         else:

@@ -111,7 +111,7 @@ def test_auth_error_categorization_preserved_without_key_material():
         resp = _post()
     assert resp.status_code == 500
     detail = resp.json()["detail"]
-    assert detail == "Invalid or unauthenticated Gemini API key. Please check backend/.env"
+    assert detail == "AI provider authentication failed. Please check your API key configuration in backend/.env"
     assert "AIzaSyActualKeyWouldNotAppear" not in resp.text
 
 

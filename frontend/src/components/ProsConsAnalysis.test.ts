@@ -1,65 +1,100 @@
+import React from 'react';
 import { describe, expect, it } from 'vitest';
-import { estimatedMentionLabel, sampleSizeLabel } from './ProsConsAnalysis';
+import { renderToStaticMarkup } from 'react-dom/server';
 
-describe('estimatedMentionLabel (Gate 1 pros/cons truthfulness)', () => {
-  it('labels extrapolated counts as estimates, never as measured counts', () => {
-    const label = estimatedMentionLabel(1250, 42.3);
+// The ProsConsAnalysis component this file originally covered was
+// intentionally removed by Phase 5 and replaced by the evidence-backed
+// intelligence surface: AspectThemes for recurring-theme mention counts and
+// GroundedClaims for pros/cons. Phase 5 counts are measured over the whole
+// product corpus (no sample projection reaches the UI), so the Gate 1/Gate 3
+// truthfulness assertions below exercise the replacement components.
+import { AspectThemes } from './AspectThemes';
+import { GroundedClaims } from './GroundedClaims';
+import type { AspectResult, ClaimWithEvidence } from '../types/intelligence';
 
-    expect(label).toContain('Estimated mentions');
-    expect(label).toContain('~');
-    expect(label).toContain('% of all reviews');
-    expect(label).not.toContain('Mentioned in');
-    expect(label).not.toContain('verified');
+describe('AspectThemes mention counts (Gate 1 pros/cons truthfulness)', () => {
+  const aspects: AspectResult[] = [
+    {
+      aspect_name: 'battery life',
+      sentiment: 'positive',
+      mention_count: 42,
+      representative_quote: { review_id: 'R-7', excerpt: 'Battery lasts two days.' },
+    },
+  ];
+  const html = renderToStaticMarkup(React.createElement(AspectThemes, { aspects }));
+
+  it('renders theme mentions as the measured count reported by the backend', () => {
+    expect(html).toContain('Mentioned in 42 reviews');
+    // Legacy extrapolated wording must never reappear: counts shown here are
+    // counted over the real corpus, never projected from a sample.
+    expect(html).not.toContain('% of all reviews');
+    expect(html).not.toContain('Estimated mentions');
+  });
+
+  it('attributes every theme to a real review citation', () => {
+    expect(html).toContain('Battery lasts two days.');
+    expect(html).toContain('[R-7]');
+  });
+
+  it('renders no themes at all when the backend found none (no fabricated fallback)', () => {
+    const empty = renderToStaticMarkup(React.createElement(AspectThemes, { aspects: [] }));
+    expect(empty).toBe('');
+    expect(empty).not.toContain('High Price Tag');
+    expect(empty).not.toContain('Mentioned in');
+  });
+
+  it('uses singular wording for a single real mention', () => {
+    const single = renderToStaticMarkup(
+      React.createElement(AspectThemes, {
+        aspects: [
+          {
+            aspect_name: 'screen',
+            sentiment: 'mixed',
+            mention_count: 1,
+            representative_quote: { review_id: 'R-1', excerpt: 'Bright screen.' },
+          },
+        ],
+      })
+    );
+    expect(single).toContain('Mentioned in 1 review');
+    expect(single).not.toContain('Mentioned in 1 reviews');
   });
 });
 
-describe('sampleSizeLabel (Gate 3 sample-vs-pool truthfulness)', () => {
-  // Digit grouping differs across Node locales (e.g. 125192 renders as
-  // "125,192" or "1,25,192"), so expected strings are derived with the same
-  // toLocaleString the component uses.
-  const n = (value: number): string => value.toLocaleString();
+describe('GroundedClaims evidence (Gate 1/Gate 3)', () => {
+  const pros: ClaimWithEvidence[] = [
+    {
+      claim: 'Battery life is praised',
+      support_count: 3,
+      evidence: [
+        { review_id: 'R-1', excerpt: 'Battery lasts two days.' },
+        { review_id: 'R-2', excerpt: 'Charge lasts a week.' },
+      ],
+    },
+  ];
 
-  it('distinguishes a valid analyzed sample from the available pool', () => {
-    const label = sampleSizeLabel(5000, 125192);
-    expect(label).toContain('Analyzed sample:');
-    expect(label).toContain(`of ${n(125192)} available reviews`);
-    // A smaller sample is never presented as the entire population.
-    expect(label).not.toBe(`${n(125192)} available reviews`);
+  const html = renderToStaticMarkup(
+    React.createElement(GroundedClaims, { pros, cons: [] })
+  );
+
+  it('labels support with the real number of citing reviews and shows the citations', () => {
+    expect(html).toContain('Supported by 3 reviews');
+    expect(html).toContain('Battery lasts two days.');
+    expect(html).not.toContain('verified');
   });
 
-  it('handles inconsistent values without claiming a subset relation', () => {
-    const label = sampleSizeLabel(200, 100);
-    expect(label).toContain(`Analyzed sample: ${n(200)} reviews`);
-    expect(label).toContain(`available pool reported as ${n(100)}`);
-    expect(label).not.toContain(`of ${n(100)}`);
+  it('keeps an explicit empty state instead of inventing cons', () => {
+    expect(html).toContain('No evidence-backed cons found in these reviews.');
+    expect(html).not.toContain('High Price Tag');
   });
 
-  it('handles a missing pool without inventing arithmetic', () => {
-    const label = sampleSizeLabel(5000, null);
-    expect(label).toBe(
-      `Analyzed sample: ${n(5000)} reviews (available pool not reported)`
+  it('keeps an explicit empty state instead of inventing pros', () => {
+    const empty = renderToStaticMarkup(
+      React.createElement(GroundedClaims, { pros: [], cons: [] })
     );
-  });
-
-  it('handles a missing sample size without deriving it from the pool', () => {
-    expect(sampleSizeLabel(undefined, 125192)).toBe(
-      `${n(125192)} available reviews (analyzed sample size not reported)`
-    );
-    expect(sampleSizeLabel(null, 125192)).toBe(
-      `${n(125192)} available reviews (analyzed sample size not reported)`
-    );
-  });
-
-  it('handles zero and invalid values truthfully', () => {
-    expect(sampleSizeLabel(0, 125192)).toBe(
-      `${n(125192)} available reviews (analyzed sample size not reported)`
-    );
-    expect(sampleSizeLabel(5000, 0)).toBe(
-      `Analyzed sample: ${n(5000)} reviews (available pool not reported)`
-    );
-    expect(sampleSizeLabel(Number.NaN, Number.POSITIVE_INFINITY)).toBe(
-      'Sample size not reported'
-    );
-    expect(sampleSizeLabel(null, undefined)).toBe('Sample size not reported');
+    expect(empty).toContain('No evidence-backed pros found in these reviews.');
+    expect(empty).toContain('No evidence-backed cons found in these reviews.');
+    expect(empty).not.toContain('High Price Tag');
+    expect(empty).not.toContain('verified');
   });
 });

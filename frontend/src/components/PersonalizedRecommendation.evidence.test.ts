@@ -43,10 +43,14 @@ describe('PersonalizedRecommendation initial render (Gate 3)', () => {
     })
   );
 
-  it('shows the loading state without any fabricated evidence or verdict', () => {
-    expect(html).toContain('Comparing category alternatives');
+  it('shows the pre-analysis prompt without any fabricated evidence or verdict', () => {
+    // Phase 6 replaced the old auto-loading state with an explicit
+    // pre-analysis prompt; the truthfulness contract is unchanged: no
+    // evidence level or verdict is rendered before an analysis returns.
+    expect(html).toContain('Ready to Evaluate for General User Profile');
     expect(html).not.toContain('Strong Evidence');
     expect(html).not.toContain('No Direct Evidence');
+    expect(html).not.toContain('No Evidence Reported');
   });
 
   it('does not claim evidence is verified and stays provider-neutral', () => {

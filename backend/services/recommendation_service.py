@@ -285,7 +285,13 @@ class RecommendationService:
                 )
             )
 
-        # Analyze priority matches with dataset review evidence
+        # Analyze priority matches with dataset review evidence.
+        # Gate 2 (Phase 4): evidence levels derive from actual matched themes.
+        # Theme counts come from the pros-cons keyword analysis, which
+        # projects sample hits onto the full review pool — they are labeled
+        # as estimates here, never presented as measured counts, and a
+        # priority with no matching theme reports "No Direct Evidence" rather
+        # than a fabricated alignment claim.
         priority_matches: List[PriorityMatchEvidence] = []
         sel_pros_cons = pros_cons_service.analyze_product_pros_cons(sel_key)
 
@@ -298,11 +304,27 @@ class RecommendationService:
                         break
 
             if matched_pro:
+                # The pool denominator is included only when the pros-cons
+                # analysis actually reports it; a missing review volume is
+                # stated as unreported-by-omission rather than invented.
+                review_volume = getattr(sel_pros_cons, "review_volume", None)
+                pool_clause = (
+                    f"(~{matched_pro.percentage}% of the product's "
+                    f"{review_volume:,} reviews; projected from a keyword sample)"
+                    if isinstance(review_volume, int)
+                    and not isinstance(review_volume, bool)
+                    and review_volume > 0
+                    else "(projected from a keyword sample)"
+                )
                 priority_matches.append(
                     PriorityMatchEvidence(
                         priority=prio,
                         evidence_level="Strong Evidence",
-                        details=f"Detected in {matched_pro.review_count:,} reviews ({matched_pro.percentage}% of analyzed dataset reviews).",
+                        details=(
+                            f"Matched review theme with an estimated "
+                            f"~{matched_pro.review_count:,} reviews "
+                            f"{pool_clause}."
+                        ),
                         supporting_reviews=matched_pro.example_reviews[:2],
                     )
                 )
@@ -310,8 +332,11 @@ class RecommendationService:
                 priority_matches.append(
                     PriorityMatchEvidence(
                         priority=prio,
-                        evidence_level="Moderate Evidence",
-                        details="General customer satisfaction aligns with this requirement.",
+                        evidence_level="No Direct Evidence",
+                        details=(
+                            "No matching review theme was found for this "
+                            "priority in the sampled keyword analysis."
+                        ),
                         supporting_reviews=[],
                     )
                 )
@@ -345,60 +370,110 @@ class RecommendationService:
 
         persona_rationale_map = {
             "Student": f"Evaluated under a Student lens focusing on affordability, daily usability, and budget value across {sel_summary.review_count:,} reviews.",
-            "Professional": f"Evaluated under a Professional lens prioritizing long-term durability, build consistency, and reliable daily operation.",
-            "Gamer": f"Evaluated under a Performance & Enthusiast lens focusing on responsiveness, endurance, and build quality.",
-            "Content Creator": f"Evaluated under a Creative Workflow lens focusing on dependable output quality, versatility, and durability.",
-            "Photographer": f"Evaluated under an Enthusiast & Precision lens focusing on materials, finish, and design quality.",
-            "General User": f"Evaluated under a General User lens balancing overall customer satisfaction, ease of use, and verified rating distribution.",
+            "Professional": "Evaluated under a Professional lens prioritizing long-term durability, build consistency, and reliable daily operation.",
+            "Gamer": "Evaluated under a Performance & Enthusiast lens focusing on responsiveness, endurance, and build quality.",
+            "Content Creator": "Evaluated under a Creative Workflow lens focusing on dependable output quality, versatility, and durability.",
+            "Photographer": "Evaluated under an Enthusiast & Precision lens focusing on materials, finish, and design quality.",
+            "General User": "Evaluated under a General User lens balancing overall customer satisfaction, ease of use, and the rating distribution.",
         }
         persona_context = persona_rationale_map.get(persona_name, f"Evaluated for {persona_name} priorities.")
 
-        # Suitability
-        top_pros_titles = sel_pros_cons.top_pros if sel_pros_cons else ["Quality & Performance"]
-        top_cons_titles = sel_pros_cons.top_cons if sel_pros_cons else ["Minor complaints"]
+        # Gate 2 (Phase 4): every comparative claim below must trace to a
+        # computation over the clearly-defined peer set (the selected
+        # product plus its discovered similar products).
+        selected_item = next(
+            (item for item in comparison_items if item.is_selected), None
+        )
+        peer_avg_rating = (
+            round(
+                sum(item.average_rating for item in comparison_items)
+                / len(comparison_items),
+                2,
+            )
+            if comparison_items
+            else None
+        )
+
+        # Suitability. Empty theme lists produce no claim at all — no
+        # fabricated fallback themes. (Gate 2, Phase 4)
+        top_pros_titles = sel_pros_cons.top_pros if sel_pros_cons else []
+        top_cons_titles = sel_pros_cons.top_cons if sel_pros_cons else []
 
         suitable_for = [
             f"Ideal for {persona_name}s prioritizing {', '.join(user_priorities[:2])}.",
             f"Backed by a {sel_summary.average_rating} ★ average score across {sel_summary.review_count:,} canonical dataset reviews.",
-            f"Top customer-verified strengths: {', '.join(top_pros_titles[:3])}.",
         ]
+        if top_pros_titles:
+            suitable_for.append(
+                f"Top matched positive themes: {', '.join(top_pros_titles[:3])}."
+            )
 
-        consider_before_buying = [
-            f"Reported consumer pain points: {', '.join(top_cons_titles[:2])}.",
-            f"Negative sentiment rate is {comparison_items[0].negative_percentage}% in the dataset.",
-            "Ratings are strictly computed from real database records.",
-        ]
+        consider_before_buying = []
+        if top_cons_titles:
+            consider_before_buying.append(
+                f"Reported consumer pain points: {', '.join(top_cons_titles[:2])}."
+            )
+        if selected_item is not None:
+            consider_before_buying.append(
+                f"Negative feedback rate for this product is "
+                f"{selected_item.negative_percentage}% in the dataset."
+            )
+        consider_before_buying.append(
+            "Theme mentions are keyword projections over a review sample, "
+            "not exact full-pool counts."
+        )
 
         if is_selected_the_best:
             suitability_verdict = (
-                    f"Based on your {persona_name} priorities ({', '.join(user_priorities)}) and canonical dataset reviews, "
-                f"'{sel_summary.product_title}' is an optimal match with the highest composite satisfaction score in its category ({sel_summary.average_rating} ★)."
+                f"Based on your {persona_name} priorities ({', '.join(user_priorities)}) and the "
+                f"{len(comparison_items)} dataset products compared, "
+                f"'{sel_summary.product_title}' ranks highest on the computed composite "
+                f"score (60% average rating + 40% positive-sentiment share, plus the "
+                f"documented priority-alignment weight) within this compared peer set."
             )
-            recommendation_headline = f"'{sel_summary.product_title}' is the top-rated match for your {persona_name} profile."
+            recommendation_headline = f"'{sel_summary.product_title}' is the closest match for your requirements."
         else:
             suitability_verdict = (
-                f"'{sel_summary.product_title}' aligns well with your {persona_name} criteria, but '{best_candidate.product_title}' "
-                f"in the same category holds higher overall buyer sentiment ({best_candidate.average_rating} ★ vs {sel_summary.average_rating} ★)."
+                f"'{sel_summary.product_title}' satisfies your criteria, but "
+                f"'{best_candidate.product_title}' scores higher on the computed "
+                f"composite measure in this compared peer set "
+                f"({best_candidate.average_rating} ★ / {best_candidate.positive_percentage}% positive "
+                f"vs {sel_summary.average_rating} ★ / {selected_item.positive_percentage if selected_item else 'n/a'}% positive)."
             )
-            recommendation_headline = f"'{best_candidate.product_title}' is recommended as a higher-satisfaction alternative."
+            recommendation_headline = f"Consider '{best_candidate.product_title}' as a top alternative in {sel_summary.category}."
 
         recommendation_reasons = [
-            f"{persona_context}",
-                f"Supported by {best_candidate.review_count:,} canonical dataset reviews with {best_candidate.positive_percentage}% positive sentiment.",
-            f"Consistently demonstrates strengths in {', '.join(best_candidate.common_pros[:2]) if best_candidate.common_pros else 'durability & performance'}.",
-            f"Category benchmark: {best_candidate.average_rating} / 5.0 ★ average across customer reviews.",
+            persona_context,
+            f"Supported by {best_candidate.review_count:,} canonical dataset reviews with {best_candidate.positive_percentage}% positive sentiment.",
         ]
+        if best_candidate.common_pros:
+            recommendation_reasons.append(
+                f"Top matched positive themes: {', '.join(best_candidate.common_pros[:2])}."
+            )
+        if peer_avg_rating is not None:
+            recommendation_reasons.append(
+                f"Computed rating: {best_candidate.average_rating} / 5.0 ★ vs "
+                f"{peer_avg_rating} ★ average across the {len(comparison_items)} compared peers."
+            )
 
         strengths_for_you = [
             f"Directly matches your interest in: {', '.join(user_priorities)}.",
-            f"Solid positive sentiment ratio ({best_candidate.positive_percentage}% positive).",
-            f"Documented strengths: {', '.join(best_candidate.common_pros) if best_candidate.common_pros else 'Reliability'}.",
+            f"Positive sentiment ratio ({best_candidate.positive_percentage}% positive).",
         ]
+        if best_candidate.common_pros:
+            strengths_for_you.append(
+                f"Matched positive themes: {', '.join(best_candidate.common_pros)}."
+            )
 
-        things_to_consider = [
-            f"Keep in mind reported negative themes: {', '.join(best_candidate.common_cons) if best_candidate.common_cons else 'Minor complaints'}.",
-            "Recommendation is strictly derived from historical dataset review patterns.",
-        ]
+        things_to_consider = []
+        if best_candidate.common_cons:
+            things_to_consider.append(
+                f"Keep in mind reported negative themes: {', '.join(best_candidate.common_cons)}."
+            )
+        things_to_consider.append(
+            "Recommendation is derived from historical dataset review patterns "
+            "via a deterministic computed score."
+        )
 
         return PersonalizedRecommendationResponse(
             selected_product=sel_summary,

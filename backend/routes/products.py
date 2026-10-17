@@ -1,6 +1,10 @@
+import logging
 import time
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, Response, status
+
+from routes.review import _PROVIDER_ERROR_MESSAGES
+from services.ai.errors import AIProviderError
 
 from models.ecommerce import (
     ProductSummary,
@@ -17,6 +21,8 @@ from services.catalog.catalog_service import canonical_catalog
 from services.gemini_summary_service import gemini_summary_service
 from services.pros_cons_service import pros_cons_service
 from services.recommendation_service import recommendation_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/products", tags=["Product Search & Intelligence"])
 
@@ -92,13 +98,13 @@ def format_canonical_samples(review_dicts: List[dict]) -> List[str]:
 @router.post(
     "/{product_id}/analyze",
     response_model=ProductAnalysisResponse,
-    summary="Analyze a product from real database reviews with Gemini AI",
+    summary="Analyze a product from real database reviews with AI",
 )
 def get_product_analysis(product_id: str, response: Response):
     """
     Retrieves canonical statistics and grounded AI analysis for a product:
     - Factual metrics calculated directly from canonical Supabase reviews
-    - Grounded Gemini AI synthesis strictly from retrieved canonical reviews
+    - Grounded AI synthesis strictly from retrieved canonical reviews
     - Returns 404 with clear message if product has insufficient review data
     Served exclusively by CanonicalCatalogService; there is no SQLite
     fallback. Database errors propagate to the global handler (HTTP 500)
@@ -226,7 +232,7 @@ def get_product_analysis(product_id: str, response: Response):
                     analysis.ai_available = True
             except Exception:
                 ai_ms = (time.perf_counter() - t_ai_start) * 1000
-                # If Gemini fails, keep factual canonical metrics and mark AI analysis unavailable
+                # If the AI call fails, keep factual canonical metrics and mark AI analysis unavailable
                 analysis.ai_available = False
 
     total_ms = (time.perf_counter() - t_start) * 1000
@@ -373,7 +379,7 @@ def get_personalized_recommendation(
 )
 def generate_ai_summary(product_id: str):
     """
-    Uses Google Gemini to synthesize ONLY reviews retrieved from the dataset for this product.
+    Uses AI to synthesize ONLY reviews retrieved from the dataset for this product.
     Zero hallucination or fabricated reviews allowed.
     Served exclusively via the canonical Supabase catalog; there is no
     SQLite fallback.
@@ -401,9 +407,41 @@ def generate_ai_summary(product_id: str):
             detail="Insufficient review data for this product.",
         )
 
-    return gemini_summary_service.summarize_product_reviews(
-        product_title=str(product["product_title"]),
-        category=product["category"],
-        sample_reviews=sample_reviews,
-    )
+    try:
+        return gemini_summary_service.summarize_product_reviews(
+            product_title=str(product["product_title"]),
+            category=product["category"],
+            sample_reviews=sample_reviews,
+        )
+    except AIProviderError as provider_err:
+        # Gate 2 (Phase 4): provider/transport/configuration failures are
+        # honest errors — never converted into success-shaped summary text.
+        # Only the normalized failure category is logged; raw provider
+        # exception text, prompts, and credentials never cross into the
+        # response body.
+        logger.warning(
+            "AI summary provider failure (type=%s, provider=%s)",
+            provider_err.error_type,
+            provider_err.provider,
+        )
+        detail = _PROVIDER_ERROR_MESSAGES.get(
+            provider_err.error_type,
+            "AI summary generation failed. Please try again.",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail,
+        ) from None
+    except ValueError as val_err:
+        # Parsing/Pydantic-validation failure of generated output. Logged by
+        # exception category only: a ValidationError can embed raw model
+        # output, which must never reach logs or clients.
+        logger.warning(
+            "AI summary failed output validation (category=%s)",
+            type(val_err).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AI summary failed validation. Please try again.",
+        ) from None
 

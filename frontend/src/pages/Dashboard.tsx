@@ -357,8 +357,10 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
             <div className="text-[10px] text-slate-400 flex items-center justify-between">
-              <span>Model</span>
-              <span className="font-mono text-indigo-600 font-semibold">Gemini + Groq</span>
+              <span>AI Provider Configuration</span>
+              <span className="font-mono text-indigo-600 font-semibold">
+                {healthStatus?.ai_provider || 'Not reported'}
+              </span>
             </div>
           </div>
         </div>
@@ -408,7 +410,7 @@ export const Dashboard: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-2.5">
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 backdrop-blur-xs border border-indigo-100 text-[11px] font-bold text-indigo-700 shadow-2xs animate-float">
                         <Sparkles className="h-3.5 w-3.5 text-indigo-600 animate-pulse" />
-                        <span>Gemini 3.8 AI Intelligence</span>
+                        <span>AI Intelligence</span>
                       </span>
 
                       <button
@@ -417,7 +419,7 @@ export const Dashboard: React.FC = () => {
                           setActiveTab('product_analysis');
                         }}
                         className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-gradient-to-r from-purple-600 to-[#5B50E5] text-white text-[11px] font-bold shadow-xs hover:shadow-md hover:scale-[1.02] transition cursor-pointer"
-                        title="Analyze raw customer text with Gemini AI"
+                        title="Analyze raw customer text with AI"
                       >
                         <Sparkles className="h-3.5 w-3.5 text-amber-300" />
                         <span>⚡ Raw Data Review AI Analyzer →</span>
@@ -789,7 +791,7 @@ export const Dashboard: React.FC = () => {
                 <div>
                   <h2 className="text-2xl font-bold text-slate-900">Product Intelligence & Analysis</h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Search any product in the dataset to calculate ratings and generate grounded Gemini insights.
+                    Search any product in the dataset to calculate ratings and generate grounded AI insights.
                   </p>
                 </div>
 
@@ -839,7 +841,7 @@ export const Dashboard: React.FC = () => {
                           Analyzing {selectedProduct?.product_title || 'Product'}
                         </h3>
                         <p className="text-xs text-slate-500">
-                          Processing verified customer dataset reviews and running Gemini AI synthesis...
+                          Processing verified customer dataset reviews and running AI synthesis...
                         </p>
                       </div>
 
@@ -863,7 +865,7 @@ export const Dashboard: React.FC = () => {
                           analysisPhase >= 3 ? 'border-indigo-200 bg-indigo-50/70 text-indigo-900 font-semibold' : 'border-slate-200 bg-slate-50 text-slate-400'
                         }`}>
                           <span className="font-mono font-bold block">03. AI Grounding</span>
-                          <span className="text-[10px] opacity-80">Gemini Synthesis</span>
+                          <span className="text-[10px] opacity-80">AI Synthesis</span>
                         </div>
 
                         <div className={`rounded-xl border p-3 text-[11px] transition ${
@@ -933,7 +935,7 @@ export const Dashboard: React.FC = () => {
                       </div>
                       <h3 className="text-base font-bold text-slate-900">Search or Select a Product</h3>
                       <p className="text-xs text-slate-500 max-w-md mx-auto">
-                        Type a product name above or click one of the Quick Test chips to select a product, then click <strong className="text-indigo-600 font-bold">Analyze</strong> to run intelligence with Google Gemini AI.
+                        Type a product name above or click one of the Quick Test chips to select a product, then click <strong className="text-indigo-600 font-bold">Analyze</strong> to run AI-powered intelligence.
                       </p>
                     </div>
                   )}
@@ -1118,13 +1120,13 @@ export const Dashboard: React.FC = () => {
                 <h3 className="text-sm font-bold text-slate-900">Engine Configuration</h3>
                 <div className="space-y-3 text-xs">
                   <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                    <span className="text-slate-600 font-medium">AI Primary Provider</span>
-                    <span className="font-mono text-indigo-600 font-bold">Google Gemini (gemini-3.8-flash)</span>
+                    <span className="text-slate-600 font-medium">Available AI Integrations</span>
+                    <span className="font-mono text-indigo-600 font-bold">{healthStatus?.ai_provider || 'Not reported'}</span>
                   </div>
 
                   <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                    <span className="text-slate-600 font-medium">Low-Latency Fallback Provider</span>
-                    <span className="font-mono text-indigo-600 font-bold">Groq (Llama 3.3 / OSS 120B)</span>
+                    <span className="text-slate-600 font-medium">AI Service Status</span>
+                    <span className="font-semibold text-indigo-600">{healthStatus?.ai_configured ? 'Configured' : 'Not configured'}</span>
                   </div>
 
                   <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
