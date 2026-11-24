@@ -1,300 +1,548 @@
-# ReviewIQ — AI-Powered Product Review Analyzer
+# ReviewIQ
 
-> **Project status (updated: 16 October 2026):** The frontend is deployed on Vercel and the FastAPI backend is deployed on Render. The backend health endpoint responds successfully, but the deployed application is **not yet fully verified end to end**: database-backed product search is failing in the deployed environment and needs to be fixed and retested.
+### AI-Powered Product Review Intelligence
 
-ReviewIQ turns unstructured product reviews into structured product intelligence, helping users understand customer sentiment, ratings, recurring pros and cons, and review themes.
+ReviewIQ transforms unstructured product reviews into structured,
+actionable product intelligence. It helps users understand customer
+sentiment, ratings, recurring strengths and weaknesses, and key review
+themes without manually reading large volumes of feedback.
 
-## Table of contents
+[![Frontend](https://img.shields.io/badge/Frontend-React%20%7C%20TypeScript-3178C6)](https://react.dev/)
+[![Backend](https://img.shields.io/badge/Backend-FastAPI-009688)](https://fastapi.tiangolo.com/)
+[![Database](https://img.shields.io/badge/Database-Supabase%20PostgreSQL-3FCF8E)](https://supabase.com/)
+[![AI](https://img.shields.io/badge/AI-Google%20Gemini-4285F4)](https://ai.google.dev/)
 
-- [Overview](#overview)
-- [Current deployment status](#current-deployment-status)
-- [Architecture](#architecture)
-- [Technology stack](#technology-stack)
-- [Implemented capabilities](#implemented-capabilities)
-- [Request flow](#request-flow)
-- [Repository and deployment configuration](#repository-and-deployment-configuration)
-- [Environment configuration](#environment-configuration)
-- [Run locally](#run-locally)
-- [Testing and verification](#testing-and-verification)
-- [Known issues and next steps](#known-issues-and-next-steps)
-- [Project scope](#project-scope)
+> **Deployment status --- 24 November 2026:** The frontend and backend
+> are deployed. The backend health endpoint responds, but full
+> production functionality has not yet been verified. Database-backed
+> product search was previously failing during the PostgreSQL connection
+> step; this remains an item to retest before claiming end-to-end
+> production readiness.
+
+------------------------------------------------------------------------
+
+## Contents
+
+-   [Overview](#overview)
+-   [Live deployment](#live-deployment)
+-   [System architecture](#system-architecture)
+-   [Technology stack](#technology-stack)
+-   [Key capabilities](#key-capabilities)
+-   [Application workflow](#application-workflow)
+-   [Repository and deployment setup](#repository-and-deployment-setup)
+-   [Environment configuration](#environment-configuration)
+-   [Run locally](#run-locally)
+-   [Testing and release
+    verification](#testing-and-release-verification)
+-   [Known issue and next steps](#known-issue-and-next-steps)
+-   [Project scope](#project-scope)
 
 ## Overview
 
-ReviewIQ is an AI-powered product review analysis application. It combines a web interface, a Python API, an LLM-based analysis workflow, and a database-backed product/review layer.
+Product reviews contain valuable customer feedback, but extracting
+useful insights from large collections of unstructured text can be
+time-consuming. ReviewIQ addresses this problem by combining a web
+application, API services, AI-powered review analysis, and a
+database-backed product and review layer.
 
-The intended user experience is to select or search for a product, analyze review text, and view concise, structured results instead of manually reading large volumes of reviews.
+The application is designed to let users find or select a product,
+analyze review content, and explore concise results such as:
 
-## Current deployment status
+-   Overall sentiment and rating
+-   Commonly mentioned product advantages
+-   Recurring complaints and disadvantages
+-   A concise summary of customer feedback
+-   Structured insights that can be presented consistently in the user
+    interface
 
-| Component | Current status | Details |
-|---|---|---|
-| Frontend | Deployed | Vercel project: `reviewiq-final` |
-| Frontend URL | Available | https://reviewiq-final.vercel.app |
-| Backend API | Deployed | Render service: `ReviewIQ-Backend` |
-| Backend URL | Available | https://reviewiq-backend-qox7.onrender.com |
-| Backend health check | Responding | `/health` returns an `ok` status and reports Gemini as the AI provider |
-| Database-backed product search | **Needs investigation** | Render logs show a failure while opening a PostgreSQL connection through `psycopg.connect(dsn)` |
-| Full production end-to-end flow | **Not yet verified** | The frontend reports that it cannot connect to the backend / product search fails, despite the health endpoint responding |
+## Live deployment
 
-**Important:** A successful `/health` response confirms that the API process is reachable; it does not by itself prove that database queries, product search, AI analysis, and all frontend flows work correctly.
+  ----------------------------------------------------------------------------------------------------------------
+  Component               Deployment                                                       Current status
+  ----------------------- ---------------------------------------------------------------- -----------------------
+  Frontend                [reviewiq-final.vercel.app](https://reviewiq-final.vercel.app)   Deployed
 
-## Architecture
+  Backend API             [Render service](https://reviewiq-backend-qox7.onrender.com)     Deployed
 
-```text
-User
-  |
-  v
-React + TypeScript + Vite frontend (Vercel)
-  |
-  | HTTPS API requests
-  v
-FastAPI backend (Render)
-  |
-  +--> Product catalog and review data
-  |
-  +--> Supabase PostgreSQL / pgvector
-  |      +--> Product and review persistence
-  |      +--> Embeddings and semantic retrieval (where configured)
-  |
-  +--> AI analysis and orchestration
-         +--> Gemini model/provider integration
-         +--> Structured response validation
-         +--> Evidence-grounding and retrieval workflow (as implemented)
-  |
-  v
-Structured analysis returned to the frontend
+  Health endpoint         [/health](https://reviewiq-backend-qox7.onrender.com/health)     Responding
+
+  Database-backed product Supabase PostgreSQL                                              Requires production
+  search                                                                                   retesting
+
+  Full end-to-end         Frontend → API → database → AI                                   Not yet verified
+  workflow                                                                                 
+  ----------------------------------------------------------------------------------------------------------------
+
+A successful `/health` response confirms that the API process is
+reachable. It does **not** establish that database connectivity, product
+search, retrieval, or AI analysis is functioning correctly in
+production.
+
+## System architecture
+
+``` text
+                         ┌──────────────────────────┐
+                         │           User           │
+                         └────────────┬─────────────┘
+                                      │
+                                      ▼
+                    ┌─────────────────────────────────┐
+                    │ React + TypeScript + Vite       │
+                    │ Frontend — Vercel               │
+                    └────────────────┬────────────────┘
+                                     │ HTTPS API requests
+                                     ▼
+                    ┌─────────────────────────────────┐
+                    │ FastAPI Backend — Render        │
+                    │ Request handling and validation │
+                    └─────────┬───────────────┬───────┘
+                              │               │
+                 ┌────────────▼──────┐  ┌─────▼────────────────┐
+                 │ Supabase          │  │ AI analysis workflow │
+                 │ PostgreSQL        │  │ Gemini integration   │
+                 │                   │  │ Provider orchestration│
+                 │ Products/reviews  │  │ Structured validation│
+                 │ pgvector retrieval│  │ Grounding / RAG*      │
+                 └───────────────────┘  └─────────┬────────────┘
+                                                  │
+                                                  ▼
+                                  ┌────────────────────────────┐
+                                  │ Structured analysis result │
+                                  │ returned to the frontend   │
+                                  └────────────────────────────┘
 ```
 
-The deployed frontend and backend are separate services. The frontend must use the correct public backend base URL, and the backend must have valid production database credentials, CORS configuration, and AI-provider configuration.
+\* Retrieval-augmented and evidence-grounding behavior depends on the
+enabled configuration and the deployed code version.
+
+The frontend and backend are deployed as separate services. The frontend
+communicates with the public backend URL over HTTPS. The backend uses
+its configured database connection and AI-provider credentials to
+process requests.
 
 ## Technology stack
 
-| Layer | Technologies |
-|---|---|
-| Frontend | React, TypeScript, Vite |
-| Backend API | Python, FastAPI, Uvicorn, Pydantic |
-| AI | Google Gemini API; AI provider/gateway and fallback orchestration in the codebase |
-| Orchestration | LangGraph-based workflow components |
-| Data processing | Pandas |
-| Database | Supabase-hosted PostgreSQL |
-| Vector retrieval | pgvector, configured for 768-dimensional embeddings in the V2 design |
-| Database driver | Psycopg |
-| Frontend hosting | Vercel |
-| Backend hosting | Render |
-| Testing | Pytest and frontend build checks |
+  Layer                 Technologies
+  --------------------- -----------------------------------------------------
+  Frontend              React, TypeScript, Vite
+  Backend               Python, FastAPI, Uvicorn, Pydantic
+  AI integration        Google Gemini API and provider/gateway components
+  Orchestration         LangGraph workflow components
+  Data processing       Pandas
+  Database              Supabase-hosted PostgreSQL
+  Vector search         pgvector; V2 design uses 768-dimensional embeddings
+  Database driver       Psycopg
+  Frontend deployment   Vercel
+  Backend deployment    Render
+  Testing               Pytest and frontend production-build checks
 
-The table describes technologies present in the project architecture/codebase; it does not mean every feature or production integration has passed end-to-end verification.
+This table describes technologies represented in the project codebase
+and architecture. It should not be interpreted as proof that every
+integration is currently enabled or verified in the deployed
+environment.
 
-## Implemented capabilities
+## Key capabilities
 
-The project codebase includes the following capabilities:
+The project codebase includes the following functionality and
+development foundations:
 
-- **Review analysis:** structured sentiment, rating, pros, cons, and summary output.
-- **Sentiment labels:** positive, negative, neutral, and mixed.
-- **Rating provenance:** supports distinguishing an explicit rating from an inferred rating.
-- **Structured contracts:** Pydantic-based request/response validation.
-- **Evidence grounding:** review-analysis contract and grounding work are present in the V2 development history; verify the current deployed commit before treating production behavior as confirmed.
-- **AI provider integration:** Gemini integration and model/provider orchestration components.
-- **Product/review data layer:** Supabase/PostgreSQL integration and product catalog/search routes.
-- **Retrieval foundation:** embedding and vector-retrieval work using Gemini embeddings and pgvector.
-- **Analytics and data exploration:** dataset and product/review analytics work in the codebase.
+-   **Structured review analysis:** produces sentiment, rating, pros,
+    cons, and a concise summary.
+-   **Sentiment classification:** supports positive, negative, neutral,
+    and mixed labels.
+-   **Rating provenance:** distinguishes explicitly supplied ratings
+    from inferred ratings.
+-   **Validated data contracts:** uses Pydantic-based request and
+    response validation.
+-   **Evidence-grounding foundation:** includes review-analysis contract
+    and grounding work in the V2 development history. Confirm the
+    deployed commit and runtime behavior before describing production
+    grounding as verified.
+-   **AI provider integration:** includes Gemini integration and
+    model/provider orchestration components.
+-   **Product and review data layer:** includes Supabase/PostgreSQL
+    integration and product catalog/search routes.
+-   **Semantic retrieval foundation:** includes embedding and
+    vector-retrieval work using Gemini embeddings and pgvector.
+-   **Analytics and data exploration:** includes dataset processing and
+    product/review analytics work.
 
-Some capabilities depend on production environment variables, database schema/migrations, provider quotas, and the exact commit deployed. Production readiness should be judged by the end-to-end checks below, not by code presence alone.
+Actual feature availability depends on the deployed commit, environment
+configuration, database schema, provider credentials, and external API
+quotas.
 
-## Request flow
+## Application workflow
 
-1. A user opens the Vercel-hosted frontend.
-2. The frontend sends an HTTPS request to the FastAPI backend using `VITE_API_BASE_URL`.
-3. FastAPI validates the request and routes it to the relevant product or analysis service.
-4. Product and review routes access the configured Supabase PostgreSQL database. Retrieval-enabled flows can use embeddings/vector search where configured.
-5. The AI workflow calls the configured Gemini integration and validates the structured result.
-6. The API returns the result to the frontend for display.
+1.  The user opens the ReviewIQ frontend.
+2.  The frontend sends an HTTPS request to the FastAPI backend using
+    `VITE_API_BASE_URL`.
+3.  FastAPI validates the incoming request and routes it to the relevant
+    product or analysis service.
+4.  Product and review services access Supabase PostgreSQL.
+    Retrieval-enabled workflows can use embeddings and vector search
+    when configured.
+5.  The AI workflow invokes the configured Gemini integration and
+    validates the structured response.
+6.  The API returns the result to the frontend for presentation.
 
-## Repository and deployment configuration
+## Repository and deployment setup
 
-- **Git repository:** https://github.com/kit29-25bad132/ReviewIQ
-- **Reported deployment branch:** `main-final`
-- **Vercel frontend project:** `reviewiq-final`
-- **Render backend service:** `ReviewIQ-Backend`
+-   **GitHub repository:**
+    [kit29-25bad132/ReviewIQ](https://github.com/kit29-25bad132/ReviewIQ)
+-   **Reported deployment branch:** `main-final`
+-   **Vercel project:** `reviewiq-final`
+-   **Render service:** `ReviewIQ-Backend`
 
-### Frontend (Vercel)
+### Frontend --- Vercel
 
-The frontend project is configured with:
+The reported Vercel configuration is:
 
-- Root directory: `frontend`
-- Build command: `npm run build`
-- Output directory: `dist`
-- Environment variable: `VITE_API_BASE_URL`
+  Setting                Value
+  ---------------------- ---------------------
+  Root directory         `frontend`
+  Build command          `npm run build`
+  Output directory       `dist`
+  Backend URL variable   `VITE_API_BASE_URL`
 
-Set `VITE_API_BASE_URL` to the public Render backend URL, without accidentally adding an endpoint path if the frontend code expects a base URL. After changing a Vite environment variable, trigger a new frontend deployment because Vite values are embedded at build time.
+Set `VITE_API_BASE_URL` to the public Render backend base URL expected
+by the frontend code. Avoid adding an endpoint path unless the
+application explicitly expects one.
 
-### Backend (Render)
+Vite environment variables are embedded during the build. Redeploy the
+frontend after changing them.
 
-The backend is deployed as a separate FastAPI service. Confirm its start command, Python dependency installation, environment variables, and database network connectivity in the Render dashboard. Do not put private keys or database passwords in this README or in frontend environment variables.
+### Backend --- Render
+
+The FastAPI backend is deployed as a separate Render service. Verify the
+service's start command, Python dependency installation, environment
+variables, and database network connectivity in the Render dashboard.
+
+Never commit API keys, database passwords, or other credentials to the
+repository. Store secrets in the deployment platform's
+environment-variable settings.
 
 ## Environment configuration
 
-Use the actual variable names referenced by the current code and deployment configuration. Common configuration needed by this architecture includes:
+Use the exact variable names consumed by the current code and deployment
+configuration. The following settings are documented for the current
+architecture.
 
-| Variable / setting | Used by | Purpose |
-|---|---|---|
-| `VITE_API_BASE_URL` | Vercel frontend | Public base URL for the backend API |
-| `GEMINI_API_KEY` | Render backend | Authentication for Gemini API calls |
-| `DATABASE_URL` (first) / `SUPABASE_DB_URL` (fallback) | Render backend | Direct Postgres (Supabase) connection string |
-| `ALLOWED_ORIGINS` | Render backend | Allowed CORS origins — see [CORS and production origins](#cors-and-production-origins) below |
+### Frontend variables
 
-**Variable names verified against the current code:** the backend reads `DATABASE_URL` first and falls back to `SUPABASE_DB_URL`, and CORS reads `ALLOWED_ORIGINS`. The complete list of backend variables with defaults is documented under [CORS and production origins](#cors-and-production-origins) below. Use the appropriate Supabase connection string and SSL settings for the chosen connection mode. Keep all secrets in Vercel/Render environment settings, never in committed files.
+  -----------------------------------------------------------------------
+  Variable                            Purpose
+  ----------------------------------- -----------------------------------
+  `VITE_API_BASE_URL`                 Public base URL of the backend API
 
-### CORS and production origins
+  `VITE_SUPABASE_URL`                 Supabase project URL, if used by
+                                      the frontend
 
-The backend allows cross-origin browser requests based on the `ALLOWED_ORIGINS` environment variable (`backend/main.py`):
+  `VITE_SUPABASE_ANON_KEY` /          Public Supabase client key, if used
+  `VITE_SUPABASE_PUBLISHABLE_KEY`     by the frontend
+  -----------------------------------------------------------------------
 
-- **Default (development):** loopback origins only — `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:5174`, `http://127.0.0.1:5174`, `http://localhost:3000`, `http://127.0.0.1:3000` — plus a host regex that matches only loopback hosts with any port: `^http://(localhost|127\.0\.0\.1)(:\d+)?$`.
-- **Production:** the deployed frontend origin does not match those loopback defaults, so it must be set explicitly to the actual frontend URL (Render environment setting). Example:
+Frontend variables belong in the Vercel project settings. Do not expose
+server-side secrets through `VITE_` variables.
 
-```text
+### Backend variables
+
+  ---------------------------------------------------------------------------------------
+  Variable                               Requirement / default    Purpose
+  -------------------------------------- ------------------------ -----------------------
+  `ALLOWED_ORIGINS`                      Set explicitly in        Comma-separated list of
+                                         production               permitted browser
+                                                                  origins
+
+  `DATABASE_URL`                         Required for             Primary PostgreSQL
+                                         database-backed features connection string
+
+  `SUPABASE_DB_URL`                      Fallback if              Alternative PostgreSQL
+                                         `DATABASE_URL` is unset  connection string
+
+  `GEMINI_API_KEY`                       At least one AI provider Gemini API
+                                         key is needed for AI     authentication
+                                         features                 
+
+  `GROQ_API_KEY`                         Optional                 Groq provider
+                                                                  authentication
+
+  `OPENROUTER_API_KEY`                   Optional                 OpenRouter provider
+                                                                  authentication
+
+  `GEMINI_MODEL`                         Optional; documented     Primary Gemini model
+                                         default:                 override
+                                         `gemini-3.8-flash`       
+
+  `ROUTING_STRATEGY`                     Optional; default:       AI provider/model
+                                         `gemini_first`           routing strategy;
+                                                                  documented alternative:
+                                                                  `cost_aware`
+
+  `AI_REQUEST_TIMEOUT_SECONDS`           Optional; default: `30`  AI request timeout
+
+  `RETRY_MAX_ATTEMPTS`                   Optional; default: `2`   Maximum retry attempts
+
+  `RETRY_BASE_DELAY_SECONDS`             Optional; default: `0.5` Initial retry delay
+
+  `RETRY_MAX_DELAY_SECONDS`              Optional; default: `8`   Maximum retry delay
+
+  `RETRY_JITTER`                         Optional; default:       Enables retry jitter
+                                         `true`                   
+
+  `EMBEDDING_MODEL`                      Optional; default:       Embedding model
+                                         `gemini-embedding-001`   
+
+  `EMBEDDING_DIMENSION`                  Optional; default: `768` Embedding vector size;
+                                                                  must match the database
+                                                                  column
+
+  `EMBEDDING_BATCH_SIZE`                 Optional; default: `100` Embedding batch size
+
+  `RAG_ENABLED`                          Optional; disabled by    Enables the configured
+                                         default                  analysis RAG workflow
+
+  `RAG_INTELLIGENCE_ENABLED`             Optional; default:       Controls the documented
+                                         `true`                   pros/cons grounding RAG
+                                                                  phase
+
+  `LLM_CACHE_ENABLED`                    Optional; disabled by    Controls the
+                                         default                  Postgres-backed LLM
+                                                                  result cache
+
+  `EMBEDDING_CACHE_ENABLED`              Optional; disabled by    Controls the embedding
+                                         default                  cache
+
+  `PRODUCT_ANALYSIS_CACHE_TTL_SECONDS`   Optional; default:       Product-analysis cache
+                                         `3600`                   lifetime
+
+  `PRODUCT_ANALYSIS_CACHE_MAX_ENTRIES`   Optional; default: `500` Maximum in-memory
+                                                                  product-analysis cache
+                                                                  entries
+
+  `HOST`                                 Optional; default:       API bind host
+                                         `127.0.0.1`              
+
+  `PORT`                                 Optional; default:       API bind port
+                                         `8000`                   
+  ---------------------------------------------------------------------------------------
+
+The repository's `backend/.env.example` is the detailed configuration
+template. Check it and the current source code before deploying, as
+variable names and defaults can change.
+
+### CORS configuration
+
+The backend reads allowed browser origins from `ALLOWED_ORIGINS` in
+`backend/main.py`.
+
+The documented development defaults allow loopback origins such as
+`localhost` and `127.0.0.1`. The deployed Vercel domain must be added
+explicitly in the Render environment settings.
+
+Example:
+
+``` env
 ALLOWED_ORIGINS=https://reviewiq-final.vercel.app
 ```
 
-- The value is a comma-separated list of full origins (scheme + host, no path, no trailing slash). The loopback regex always applies regardless of the list.
-- Preflight (`OPTIONS`) requests are answered by FastAPI's CORS middleware, and its headers also wrap normal and error responses. The frontend sends JSON requests, so every cross-origin call requires a successful preflight.
+Use a comma-separated list of full origins (scheme and host), without
+URL paths or trailing slashes. Include any additional production
+frontend domains that should be permitted.
 
-#### Required backend (Render) environment variables
+### Understanding the health endpoint
 
-None of these are required for the process to boot or for `GET /health` to return 200 — each powers a specific feature, so a missing variable degrades or disables that feature instead of blocking startup.
+`GET /health` is a process/configuration health check, not a complete
+integration test.
 
-| Variable | Requirement | Purpose / default |
-|---|---|---|
-| `ALLOWED_ORIGINS` | Required in production | Comma-separated allowed CORS origins (default: loopback development origins only) |
-| `DATABASE_URL` | Required for DB-backed features | Direct Postgres connection string (checked first) |
-| `SUPABASE_DB_URL` | Optional | Fallback connection string used only when `DATABASE_URL` is unset |
-| `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | At least one required for any AI feature | Provider keys in fallback order (Gemini → Groq → OpenRouter); unconfigured providers are skipped |
-| `GEMINI_MODEL` | Optional | Primary Gemini model override (default: `gemini-3.8-flash`) |
-| `ROUTING_STRATEGY` | Optional | `gemini_first` (default) or `cost_aware` |
-| `AI_REQUEST_TIMEOUT_SECONDS` | Optional | Per-request AI timeout in seconds (default: `30`) |
-| `RETRY_MAX_ATTEMPTS`, `RETRY_BASE_DELAY_SECONDS`, `RETRY_MAX_DELAY_SECONDS`, `RETRY_JITTER` | Optional | Bounded retry tuning (defaults: `2`, `0.5`, `8`, `true`) |
-| `EMBEDDING_MODEL`, `EMBEDDING_DIMENSION`, `EMBEDDING_BATCH_SIZE` | Optional (embeddings) | Defaults: `gemini-embedding-001`, `768`, `100`; dimension must match the pgvector column |
-| `RAG_ENABLED` plus RAG context settings | Optional (analysis RAG) | Disabled by default; see `backend/.env.example` |
-| `RAG_INTELLIGENCE_ENABLED` | Optional | Phase 5 pros/cons grounding RAG (default: enabled) |
-| `LLM_CACHE_ENABLED`, `EMBEDDING_CACHE_ENABLED` plus cache TTLs | Optional | Postgres-backed result caches, disabled by default |
-| `PRODUCT_ANALYSIS_CACHE_TTL_SECONDS`, `PRODUCT_ANALYSIS_CACHE_MAX_ENTRIES` | Optional | In-memory product-analysis cache (defaults: `3600` seconds, `500` entries) |
-| `HOST`, `PORT` | Optional | Bind address (defaults: `127.0.0.1`, `8000`) |
+  -----------------------------------------------------------------------
+  It reports/checks                   It does not verify
+  ----------------------------------- -----------------------------------
+  API process is reachable            PostgreSQL connection succeeds
 
-The full commented template with defaults lives in `backend/.env.example`. Frontend-side variables (`VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` / `VITE_SUPABASE_PUBLISHABLE_KEY`) are set in Vercel, never here.
+  Application version                 Database schema, migrations,
+                                      extensions, or required tables
 
-#### What `/health` checks — and what it does not
+  Configured AI provider information  Provider credentials are valid or
+                                      API quota is available
 
-| `/health` checks (200 OK means...) | `/health` does NOT check |
-|---|---|
-| The API process is reachable | Postgres/DSN validity — a database-backed request can still fail |
-| The reported app `version` | Schema, migrations, extensions, required tables |
-| `ai_provider`: which provider **keys are configured** (environment presence only) | Whether provider credentials are valid, quota remains, or a model responds |
-| `ai_configured`: at least one provider key is present | Embeddings, pgvector, and the retrieval index |
-| — | The evaluation cache and dataset files |
-| — | Frontend Supabase browser configuration |
+  Whether an AI provider key is       A model can successfully complete a
+  present                             request
 
-**Warning:** a `200` from `/health` proves only that the process is up and configuration is present — it does **not** prove that database-backed product search, RAG, AI analysis, or any other feature works. Verify the actual database-backed routes end-to-end (see [Testing and verification](#testing-and-verification)).
+  Basic configuration state           Embeddings, pgvector, retrieval
+                                      index, or cache behavior
+
+  ---                                 Frontend Supabase browser
+                                      configuration
+  -----------------------------------------------------------------------
+
+A `200 OK` response must therefore be followed by tests against real
+database-backed and AI-backed application routes.
 
 ## Run locally
 
-These are typical development steps. Check the repository's current directory names and dependency files before running them.
+The following commands reflect the documented project layout. Confirm
+the dependency file and import path in the current checkout before
+running them.
 
-### Backend
+### 1. Backend
 
-```bash
-# From the repository root
+From the repository root:
+
+``` bash
 python -m venv .venv
+```
 
-# Windows PowerShell
+Activate the virtual environment.
+
+**Windows PowerShell**
+
+``` powershell
 .venv\Scripts\Activate.ps1
+```
 
-# Install the backend's declared dependencies using the repository's
-# current requirements file or project configuration.
+**macOS / Linux**
+
+``` bash
+source .venv/bin/activate
+```
+
+Install backend dependencies:
+
+``` bash
 pip install -r backend/requirements.txt
+```
 
-# Start the API (adjust the import path if the repository differs)
+Configure the required environment variables, then start the API:
+
+``` bash
 uvicorn backend.main:app --reload
 ```
 
-If the repository's dependency file is elsewhere, use that file instead. Configure the required environment variables before starting the API.
+If the repository's dependency file or application import path differs,
+use the paths defined by the current checkout.
 
-### Frontend
+### 2. Frontend
 
-```bash
+In a separate terminal:
+
+``` bash
 cd frontend
 npm install
 npm run dev
 ```
 
-For a production-build check:
+Run a production build check with:
 
-```bash
+``` bash
 npm run build
 ```
 
-## Testing and verification
+## Testing and release verification
 
-Run tests using the test configuration and commands present in the current checkout. For the backend, the project's established test command is:
+Run the backend test suite using the established project command:
 
-```bash
+``` bash
 python -m pytest backend/tests -q
 ```
 
-Before announcing a production-ready release, verify all of the following against the currently deployed commit:
+Before declaring a release production-ready, verify the deployed version
+against this checklist:
 
-- [ ] Frontend production build succeeds.
-- [ ] Backend `/health` returns HTTP 200.
-- [ ] Browser requests reach the correct backend URL.
-- [ ] CORS permits the exact deployed frontend origin.
-- [ ] Product search returns valid results from the production database.
-- [ ] Database-backed product routes work without connection errors.
-- [ ] Review analysis returns schema-valid output.
-- [ ] Evidence shown as supporting a claim actually comes from the relevant review text/retrieval context.
-- [ ] Embedding and retrieval routes work if enabled in production.
-- [ ] Loading, empty-result, API-error, and timeout states render correctly in the frontend.
+-   [ ] Frontend production build completes successfully.
+-   [ ] Backend `/health` endpoint returns HTTP 200.
+-   [ ] Frontend requests reach the intended backend URL.
+-   [ ] CORS permits the exact deployed frontend origin.
+-   [ ] Product search returns valid results from the production
+    database.
+-   [ ] Database-backed product routes complete without connection
+    errors.
+-   [ ] Review analysis returns a response that satisfies the expected
+    schema.
+-   [ ] Evidence presented for analysis claims is supported by the
+    relevant review text or retrieval context.
+-   [ ] Embedding and vector-retrieval routes work when enabled.
+-   [ ] Frontend loading, empty-result, API-error, and timeout states
+    behave correctly.
+-   [ ] The tested commit hash and verification date are recorded.
 
-## Known issues and next steps
+## Known issue and next steps
 
-### 1. Fix the production database connection
+### Production database connectivity
 
-The latest reported Render traceback reaches the product search path and fails when Psycopg attempts to connect using the configured DSN. Verify:
+The latest reported deployment investigation identified a failure in the
+product-search path when Psycopg attempted to open a PostgreSQL
+connection using the configured DSN.
 
-1. The exact database environment variable name read by the current code.
-2. That the Render environment contains that variable and its value is not empty or malformed.
-3. That the Supabase connection string, host, port, database name, username, and password are correct.
-4. That the selected Supabase connection mode is compatible with the Render runtime/network; use the connection option recommended by Supabase for the deployment environment.
-5. That SSL parameters and URL-encoding of special characters in credentials are correct where required.
-6. That the deployed database schema and required extensions/tables exist.
-7. That the backend logs show the underlying exception without exposing credentials.
+The following checks should be completed:
 
-Do not treat the API as fully healthy just because `/health` works; test the actual database-backed routes.
+1.  Confirm which database environment variable the deployed code reads.
+2.  Verify that Render has the variable configured and that its value is
+    present and correctly formatted.
+3.  Check the Supabase host, port, database name, username, and
+    password.
+4.  Confirm that the selected Supabase connection mode is compatible
+    with the Render runtime and network.
+5.  Verify SSL parameters and URL-encoding of special characters in
+    credentials where required.
+6.  Confirm that the production database has the required schema,
+    extensions, tables, and migrations.
+7.  Inspect the underlying server exception without logging or exposing
+    credentials.
 
-### 2. Confirm frontend URL and CORS
+### Frontend-to-backend connectivity
 
-- Confirm the production Vercel environment has the correct `VITE_API_BASE_URL`.
-- Confirm the backend's CORS allowlist includes `https://reviewiq-final.vercel.app` (or the actual production domain in use).
-- Inspect the browser Network tab to distinguish a CORS rejection from an API `500`, timeout, or incorrect URL.
-- Redeploy the frontend after changing Vite environment variables.
+-   Confirm that Vercel has the correct `VITE_API_BASE_URL` for the
+    active deployment.
+-   Confirm that Render's `ALLOWED_ORIGINS` includes the active frontend
+    origin.
+-   Use the browser Network tab to distinguish CORS failures from API
+    errors, timeouts, and incorrect URLs.
+-   Redeploy the frontend after changing Vite environment variables.
 
-### 3. Complete end-to-end production verification
+### End-to-end production verification
 
-After fixing the database connection, test product search and review analysis from the deployed UI. Record the tested commit, test date, API responses, and any remaining limitations.
+After the database connection is corrected, test product search and
+review analysis through the deployed UI. Record the deployed commit,
+test date, observed API responses, and any remaining limitations.
 
 ## Project scope
 
-ReviewIQ is being developed as a practical AI product-review intelligence system, with emphasis on structured outputs, grounded claims, retrieval, reliability, and cost-conscious model use.
+ReviewIQ is intended to be a practical AI-powered product-review
+intelligence system, with emphasis on:
 
-The intended deployment keeps model execution in hosted APIs rather than requiring users to run local LLMs. Features such as multi-agent execution, chain-of-thought exposure, quantization, and local-model runtime are outside the current scope.
+-   Structured and validated AI outputs
+-   Evidence-grounded review insights
+-   Retrieval-supported analysis
+-   Reliable provider/model orchestration
+-   Cost-conscious AI usage
+-   A hosted deployment that does not require users to run local
+    language models
 
-## Status summary
+Multi-agent execution, exposed chain-of-thought, quantization, and
+local-model runtime are outside the current project scope.
 
-- **Frontend deployment:** available.
-- **Backend deployment:** available; health endpoint responds.
-- **AI configuration:** backend health has reported Gemini configured.
-- **Database-backed product search:** currently needs a production configuration/connectivity fix.
-- **Full end-to-end production readiness:** pending successful database, search, and analysis verification.
+## Current status summary
 
----
+  -----------------------------------------------------------------------
+  Area                                Status
+  ----------------------------------- -----------------------------------
+  Frontend deployment                 Available
 
-*This README reflects the latest status shared for the project on 16 October 2026. Update it after the database fix and end-to-end deployment checks are completed.*
+  Backend deployment                  Available; health endpoint responds
+
+  AI configuration                    Gemini was reported as configured
+                                      by the backend health endpoint
+
+  Database-backed product search      Production connectivity requires
+                                      investigation and retesting
+
+  Full production end-to-end          Pending successful database,
+  readiness                           search, and analysis verification
+  -----------------------------------------------------------------------
+
+------------------------------------------------------------------------
+
+**Maintenance note:** This README reflects the project and deployment
+information supplied for the 24 November 2026 update. Revise the
+deployment status after the database issue is resolved and the complete
+production workflow has been tested.
